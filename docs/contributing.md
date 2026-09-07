@@ -17,7 +17,7 @@ Thanks for contributing to Azure StellarPay Hub! 🚀
 ## Branch strategy
 
 ```text
-main            ← production-ready only
+main            ← reviewed & tested only (platform is currently on testnet)
   └─ feat/<slug>      feature work (PR into main)
   └─ fix/<slug>       bug fixes
   └─ chore/<slug>     tooling/docs

@@ -8,7 +8,14 @@
 
 Send and accept instant, low-cost payments on Stellar — backed by on-chain Soroban smart
 contracts for escrow, multisig, subscriptions, invoicing, merchant settlement, and rewards.
-Built for real-world commerce, not just demos.
+Currently demonstrated on **Stellar testnet** with demo data — a testnet implementation
+built toward real-world commerce, not a mainnet deployment.
+
+> ⚠️ **Current network: Stellar testnet (demo data).** The platform, hosted apps, and
+> deployed Soroban contracts run against **testnet** only. Mainnet is **not deployed** —
+> see [Deployment](#deployment) and [`docs/deployment.md`](docs/deployment.md) for the
+> exact state, and [`docs/architecture.md`](docs/architecture.md) for the evidence-based
+> feature-maturity table.
 
 [![Stellar](https://img.shields.io/badge/Stellar-7B3FE4?logo=stellar&logoColor=white)](https://stellar.org/developers)
 [![Soroban SDK](https://img.shields.io/badge/Soroban_SDK-21.7.1-7B3FE4?logo=stellar&logoColor=white)](https://soroban.stellar.org/docs)
@@ -28,8 +35,8 @@ Built for real-world commerce, not just demos.
 
 Stellar is a Layer-1 blockchain purpose-built for payments — settlement takes 3-5 seconds
 and costs fractions of a cent. Azure StellarPay Hub leverages Stellar's native multi-asset
-support (XLM, USDC, and custom tokens) and Soroban smart contracts to deliver production-grade
-payment infrastructure:
+support (XLM, USDC, and custom tokens) and Soroban smart contracts to deliver payment
+infrastructure (currently on **Stellar testnet** with demo data — mainnet not deployed):
 
 - **Near-instant settlement** — no waiting for blocks or paying gas spikes
 - **On-chain escrow & multisig** — programmable trust, not just transfers
@@ -40,15 +47,15 @@ payment infrastructure:
 
 ### Core Payments
 
-| Feature                  | Description                                            |
-| ------------------------ | ------------------------------------------------------ |
-| Send / Receive           | XLM, USDC, and any Stellar-issued asset                |
-| QR codes & payment links | Shareable checkout links with hosted payment pages     |
-| Scheduled payments       | One-time future-dated transfers                        |
-| Recurring payments       | Daily, weekly, monthly subscription billing            |
-| Batch payments           | Pay up to 100 recipients in a single transaction       |
-| Split payments           | Distribute a single payment across multiple recipients |
-| Fee estimation           | Real-time fee quotes from Horizon                      |
+| Feature                  | Description                                                                                         |
+| ------------------------ | --------------------------------------------------------------------------------------------------- |
+| Send / Receive           | XLM, USDC, and any Stellar-issued asset                                                             |
+| QR codes & payment links | Shareable checkout links with hosted payment pages                                                  |
+| Scheduled payments       | One-time future-dated transfers (scheduler scaffold)                                                |
+| Recurring payments       | Daily, weekly, monthly billing (scheduler scaffold)                                                 |
+| Batch payments           | Pay up to 100 recipients in a single transaction (XDR built & submitted via the classic path)       |
+| Split payments           | Distribute a single payment across multiple recipients (XDR built & submitted via the classic path) |
+| Fee estimation           | Real-time fee quotes from Horizon                                                                   |
 
 ### Wallets & Authentication
 
@@ -63,17 +70,17 @@ payment infrastructure:
 
 ### Merchants
 
-| Feature         | Description                                                       |
-| --------------- | ----------------------------------------------------------------- |
-| Onboarding      | Register a merchant profile with settlement address               |
-| Product catalog | Create and manage products for checkout                           |
-| Invoices        | Generate on-chain invoices with due dates and auto-expiry         |
-| Payment links   | Shareable URLs for fixed or open-amount payments                  |
-| Hosted checkout | Branded checkout page for your customers                          |
-| POS mode        | In-person checkout optimized for mobile                           |
-| Settlement      | Auto-settle to your bank/wallet with configurable commission      |
-| Analytics       | Revenue dashboards, customer insights, transaction volume         |
-| Webhooks        | Real-time callbacks for payment events (paid, cancelled, expired) |
+| Feature         | Description                                                                                         |
+| --------------- | --------------------------------------------------------------------------------------------------- |
+| Onboarding      | Register a merchant profile with settlement address                                                 |
+| Product catalog | Create and manage products for checkout                                                             |
+| Invoices        | Generate on-chain invoices with due dates and auto-expiry                                           |
+| Payment links   | Shareable URLs for fixed or open-amount payments                                                    |
+| Hosted checkout | Branded checkout page for your customers                                                            |
+| POS mode        | In-person checkout optimized for mobile                                                             |
+| Settlement      | Auto-settle to your bank/wallet with configurable commission                                        |
+| Analytics       | Revenue dashboards, customer insights, transaction volume                                           |
+| Webhooks        | Signed outbound callbacks for payment events (`payment.received`, `payment.failed`, `invoice.paid`) |
 
 ### Smart Contracts (Soroban)
 
@@ -88,13 +95,18 @@ payment infrastructure:
 | `merchant`      | Merchant registry with commission & settlement |
 | `rewards`       | Loyalty tiers, earn & redeem points            |
 
+> Platform wiring: only the `payment` contract is reachable from the API today (an
+> **experimental, off-by-default** route). The other seven contracts are implemented,
+> unit-tested, and deployed to testnet, but are **not invoked by the platform** yet.
+> See [`docs/contracts.md`](docs/contracts.md) for the per-contract status matrix.
+
 ### Admin Dashboard
 
 - User and merchant management (suspend, verify, assign roles)
 - Transaction monitoring with filtering by status, asset, direction
 - Asset registry (add/remove supported assets)
 - System settings (commission rates, feature flags, contract addresses)
-- Audit log with full request/response tracing
+- Audit-log viewer (entries written by the API's global audit interceptor)
 - Notification broadcast to users
 - Analytics: dashboard metrics, 7/30/90-day volume charts
 
@@ -108,9 +120,38 @@ payment infrastructure:
 
 - Balance check at a glance from your browser toolbar
 - Quick-send payments without opening the web app
-- Real-time Chrome desktop notifications for incoming payments
+- Background WebSocket notification client (desktop notifications for payment events)
 - Freighter wallet integration for transaction signing
 - See [`apps/extension/`](apps/extension/) for install instructions
+
+> Status note — the extension's realtime notification path is **not verified** against the
+> current `/realtime` Socket.IO gateway (see [Known limitations](#known-limitations)).
+
+## Feature maturity (summary)
+
+Not every capability in the tables above is equally built out. Statuses are
+assigned from evidence in the repository (code, tests, deployment records) —
+see the detailed evidence table in [`docs/architecture.md`](docs/architecture.md).
+Legend: **DEV** = implemented & tested on this stack · **EXPERIMENTAL** =
+off by default / not the live path · **SCAFFOLD** = placeholder behavior.
+
+| Area                                                 | Status                                               |
+| ---------------------------------------------------- | ---------------------------------------------------- |
+| Auth (Ed25519 challenge → JWT, RBAC)                 | DEV (tested)                                         |
+| Payments (classic Stellar send)                      | DEV (tested, testnet)                                |
+| Soroban `payment`-contract route                     | EXPERIMENTAL (off by default, SAC allowlist pending) |
+| Checkout / payment links / invoices                  | DEV (tested)                                         |
+| Merchant registry, products, links, invoices (DB)    | DEV (partial)                                        |
+| Other Soroban contracts (escrow, multisig, etc.)     | DEV (contract-level)                                 |
+| Scheduled / recurring / subscription jobs            | SCAFFOLD                                             |
+| Inbound detection (direct merchant-address payments) | DEV (testnet-verified)                               |
+| Realtime (Socket.IO)                                 | DEV (single-instance)                                |
+| Notifications & webhooks                             | DEV (partial)                                        |
+| Explorer & admin analytics                           | DEV (empty-state correct)                            |
+| Deployment                                           | TESTNET / DEMO                                       |
+
+Nothing is marked **PRODUCTION**: the platform runs on Stellar **testnet**
+with demo data and is not deployed to mainnet.
 
 ## Live Demos
 
@@ -169,10 +210,9 @@ and real-time success rate gauge. All icons are inline SVGs — zero external ic
 │  │  links and invoices, and move money across borders.      ││
 │  │                                                          ││
 │  │        [ Get started → ]    [ Read the docs ]            ││
-│  │                                                          ││
-│  │   < 5s          3             7             1            ││
-│  │ Settlement   Wallet      Soroban        Unified          ││
-│  │   time      providers    contracts        SDK            ││
+│  │                                                          │││   │   < 5s          3             8             1            ││
+│   │ Settlement   Wallet      Soroban        Unified          ││
+│   │   time      providers    contracts        SDK            ││
 │  └──────────────────────────────────────────────────────────┘│
 │  ┌───────────┐ ┌───────────┐ ┌───────────┐                  │
 │  │ 🌐 Multi  │ │ 📱 QR &   │ │ 🔁 Repeat │  ···             │
@@ -227,7 +267,7 @@ and real-time transaction table with hash, amount, addresses, timestamps, and st
 | **Runtime**         | Node.js 22, Rust (stable, wasm32 target)                 |
 | **Monorepo**        | Nx + pnpm workspaces                                     |
 | **API**             | NestJS (Express), Socket.IO for realtime events          |
-| **Web apps**        | Next.js 15 (App Router), React 19, Tailwind CSS          |
+| **Web apps**        | Next.js 16 (App Router), React 19, Tailwind CSS          |
 | **Database**        | PostgreSQL 16, Prisma ORM                                |
 | **Cache / Locks**   | Redis 7 (no pub/sub yet — realtime fan-out is in-memory) |
 | **Blockchain**      | Stellar Horizon API, Soroban RPC                         |
@@ -363,21 +403,21 @@ pnpm dev
 
 The NestJS API serves as the backend for all apps. Key modules:
 
-| Module            | Routes                 | Description                                                         |
-| ----------------- | ---------------------- | ------------------------------------------------------------------- |
-| **Auth**          | `/auth/*`              | Challenge, verify, refresh, logout, sessions                        |
-| **Payments**      | `/payments/*`          | Quote, preview, submit, schedule, recurring, batch, history         |
-| **Assets**        | `/assets/*`            | List assets, create/remove trustlines                               |
-| **Wallet**        | `/wallet/*`            | Balances, trustlines, network switching                             |
-| **Merchants**     | `/merchants/*`         | Onboarding, profile, products, invoices, settlement                 |
-| **Checkout**      | `/checkout/*`          | Public payment link & invoice checkout                              |
-| **Invoices**      | `/invoices/*`          | Create, list, public lookup                                         |
-| **Payment Links** | `/payment-links/*`     | Create, list, public lookup by code                                 |
-| **Users**         | `/users/*`             | Profile, contacts, beneficiaries, preferences, devices              |
-| **Notifications** | `/notifications/*`     | In-app notification inbox                                           |
-| **Webhooks**      | `/webhooks/*`          | Register and test webhook endpoints                                 |
-| **Admin**         | `/admin/*`             | RBAC-protected: users, merchants, transactions, analytics, settings |
-| **Realtime**      | WebSocket `/socket.io` | Live events: `payment.sent`, `payment.received`, `notification`     |
+| Module            | Routes                | Description                                                            |
+| ----------------- | --------------------- | ---------------------------------------------------------------------- |
+| **Auth**          | `/auth/*`             | Challenge, verify, refresh, logout, sessions                           |
+| **Payments**      | `/payments/*`         | Quote, preview, submit, schedule, recurring, batch, history            |
+| **Assets**        | `/assets/*`           | List assets, create/remove trustlines                                  |
+| **Wallet**        | `/wallet/*`           | Balances, trustlines, network switching                                |
+| **Merchants**     | `/merchants/*`        | Onboarding, profile, products, invoices, settlement                    |
+| **Checkout**      | `/checkout/*`         | Public payment link & invoice checkout                                 |
+| **Invoices**      | `/invoices/*`         | Create, list, public lookup                                            |
+| **Payment Links** | `/payment-links/*`    | Create, list, public lookup by code                                    |
+| **Users**         | `/users/*`            | Profile, contacts, beneficiaries, preferences, devices                 |
+| **Notifications** | `/notifications/*`    | In-app notification inbox                                              |
+| **Webhooks**      | `/webhooks/*`         | Register and test webhook endpoints                                    |
+| **Admin**         | `/admin/*`            | RBAC-protected: users, merchants, transactions, analytics, settings    |
+| **Realtime**      | Socket.IO `/realtime` | Live events: `notification`, `transaction.updated`, `payment.received` |
 
 Full API reference: [`docs/api.md`](docs/api.md)
 
@@ -411,6 +451,7 @@ Full SDK docs: [`docs/sdk.md`](docs/sdk.md)
 ```bash
 pnpm test              # All unit + integration tests (Jest)
 pnpm contracts:test    # All Rust contract tests (cargo test)
+pnpm --filter @stellar-pay/api test:e2e   # API integration incl. the deterministic payment-lifecycle spec (needs Postgres + Redis)
 pnpm test:e2e          # Smoke test (API health, needs Postgres + Redis)
 pnpm test:e2e:flow     # Full payment-lifecycle E2E (see below — needs testnet)
 ```
@@ -420,6 +461,9 @@ Test categories — see [`tests/README.md`](tests/README.md) for the full tier b
 - **Deterministic unit/integration tests (CI)**: every package and API service has
   `*.test.ts` files; includes the checkout submission → invoice/payment-link
   reconciliation tests
+- **API integration + payment-lifecycle spec (CI)**: boots the real `AppModule` against
+  Postgres + Redis and drives ingestion → reconciliation → Socket.IO delivery
+  (`apps/api/test/*.e2e-spec.ts`) — this is the deterministic, CI-safe core-flow test
 - **Soroban contract tests (CI)**: per-entry-point tests in `contracts/*/src/test.rs`
 - **Smoke test (not CI)**: `tests/smoke.mjs` — boots the API and checks the health
   endpoint (an API health check only, **not** a payment E2E)
@@ -485,6 +529,26 @@ verified live production deployment, and nothing is deployed to Stellar mainnet.
 
 - **Testnet (Stellar)**: `bash scripts/deploy-testnet.sh` — one-command deploy to Stellar testnet
 
+## Known limitations
+
+Accurate as of 2026-09; see [`docs/architecture.md`](docs/architecture.md),
+[`docs/contracts.md`](docs/contracts.md) and [`SECURITY.md`](SECURITY.md) for detail.
+
+- **Mainnet is not deployed** — the platform, hosted apps, and contracts run on Stellar
+  testnet with demo data only.
+- **The Soroban contract route is experimental and off by default**; enabling it also
+  requires an on-chain SAC allowlist step (`set_allowed` by the deployer key) that has not
+  been run, so no contract-route payment has completed end-to-end on testnet yet.
+- **Scheduled / recurring / subscription jobs are scaffolded** — the scheduler creates
+  PENDING rows only; no approval/signing/chain execution yet.
+- **Realtime fan-out is per-process (in-memory rooms)** — no Redis Socket.IO adapter yet,
+  so multi-instance scale-out would need it. Redis is used for cache/rate-limit/session/locks.
+- **Audit logging** records mutating API requests best-effort via a global interceptor;
+  it is not an independent audit trail (no response bodies, no dedicated unit tests).
+- **Independent security audit has not been performed** (see [`SECURITY.md`](SECURITY.md)).
+- The Chrome extension's realtime notification path is not verified against the current
+  `/realtime` gateway; quick-send/balance features are unaffected.
+
 ## Documentation
 
 | Document                                           | Content                                             |
@@ -527,7 +591,7 @@ Security highlights:
 - Ed25519 wallet-based authentication (no passwords stored)
 - Zod-validated DTOs on every API input
 - Rate limiting on auth and payment endpoints
-- Audit logging on all mutating requests
+- Audit logging of mutating API requests (global interceptor; best-effort)
 - CSRF protection on state-changing endpoints
 - RBAC with role hierarchy (admin > merchant > user)
 - Soroban contracts use `require_auth` for all privileged operations

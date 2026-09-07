@@ -16,7 +16,7 @@ NestJS backend for Azure StellarPay Hub.
 - **notifications** – in-app (DB + WebSocket), email, SMS, push, webhook
 - **webhooks** – merchant webhook registration + HMAC-signed delivery/retry
 - **analytics** – volume, success rates, top merchants, cross-border metrics
-- **admin** – user/merchant/asset management, audit logs, settings, RBAC
+- **admin** – user/merchant/asset management, audit-log listing, settings, RBAC
 - **realtime** – Socket.IO gateway for live payment/notification events
 - **scheduler** – timers for scheduled/recurring payments, renewals, retries
 
@@ -30,4 +30,6 @@ pnpm dev:api
 ```
 
 The API validates every input with Zod schemas from `@stellar-pay/validation`
-and stores structured audit logs for every mutation.
+and writes an `AuditLog` row for every mutating request that completes via the
+global `AuditInterceptor` (best-effort; failures are logged, not thrown).
+See `docs/architecture.md` for the exact semantics and limitations.

@@ -97,15 +97,22 @@ audit logs, notifications, settings. They require a JWT with the `admin` role.
 
 ## WebSocket events
 
-Connect to `/socket.io` with `auth: { token }` and listen on your user room:
+Connect to the Socket.IO `/realtime` namespace (engine path `/socket.io`) with
+`auth: { token }`; each authenticated user joins a room `user:<id>` and receives
+only events addressed to them. Events currently emitted by the server:
 
 ```
-payment.sent        { txId, amount, asset, recipient }
-payment.received    { txId, amount, asset, sender }
-payment.failed      { txId, reason }
-invoice.paid        { invoiceId, amount, currency }
-notification        { id, type, title, body }
+notification         the full notification record (id, type, title, body, …)
+transaction.updated  { id, status }   // status: SUBMITTED | SUCCEEDED | FAILED | CONFIRMED
+payment.received     { transactionId, status: 'CONFIRMED', fromPublicKey, toPublicKey, amount, assetCode, source }
 ```
+
+`transaction.updated` fires on payment submission results and on on-chain
+confirmation by the event indexer; `payment.received` fires when the indexer
+credits a direct on-chain payment to an ACTIVE merchant's settlement address.
+Webhook events (`payment.received`, `payment.failed`, `invoice.paid`, …) are
+**outbound HTTP deliveries to merchant endpoints**, not Socket.IO events — see
+`docs/architecture.md`.
 
 ## Errors
 

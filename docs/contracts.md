@@ -22,6 +22,29 @@ All contracts live in `contracts/` and are written in Rust with
 | `merchant`      | Merchant registry + settlement distribution to multiple wallets |
 | `rewards`       | Loyalty points: earn/redeem with tiers                          |
 
+## Contract status matrix
+
+Having a contract in this repo does **not** mean the platform invokes it.
+Distinguish _implemented_ (code + `test.rs`), _deployed_ (address on testnet),
+and _used by the platform_ (the API actually calls it):
+
+| Contract        | Implemented | Unit tested (Rust) | Deployed (testnet) |           Platform uses it            |
+| --------------- | :---------: | :----------------: | :----------------: | :-----------------------------------: |
+| `payment`       |     ✅      |  ✅ (host tests)   |         ✅         | ⚠️ experimental route, off by default |
+| `escrow`        |     ✅      |  ✅ (host tests)   |         ✅         |          ❌ not invoked yet           |
+| `multisig`      |     ✅      |  ✅ (host tests)   |         ✅         |          ❌ not invoked yet           |
+| `treasury`      |     ✅      |  ✅ (host tests)   |         ✅         |          ❌ not invoked yet           |
+| `subscriptions` |     ✅      |  ✅ (host tests)   |         ✅         |          ❌ not invoked yet           |
+| `invoices`      |     ✅      |  ✅ (host tests)   |         ✅         |          ❌ not invoked yet           |
+| `merchant`      |     ✅      |  ✅ (host tests)   |         ✅         |          ❌ not invoked yet           |
+| `rewards`       |     ✅      |  ✅ (host tests)   |         ✅         |          ❌ not invoked yet           |
+
+All eight testnet addresses are recorded in `.deployed-contracts.env`; they were
+deployed on 2026-08-10 and **verified live on-chain** via Soroban RPC
+`getLedgerEntries` on 2026-09-07 (see `docs/testnet-deploy.md` → Deployed
+contracts). Only the `payment` contract is reachable from the API, and only via
+the experimental route described below.
+
 ## Common conventions
 
 - **Events** — every state change emits a typed event (e.g. `PaymentReceived`,

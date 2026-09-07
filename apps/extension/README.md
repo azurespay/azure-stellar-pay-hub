@@ -6,7 +6,8 @@ A Chrome browser extension companion for the Azure StellarPay Hub platform.
 
 - **Balance check** — View your XLM and asset balances at a glance
 - **Quick-send** — Send payments without opening the full web app
-- **Real-time notifications** — Get Chrome desktop notifications for incoming payments
+- **Realtime notification client** — background service worker that connects to the API
+  and maps payment events to Chrome desktop notifications (see note below on verification)
 - **Wallet integration** — Connects directly to Freighter wallet for signing
 - **Transaction history** — See your 5 most recent transactions in the popup
 
@@ -57,3 +58,8 @@ lib/api.ts            lib/notifications.ts
 The popup communicates with the background service worker via `chrome.runtime.sendMessage`.
 The background worker maintains a persistent WebSocket connection for real-time events and
 displays Chrome desktop notifications for incoming payments.
+
+> **Verification note:** the extension's notification path is **not yet verified** against the
+> current API Socket.IO gateway (which serves the `/realtime` namespace with `auth: { token }`
+> handshakes). Quick-send and balance features are unaffected. See `README.md` → Known
+> limitations for the current status.
