@@ -30,6 +30,12 @@ export class CheckoutService {
     if (!link || link.status !== 'ACTIVE') {
       throw new NotFoundException('Payment link not found');
     }
+    // Expired links must never be payable (or silently become valid again):
+    // the server refuses them on every public checkout read, not just at
+    // creation time.
+    if (link.expiresAt && link.expiresAt < new Date()) {
+      throw new NotFoundException('Payment link has expired');
+    }
     return {
       id: link.id,
       title: link.title,
@@ -82,7 +88,11 @@ export class CheckoutService {
       throw new BadRequestException('Invalid payer public key');
     }
     const link = await this.getPaymentLink(code);
-    const effectiveAmount = amount ?? link.amount;
+
+    // Server-authoritative amount: for a fixed-amount link the customer can
+    // never supply a different amount (e.g. $1 for a $50 link). Open links
+    // (donations/tips) still accept the customer's amount.
+    const effectiveAmount = link.fixedAmount ? link.amount : (amount ?? link.amount);
     if (!effectiveAmount) {
       throw new BadRequestException('This payment link requires an amount');
     }
@@ -123,8 +133,12 @@ export class CheckoutService {
       throw new BadRequestException('Invalid payer public key');
     }
     const invoice = await this.getInvoice(number);
-    if (invoice.status === 'PAID') {
-      throw new BadRequestException('Invoice already paid');
+    // Only open invoices are payable — a PAID/CANCELED/EXPIRED invoice must not
+    // silently become payable again through checkout.
+    if (!['ISSUED', 'DRAFT', 'PARTIALLY_PAID'].includes(invoice.status)) {
+      throw new BadRequestException(
+        `Invoice is ${invoice.status.toLowerCase()} and cannot be paid`,
+      );
     }
     const xdr = await this.network().buildPaymentTransaction({
       from: payerPublicKey,
@@ -160,6 +174,22 @@ export class CheckoutService {
     const tx = await this.prisma.transaction.findUnique({ where: { id: transactionId } });
     if (!tx) {
       throw new NotFoundException('Transaction not found');
+    }
+
+    // Anti-manipulation gate: the payer's wallet must sign exactly what the
+    // checkout intent fixed (amount, recipient, asset, memo). A mismatched
+    // signed XDR is rejected before any state change or network submission.
+    const check = this.network().verifySignedPaymentMatchesIntent(signedXdr, {
+      amount: tx.amount,
+      assetCode: tx.assetCode,
+      assetIssuer: tx.assetIssuer,
+      toPublicKey: tx.toPublicKey,
+      memo: tx.memoType === 'text' ? tx.memo : undefined,
+    });
+    if (!check.matches) {
+      throw new BadRequestException(
+        `Signed transaction does not match the payment intent: ${check.reason}`,
+      );
     }
 
     // Atomically claim PENDING → SUBMITTED so a duplicate/concurrent submit of

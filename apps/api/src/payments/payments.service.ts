@@ -231,6 +231,32 @@ export class PaymentsService {
       throw new BadRequestException('Transaction already submitted');
     }
 
+    // Anti-manipulation gate (checkout/payment-link robustness): the wallet
+    // must sign exactly the payment the intent fixed. Decode the signed XDR
+    // and compare amount/recipient/asset/memo before anything is sent, so a
+    // customer cannot underpay a fixed amount or pay a different recipient.
+    // Soroban-contract and batch intents are not classic single payments and
+    // are skipped (their on-chain outcome is verified by the indexer instead).
+    const isClassicSingle =
+      tx.direction === 'OUTGOING' &&
+      !!tx.toPublicKey &&
+      tx.kind !== 'contract_send' &&
+      !['batch', 'split'].includes(tx.kind);
+    if (isClassicSingle) {
+      const check = this.network().verifySignedPaymentMatchesIntent(signedXdr, {
+        amount: tx.amount,
+        assetCode: tx.assetCode,
+        assetIssuer: tx.assetIssuer,
+        toPublicKey: tx.toPublicKey,
+        memo: tx.memoType === 'text' ? tx.memo : undefined,
+      });
+      if (!check.matches) {
+        throw new BadRequestException(
+          `Signed transaction does not match the payment intent: ${check.reason}`,
+        );
+      }
+    }
+
     // Atomically claim PENDING → SUBMITTED. Exactly one concurrent request can
     // win the claim (the row may have been taken between the read and here);
     // the loser is rejected before touching the network, so the same payment

@@ -149,6 +149,9 @@ export default function PayLinkPage({ params }: { params: Promise<{ code: string
   const [checkout, setCheckout] = useState<CheckoutData | null>(null);
   const [status, setStatus] = useState<CheckoutStatus>('loading');
   const [error, setError] = useState('');
+  const [payErrorKind, setPayErrorKind] = useState<'rejected' | 'insufficient' | 'failed'>(
+    'failed',
+  );
   const [connectError, setConnectError] = useState('');
   const [amount, setAmount] = useState('');
   const [showQr, setShowQr] = useState(false);
@@ -208,14 +211,29 @@ export default function PayLinkPage({ params }: { params: Promise<{ code: string
         body: { signedXdr },
       });
       if (result.status === 'SUCCEEDED') {
+        // Success is only shown after the server confirms the on-chain
+        // transaction succeeded — never on mere submission.
         setStatus('success');
       } else {
         setStatus('error');
+        setPayErrorKind('failed');
         setError(result.errorMessage ?? 'Transaction was not successful');
       }
     } catch (err) {
       setStatus('error');
-      setError((err as Error).message);
+      const msg = (err as Error).message ?? String(err);
+      const name = (err as Error).name ?? '';
+      // A wallet rejection or a connection abort means the payment was never
+      // submitted — it must not be shown as a failed blockchain payment, and
+      // the customer should be able to retry.
+      if (/insufficient|not enough|low balance/i.test(msg)) {
+        setPayErrorKind('insufficient');
+      } else if (/reject|declined?|denied|cancel/i.test(msg) || name === 'AbortError') {
+        setPayErrorKind('rejected');
+      } else {
+        setPayErrorKind('failed');
+      }
+      setError(msg);
     }
   }, [checkout, publicKey, amount, code, signTx]);
 
@@ -250,10 +268,12 @@ export default function PayLinkPage({ params }: { params: Promise<{ code: string
               <X className="h-7 w-7 text-rose-400" />
             </div>
             <div>
-              <h1 className="text-xl font-bold">Payment unavailable</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {error || 'This payment link does not exist or has expired.'}
-              </p>
+              <h1 className="text-xl font-bold">
+                {/expired/i.test(error)
+                  ? 'This payment request has expired'
+                  : 'Payment unavailable'}
+              </h1>
+              <p className="mt-1 text-sm text-muted-foreground">{error}</p>
             </div>
             <Button asChild variant="outline" className="mt-4">
               <Link href="/">Return home</Link>
@@ -447,12 +467,35 @@ export default function PayLinkPage({ params }: { params: Promise<{ code: string
 
             {/* Error with retry */}
             {status === 'error' && error && (
-              <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 px-4 py-3">
+              <div
+                className={`rounded-xl border px-4 py-3 ${
+                  payErrorKind === 'rejected'
+                    ? 'border-amber-500/20 bg-amber-500/5'
+                    : 'border-rose-500/20 bg-rose-500/5'
+                }`}
+              >
                 <div className="flex items-start gap-2">
-                  <X className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />
+                  <X
+                    className={`mt-0.5 h-4 w-4 shrink-0 ${
+                      payErrorKind === 'rejected' ? 'text-amber-400' : 'text-rose-400'
+                    }`}
+                  />
                   <div className="flex-1">
-                    <p className="text-sm font-medium text-rose-400">Payment failed</p>
-                    <p className="mt-0.5 text-xs text-rose-300/80">{error}</p>
+                    <p
+                      className={`text-sm font-medium ${
+                        payErrorKind === 'rejected' ? 'text-amber-400' : 'text-rose-400'
+                      }`}
+                    >
+                      {payErrorKind === 'rejected' &&
+                        'Payment not completed — you cancelled it in your wallet'}
+                      {payErrorKind === 'insufficient' && 'Insufficient balance'}
+                      {payErrorKind === 'failed' && 'Payment failed'}
+                    </p>
+                    <p className="mt-0.5 text-xs text-rose-300/80">
+                      {payErrorKind === 'rejected'
+                        ? 'No payment was sent. You can try again whenever you are ready.'
+                        : error}
+                    </p>
                   </div>
                 </div>
                 <Button
@@ -462,6 +505,7 @@ export default function PayLinkPage({ params }: { params: Promise<{ code: string
                   onClick={() => {
                     setStatus('ready');
                     setError('');
+                    setPayErrorKind('failed');
                   }}
                 >
                   <RefreshCw className="h-3.5 w-3.5" /> Try again

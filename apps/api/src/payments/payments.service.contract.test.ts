@@ -29,6 +29,7 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
     buildSorobanSendTransaction: jest.Mock;
     sorobanTokenAddress: jest.Mock;
     submitSignedTransaction: jest.Mock;
+    verifySignedPaymentMatchesIntent: jest.Mock;
   };
 
   const CONTRACT_ID = 'CC5UUVJCU3WRXDPDE3MEP65BN7XASQDV6O5IWVQRT53D5UKJ63UVHLCA';
@@ -73,6 +74,7 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
       buildSorobanSendTransaction: jest.fn().mockResolvedValue('soroban-xdr'),
       sorobanTokenAddress: jest.fn().mockReturnValue(TOKEN_ADDRESS),
       submitSignedTransaction: jest.fn(),
+      verifySignedPaymentMatchesIntent: jest.fn().mockReturnValue({ matches: true }),
     };
     mockedCreateNetwork.mockReturnValue(mockNetwork as never);
 
@@ -191,6 +193,72 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
       expect(mockPrisma.transaction.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ kind: 'payment' }),
       });
+    });
+  });
+
+  describe('submit — classic route anti-manipulation gate', () => {
+    it('verifies the signed XDR matches the intent before submitting', async () => {
+      mockPrisma.transaction.findFirst.mockResolvedValue({
+        id: 'tx-classic',
+        userId: 'user-1',
+        status: 'PENDING',
+        kind: 'payment',
+        direction: 'OUTGOING',
+        toPublicKey: 'GPAYEE',
+        amount: '10',
+        assetCode: 'XLM',
+        assetIssuer: null,
+        memo: null,
+        memoType: 'text',
+      });
+      mockNetwork.submitSignedTransaction.mockResolvedValue({
+        status: 'SUCCEEDED',
+        hash: '0xhash',
+        fee: '100',
+      });
+      mockPrisma.transaction.update.mockResolvedValue({
+        id: 'tx-classic',
+        status: 'SUCCEEDED',
+        hash: '0xhash',
+      });
+
+      await service.submit('user-1', 'tx-classic', 'signed-xdr');
+
+      expect(mockNetwork.verifySignedPaymentMatchesIntent).toHaveBeenCalledWith(
+        'signed-xdr',
+        expect.objectContaining({
+          amount: '10',
+          assetCode: 'XLM',
+          toPublicKey: 'GPAYEE',
+        }),
+      );
+      expect(mockNetwork.submitSignedTransaction).toHaveBeenCalledWith('signed-xdr');
+    });
+
+    it('rejects a tampered XDR before it reaches the network', async () => {
+      mockPrisma.transaction.findFirst.mockResolvedValue({
+        id: 'tx-classic',
+        userId: 'user-1',
+        status: 'PENDING',
+        kind: 'payment',
+        direction: 'OUTGOING',
+        toPublicKey: 'GPAYEE',
+        amount: '50',
+        assetCode: 'XLM',
+        assetIssuer: null,
+        memo: null,
+        memoType: 'text',
+      });
+      mockNetwork.verifySignedPaymentMatchesIntent.mockReturnValue({
+        matches: false,
+        reason: 'amount 1 does not match the expected 50',
+      });
+
+      await expect(service.submit('user-1', 'tx-classic', 'tampered-xdr')).rejects.toThrow(
+        'Signed transaction does not match the payment intent',
+      );
+      expect(mockNetwork.submitSignedTransaction).not.toHaveBeenCalled();
+      expect(mockPrisma.transaction.update).not.toHaveBeenCalled();
     });
   });
 

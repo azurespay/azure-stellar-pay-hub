@@ -135,6 +135,22 @@ JWT → every protected route           → RBAC via roles guard
   addition to `ChainEvent`. Signed webhook payloads embed a stable
   `deliveryId` and retries reuse the same delivery row, so merchants can dedupe
   exactly-once per logical event.
+- **Checkout/payment links are server-authoritative against tampering.** The
+  hosted checkout (`/pay/[code]`, `/checkout/invoice/[number]`) renders only
+  the record fetched from the API — amount, recipient, and asset are never
+  taken from the URL. Fixed-amount links ignore any customer-supplied amount
+  (open/donation links still accept one), expired links and closed invoices
+  (PAID/CANCELED/EXPIRED) are refused by the checkout endpoints, and a
+  scheduler sweep flips due links ACTIVE → EXPIRED so the merchant dashboard
+  never shows a stale link as active. Before either submit path posts a signed
+  envelope to the network it is decoded and verified against the recorded
+  intent (amount in stroops, recipient, asset code/issuer, memo) — a wallet
+  that signed anything else is rejected with a 400 and nothing is sent, so a
+  customer cannot underpay a fixed amount or redirect a payment. The customer
+  UI distinguishes a wallet rejection/abort (never submitted — retryable, amber
+  "Payment not completed") from a real network failure or an insufficient
+  balance, and success is only shown after the server confirms on-chain
+  settlement.
 - **Socket.IO fan-out is per-process (in-memory rooms).** Horizontal scaling of
   the API requires a Redis Socket.IO adapter, which is not wired yet. Redis is
   currently used for caching, rate-limit state, session state, and scheduler

@@ -103,3 +103,108 @@ describe('StellarNetwork Soroban helpers', () => {
     expect(invoke.args[4].switch().name).toBe('scvVoid');
   });
 });
+
+describe('StellarNetwork verifySignedPaymentMatchesIntent (anti-manipulation)', () => {
+  const passphrase = Networks.TESTNET;
+  const network = new StellarNetwork({
+    horizonUrl: 'https://horizon-testnet.stellar.org',
+    networkPassphrase: passphrase,
+  });
+  const payer = Keypair.random();
+  const payee = Keypair.random();
+  const other = Keypair.random();
+
+  beforeEach(() => {
+    jest
+      .spyOn(network.server, 'loadAccount')
+      .mockResolvedValue(new Account(payer.publicKey(), '1') as never);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  async function buildXdr(opts: {
+    to?: string;
+    amount?: string;
+    assetCode?: string;
+    assetIssuer?: string;
+    memo?: string;
+  }) {
+    return network.buildPaymentTransaction({
+      from: payer.publicKey(),
+      to: opts.to ?? payee.publicKey(),
+      amount: opts.amount ?? '50',
+      assetCode: opts.assetCode ?? 'XLM',
+      assetIssuer: opts.assetIssuer ?? undefined,
+      memo: opts.memo,
+      memoType: opts.memo ? 'text' : undefined,
+    });
+  }
+
+  const expected = {
+    amount: '50',
+    assetCode: 'XLM',
+    toPublicKey: payee.publicKey(),
+    memo: 'pay-abc123',
+  };
+
+  it('accepts a signed XDR that matches the recorded intent', async () => {
+    const xdrStr = await buildXdr({ memo: 'pay-abc123' });
+    expect(network.verifySignedPaymentMatchesIntent(xdrStr, expected)).toEqual({ matches: true });
+  });
+
+  it('accepts a decimal amount that equals the intent amount (50 vs 50.0000000)', async () => {
+    const xdrStr = await buildXdr({ amount: '50.0000000', memo: 'pay-abc123' });
+    expect(network.verifySignedPaymentMatchesIntent(xdrStr, expected)).toEqual({ matches: true });
+  });
+
+  it('rejects an underpaid amount (the $1-for-$50 attack)', async () => {
+    const xdrStr = await buildXdr({ amount: '1', memo: 'pay-abc123' });
+    const result = network.verifySignedPaymentMatchesIntent(xdrStr, expected);
+    expect(result.matches).toBe(false);
+    expect((result as { reason: string }).reason).toContain('amount');
+  });
+
+  it('rejects a different recipient', async () => {
+    const xdrStr = await buildXdr({ to: other.publicKey(), memo: 'pay-abc123' });
+    const result = network.verifySignedPaymentMatchesIntent(xdrStr, expected);
+    expect(result.matches).toBe(false);
+    expect((result as { reason: string }).reason).toContain('recipient');
+  });
+
+  it('rejects a different asset', async () => {
+    const issuer = Keypair.random().publicKey();
+    // The signed XDR pays USDC while the recorded intent is XLM.
+    const xdrStr = await buildXdr({
+      assetCode: 'USDC',
+      assetIssuer: issuer,
+      memo: 'pay-abc123',
+    });
+    const result = network.verifySignedPaymentMatchesIntent(xdrStr, expected);
+    expect(result.matches).toBe(false);
+    expect((result as { reason: string }).reason).toContain('asset');
+  });
+
+  it('rejects a missing/mismatched memo when the intent carries one', async () => {
+    const xdrStr = await buildXdr({}); // no memo
+    const result = network.verifySignedPaymentMatchesIntent(xdrStr, expected);
+    expect(result.matches).toBe(false);
+    expect((result as { reason: string }).reason).toContain('memo');
+  });
+
+  it('rejects undecodable garbage', () => {
+    const result = network.verifySignedPaymentMatchesIntent('not-an-xdr', expected);
+    expect(result.matches).toBe(false);
+  });
+
+  it('skips the memo requirement when the intent has no memo', async () => {
+    const xdrStr = await buildXdr({ amount: '9' });
+    const result = network.verifySignedPaymentMatchesIntent(xdrStr, {
+      amount: '9',
+      assetCode: 'XLM',
+      toPublicKey: payee.publicKey(),
+    });
+    expect(result).toEqual({ matches: true });
+  });
+});

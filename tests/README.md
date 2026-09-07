@@ -37,7 +37,14 @@ they run locally or against a deployed testnet environment.
   successful payment marks invoices `PAID`, bumps payment-link stats, dispatches
   webhooks, and notifies merchants. Inbound-listener tests cover the Soroban
   event parser (vec + map payload layouts), Horizon feed polling/filtering, the
-  `ChainEvent` unique-event idempotency, and merchant/invoice inbound credit. Payment-path reliability is covered by unit tests:
+  `ChainEvent` unique-event idempotency, and merchant/invoice inbound credit. Payment-link/checkout robustness (No. 5) is covered by unit
+  tests: `verifySignedPaymentMatchesIntent` in the SDK decodes a signed XDR and
+  compares amount/recipient/asset/memo against the recorded intent (rejecting
+  the "pay $1 for a $50 link" tamper before submission), fixed-amount links
+  ignore any customer-supplied amount, expired links and non-open invoices are
+  refused by checkout, and the scheduler flips due links to `EXPIRED`.
+  Payment-path reliability is covered by unit tests:
+
   `Idempotency-Key` replays on `POST /payments` (the key is unique per
   user in the DB and the original unsigned XDR is stored for exact replay),
   the atomic PENDING→SUBMITTED submission claim (a duplicate/concurrent
@@ -73,8 +80,10 @@ they run locally or against a deployed testnet environment.
   | Unknown event / unknown payment id   | Unit tests (non-merchant recipient ignored; unparseable payload skipped)                                                                                   |
   | Listener restart recovery            | Redis cursors + `ChainEvent` dedupe backstop (unit-tested idempotency)                                                                                     |
   | Infra failure ≠ payment failure      | Unit tests — transport error reverts SUBMITTED → PENDING (no FAILED, no notify)                                                                            |
-  | Already-paid invoice / double credit | Unit tests — guarded ISSUED/DRAFT → PAID `updateMany`; `hash` `@unique` backstop                                                                           |
-  | Duplicate webhook delivery           | Unit tests — stable `deliveryId` in the signed payload; retries reuse the row                                                                              |
+  | Already-paid invoice / double credit | Unit tests — guarded ISSUED/DRAFT → PAID `updateMany`; `hash` `@unique` backstop                                                                           |     | Duplicate webhook delivery | Unit tests — stable `deliveryId` in the signed payload; retries reuse the row |
+  | Amount/recipient/asset tampering     | Unit tests — signed-XDR intent verification rejects a mismatched XDR pre-submit                                                                            |
+  | Fixed-amount link underpayment       | Unit tests — server ignores a customer amount on `fixedAmount` links                                                                                       |
+  | Expired link / closed invoice        | Unit tests — checkout refuses expired links and PAID/CANCELED/EXPIRED invoices                                                                             |
 
 - **Smoke (4)** — boots the API and checks the health + a public endpoint. This
   is **not** a payment E2E; use tier 5 for the payment lifecycle.

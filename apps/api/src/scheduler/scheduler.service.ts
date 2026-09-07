@@ -6,6 +6,7 @@ import { createLogger } from '@stellar-pay/logger';
 import { NotificationsService } from '../notifications/notifications.service';
 import { IndexerService } from '../indexer/indexer.service';
 import { HorizonInboundService } from '../indexer/horizon-inbound.service';
+import { PaymentLinksService } from '../payment-links/payment-links.service';
 import type { NotificationType } from '@stellar-pay/types';
 
 /**
@@ -24,6 +25,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     private readonly notifications: NotificationsService,
     private readonly indexer: IndexerService,
     private readonly horizonInbound: HorizonInboundService,
+    private readonly paymentLinks: PaymentLinksService,
   ) {}
 
   onModuleInit(): void {
@@ -34,6 +36,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     this.timers.push(setInterval(() => void this.processPendingSettlements(), 5 * 60_000));
     this.timers.push(setInterval(() => void this.pollIndexer(), 20_000));
     this.timers.push(setInterval(() => void this.pollHorizonInbound(), 15_000));
+    this.timers.push(setInterval(() => void this.expirePaymentLinks(), 5 * 60_000));
     this.logger.info('scheduler started');
   }
 
@@ -140,6 +143,16 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     const retried = await this.webhooks.retryDueDeliveries();
     if (retried) {
       this.logger.info({ retried }, 'webhook deliveries retried');
+    }
+  }
+
+  private async expirePaymentLinks(): Promise<void> {
+    if (!(await this.redis.acquireLock('scheduler:payment-links', 240))) {
+      return;
+    }
+    const expired = await this.paymentLinks.expireDue();
+    if (expired) {
+      this.logger.info({ expired }, 'expired payment links marked EXPIRED');
     }
   }
 

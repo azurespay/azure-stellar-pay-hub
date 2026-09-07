@@ -49,4 +49,18 @@ export class PaymentLinksService {
     }
     return link;
   }
+
+  /**
+   * Scheduler sweep: flip ACTIVE links whose expiry passed to EXPIRED so the
+   * merchant dashboard never shows a stale link as ACTIVE. The checkout GET/POST
+   * endpoints independently refuse expired links (server-enforced on every
+   * request), so this only corrects the stored state.
+   */
+  async expireDue(): Promise<number> {
+    const { count } = await this.prisma.paymentLink.updateMany({
+      where: { status: 'ACTIVE', expiresAt: { lte: new Date() } },
+      data: { status: 'EXPIRED' },
+    });
+    return count;
+  }
 }

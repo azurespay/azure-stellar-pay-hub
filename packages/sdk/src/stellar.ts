@@ -223,6 +223,95 @@ export class StellarNetwork {
     return tx.toXDR();
   }
 
+  /**
+   * Decode a signed envelope and verify it matches the payment intent the
+   * server recorded (anti-manipulation gate for checkout/payment links — see
+   * No. 5). A customer must not be able to sign a different amount, recipient,
+   * asset, or memo than the one the intent fixed, then claim the payment.
+   *
+   * Only classic single `payment` operations can be verified this way; callers
+   * with batch or Soroban-contract intents skip this gate.
+   */
+  verifySignedPaymentMatchesIntent(
+    signedXdr: string,
+    expected: {
+      amount: string;
+      assetCode: string;
+      assetIssuer?: string | null;
+      toPublicKey?: string | null;
+      memo?: string | null;
+    },
+  ): { matches: true } | { matches: false; reason: string } {
+    let tx: Transaction;
+    try {
+      tx = TransactionBuilder.fromXDR(signedXdr, this.config.networkPassphrase) as Transaction;
+    } catch {
+      return { matches: false, reason: 'signed XDR could not be decoded' };
+    }
+
+    const payments = tx.operations.filter(
+      (op) => op.type === 'payment',
+    ) as Array<Operation.Payment>;
+    if (payments.length === 0) {
+      return { matches: false, reason: 'the signed transaction contains no payment operation' };
+    }
+    if (payments.length !== 1) {
+      return {
+        matches: false,
+        reason: `expected a single payment operation, found ${payments.length}`,
+      };
+    }
+
+    const op = payments[0];
+    const opAssetCode = op.asset.isNative() ? 'XLM' : op.asset.getCode();
+    const opAssetIssuer = op.asset.isNative() ? null : op.asset.getIssuer();
+
+    // Amounts are decimals in XDR; compare on exact stroop integers.
+    let expectedStroops: bigint;
+    let actualStroops: bigint;
+    try {
+      expectedStroops = BigInt(toStroops(expected.amount));
+      actualStroops = BigInt(toStroops(op.amount));
+    } catch {
+      return { matches: false, reason: 'amount could not be parsed' };
+    }
+    if (actualStroops !== expectedStroops) {
+      return {
+        matches: false,
+        reason: `amount ${op.amount} does not match the expected ${expected.amount}`,
+      };
+    }
+
+    if (expected.toPublicKey && op.destination !== expected.toPublicKey) {
+      return {
+        matches: false,
+        reason: 'the signed transaction pays a different recipient than the intent',
+      };
+    }
+
+    if (
+      opAssetCode !== expected.assetCode ||
+      (opAssetIssuer ?? null) !== (expected.assetIssuer ?? null)
+    ) {
+      return {
+        matches: false,
+        reason: `asset ${opAssetCode}${opAssetIssuer ? `:${opAssetIssuer}` : ''} does not match the expected ${expected.assetCode}${expected.assetIssuer ? `:${expected.assetIssuer}` : ''}`,
+      };
+    }
+
+    if (expected.memo) {
+      const memoText = tx.memo?.type === 'text' ? tx.memo.value?.toString() : undefined;
+      if (memoText !== expected.memo) {
+        return {
+          matches: false,
+          reason: 'the signed transaction memo does not match the intent',
+        };
+      }
+    }
+
+    return { matches: true };
+  }
+
   /** Submit a signed transaction envelope (base64 XDR string). Throws on failure. */
   async submitSignedTransaction(signedXdr: string): Promise<SubmitResult> {
     // v13 submits a decoded Transaction object rather than a raw XDR string.
