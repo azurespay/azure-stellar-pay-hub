@@ -23,7 +23,7 @@ they run locally or against a deployed testnet environment.
 | ---------------------- | --------------------------------- | ----------------------------------------- |
 | Package unit tests     | `packages/*/src/*.test.ts`        | `pnpm test`                               |
 | API unit tests (Nest)  | `apps/api/src/**/*.test.ts`       | `pnpm test`                               |
-| API integration (Nest) | `apps/api/test/app.e2e-spec.ts`   | `pnpm --filter @stellar-pay/api test:e2e` |
+| API integration (Nest) | `apps/api/test/*.e2e-spec.ts`     | `pnpm --filter @stellar-pay/api test:e2e` |
 | Soroban contract tests | `contracts/*/src/test.rs`         | `pnpm contracts:test`                     |
 | Local-stack smoke      | `tests/smoke.mjs`                 | `pnpm test:e2e`                           |
 | Auth + payment E2E     | `tests/e2e/auth-payment-flow.mjs` | `pnpm test:e2e:flow`                      |
@@ -41,7 +41,29 @@ they run locally or against a deployed testnet environment.
 - **Contract tests (2)** — every Soroban entry point in `test.rs` runs against
   the Soroban test host (no network).
 - **API integration (3)** — boots the NestJS `AppModule` with supertest and
-  verifies real routes (health, auth challenge, guards) against Postgres + Redis.
+  verifies real routes against Postgres + Redis. Includes the
+  **payment-lifecycle spec** (`apps/api/test/payment-lifecycle.e2e-spec.ts`):
+  a merchant owner authenticates through the real auth flow (JWT) and connects
+  Socket.IO, the Horizon listener is fed a direct on-chain payment into the
+  merchant settlement address (chain mocked at the HTTP boundary), and the test
+  asserts the merchant receives the live `payment.received` event **and** the
+  database holds exactly one INCOMING `CONFIRMED` transaction with the chain
+  hash. A re-delivered event (simulated cursor loss) must not double-credit
+  (the `ChainEvent` unique ledger is asserted). This is the deterministic,
+  CI-safe version of the No. 3 journey; the testnet version that also drives
+  real create → sign → submit lives in tier 5.
+
+  Failure-path and duplicate coverage across tiers:
+
+  | Scenario                             | Covered where                                                                     |
+  | ------------------------------------ | --------------------------------------------------------------------------------- |
+  | Duplicate chain event                | Tier 3 lifecycle spec (re-delivered feed) + `ChainEvent` unique ledger unit tests |
+  | Duplicate submission of same payment | Unit tests (`payments.service.test.ts` — already-submitted guard)                 |
+  | Failed/zero/invalid amounts          | Unit tests (`inbound.service.test.ts`, payment validation)                        |
+  | Unknown event / unknown payment id   | Unit tests (non-merchant recipient ignored; unparseable payload skipped)          |
+  | Listener restart recovery            | Redis cursors + `ChainEvent` dedupe backstop (unit-tested idempotency)            |
+  | Failed network submission            | Unit tests (`payments.service.contract.test.ts`, `checkout.service.test.ts`)      |
+
 - **Smoke (4)** — boots the API and checks the health + a public endpoint. This
   is **not** a payment E2E; use tier 5 for the payment lifecycle.
 - **Testnet E2E (5)** — the closest to real product behavior that runs without

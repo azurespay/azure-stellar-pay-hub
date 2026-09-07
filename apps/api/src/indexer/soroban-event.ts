@@ -234,7 +234,7 @@ export function stroopsToUnits(stroops: bigint, decimals: number): string {
   const abs = negative ? -stroops : stroops;
   const factor = 10n ** BigInt(decimals);
   const whole = abs / factor;
-  let fraction = (abs % factor).toString().padStart(decimals, '0').replace(/0+$/, '');
+  const fraction = (abs % factor).toString().padStart(decimals, '0').replace(/0+$/, '');
   if (fraction.length === 0 && whole === 0n && negative) {
     return '0';
   }
