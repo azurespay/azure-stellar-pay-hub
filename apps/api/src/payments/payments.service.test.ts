@@ -51,7 +51,7 @@ describe('PaymentsService', () => {
         url: 'https://ipfs.io/ipfs/test-cid',
       }),
     };
-    mockReconciliation = { onPaymentSucceeded: jest.fn() };
+    mockReconciliation = { onPaymentSucceeded: jest.fn(), advanceScheduledPayment: jest.fn() };
     mockMetrics = { inc: jest.fn(), set: jest.fn() };
 
     service = new PaymentsService(

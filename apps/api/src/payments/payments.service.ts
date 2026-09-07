@@ -334,6 +334,10 @@ export class PaymentsService {
     // Update invoice / payment-link bookkeeping and dispatch the
     // `payment.received` webhook (shared with the public checkout flow).
     await this.reconciliation.onPaymentSucceeded(tx);
+    // Confirmation-gated schedules: a scheduled/recurring occurrence is
+    // advanced only now that its transaction is confirmed (SUCCEEDED), not
+    // when the scheduler merely created it.
+    await this.reconciliation.advanceScheduledPayment(tx);
 
     await this.notifications.paymentSent({
       userId: tx.userId!,

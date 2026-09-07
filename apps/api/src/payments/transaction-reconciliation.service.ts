@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@stellar-pay/database';
 import { NotificationsService } from '../notifications/notifications.service';
 import { WebhooksService } from '../webhooks/webhooks.service';
-import type { WebhookEventType } from '@stellar-pay/types';
+import type { NotificationType, WebhookEventType } from '@stellar-pay/types';
 
 /** Minimal structural view of a persisted Transaction row after submission. */
 export interface ReconcilableTransaction {
@@ -22,11 +22,14 @@ interface TxMeta {
 
 /**
  * Post-submission bookkeeping shared by every success path (authenticated
- * sends via `/payments/:id/submit` and public checkout via
- * `/checkout/transactions/:id/submit`):
+ * sends via `/payments/:id/submit`, public checkout via
+ * `/checkout/transactions/:id/submit`, and the indexer's on-chain
+ * CONFIRMED transition):
  *
  *  - mark a paid invoice as PAID (and notify the merchant);
  *  - bump payment-link collected stats;
+ *  - advance a scheduled/recurring payment only after the occurrence's
+ *    transaction is confirmed (never when the occurrence is merely created);
  *  - dispatch the `payment.received` webhook.
  *
  * Payer-scoped notifications / realtime events remain the caller's
@@ -109,6 +112,57 @@ export class TransactionReconciliationService {
       { merchantId: invoice.merchantId },
     );
     return invoice.merchantId;
+  }
+
+  /**
+   * Advance a scheduled/recurring payment after one of its occurrences is
+   * confirmed on-chain. The scheduler only creates the PENDING occurrence;
+   * it deliberately does NOT advance `nextRunAt`/`totalRuns` at creation
+   * time, so a schedule that is never submitted (or fails) simply stays due
+   * and is retried, and a confirmed occurrence is what moves the schedule
+   * forward. The `status: 'ACTIVE'` guard makes the advance at-most-once even
+   * if two confirm paths race, and a schedule can never go backwards from a
+   * terminal state.
+   */
+  async advanceScheduledPayment(tx: { id: string; meta: unknown }): Promise<void> {
+    const meta = (tx.meta ?? {}) as { scheduledId?: string; run?: number };
+    if (!meta.scheduledId) {
+      return;
+    }
+    const scheduled = await this.prisma.scheduledPayment.findUnique({
+      where: { id: meta.scheduledId },
+    });
+    if (!scheduled || scheduled.status !== 'ACTIVE') {
+      return; // unknown, paused, canceled or already completed — no-op
+    }
+
+    const runs = scheduled.totalRuns + 1;
+    const completed = scheduled.maxRuns ? runs >= scheduled.maxRuns : false;
+    const intervalMs =
+      scheduled.interval === 'monthly'
+        ? 30 * 24 * 3600 * 1000
+        : scheduled.interval === 'weekly'
+          ? 7 * 24 * 3600 * 1000
+          : 24 * 3600 * 1000;
+    const now = new Date();
+    const advanced = await this.prisma.scheduledPayment.updateMany({
+      where: { id: scheduled.id, status: 'ACTIVE' },
+      data: {
+        status: completed ? 'COMPLETED' : 'ACTIVE',
+        totalRuns: runs,
+        lastRunAt: now,
+        nextRunAt: completed ? now : new Date(now.getTime() + intervalMs),
+      },
+    });
+    if (advanced.count === 0) {
+      return; // a concurrent reconciler already advanced it — idempotent
+    }
+    await this.notifications.notify(
+      scheduled.userId,
+      'ACCOUNT_ACTIVITY' as NotificationType,
+      completed ? 'Scheduled payment plan completed' : 'Scheduled payment confirmed',
+      { scheduledId: scheduled.id, transactionId: tx.id, run: runs },
+    );
   }
 
   /** @returns the owning merchant id when the link was ACTIVE and credited. */

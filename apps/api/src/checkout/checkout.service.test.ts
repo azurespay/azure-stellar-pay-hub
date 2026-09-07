@@ -53,7 +53,7 @@ describe('CheckoutService', () => {
       paymentLink: { findUnique: jest.fn() },
       invoice: { findUnique: jest.fn() },
     };
-    mockReconciliation = { onPaymentSucceeded: jest.fn() };
+    mockReconciliation = { onPaymentSucceeded: jest.fn(), advanceScheduledPayment: jest.fn() };
     submitMock = jest.fn();
     networkMock = {
       submitSignedTransaction: submitMock,

@@ -12,6 +12,14 @@ import type { NotificationType } from '@stellar-pay/types';
 /**
  * In-process scheduler. Production deployments should move these jobs to a
  * durable queue (e.g. BullMQ + Redis) - the interfaces are identical.
+ *
+ * Scheduled/recurring processing follows a confirmation-gated lifecycle:
+ * a due schedule gets a PENDING transaction created (never a status flip),
+ * the schedule is advanced (`totalRuns`/`nextRunAt`/`COMPLETED`) only when
+ * that occurrence's transaction is confirmed on-chain — see
+ * `TransactionReconciliationService.advanceScheduledPayment`, which the
+ * submit/confirm paths invoke. An occurrence that is never approved, or that
+ * fails, leaves the schedule due so the next tick retries it.
  */
 @Injectable()
 export class SchedulerService implements OnModuleInit, OnModuleDestroy {
@@ -48,8 +56,9 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Due scheduled/recurring payments become PENDING transactions awaiting
-   * user approval. In production, wire an approved-signer service or a
-   * user-facing approval flow here.
+   * user approval and on-chain confirmation (the schedule itself is advanced
+   * only on confirmation). In production, wire an approved-signer service or
+   * a user-facing approval flow here.
    */
   private async processScheduledPayments(): Promise<void> {
     if (!(await this.redis.acquireLock('scheduler:scheduled', 55))) {
@@ -59,57 +68,74 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
       where: { status: 'ACTIVE', nextRunAt: { lte: new Date() } },
       take: 20,
     });
+    let created = 0;
     for (const scheduled of due) {
-      const runs = scheduled.totalRuns + 1;
-      const completed = scheduled.maxRuns ? runs >= scheduled.maxRuns : false;
-      const tx = await this.prisma.transaction.create({
-        data: {
-          userId: scheduled.userId,
-          fromPublicKey: scheduled.fromPublicKey,
-          toPublicKey: scheduled.toPublicKey,
-          amount: scheduled.amount,
-          assetCode: scheduled.assetCode,
-          assetIssuer: scheduled.assetIssuer,
-          memo: scheduled.memo,
-          memoType: 'text',
-          status: 'PENDING',
-          direction: 'OUTGOING',
-          kind: scheduled.interval ? 'recurring' : 'scheduled',
-          sourceNetwork: 'testnet',
-          meta: { scheduledId: scheduled.id },
-        },
-      });
-      await this.prisma.scheduledPayment.update({
-        where: { id: scheduled.id },
-        data: {
-          status: completed ? 'COMPLETED' : 'ACTIVE',
-          totalRuns: runs,
-          lastRunAt: new Date(),
-          nextRunAt: completed
-            ? new Date()
-            : new Date(
-                Date.now() +
-                  24 *
-                    3600 *
-                    1000 *
-                    (scheduled.interval === 'monthly'
-                      ? 30
-                      : scheduled.interval === 'weekly'
-                        ? 7
-                        : 1),
-              ),
-        },
-      });
-      await this.notifications.notify(
-        scheduled.userId,
-        'ACCOUNT_ACTIVITY' as NotificationType,
-        scheduled.interval ? 'Recurring payment is due' : 'Scheduled payment is ready',
-        { transactionId: tx.id, amount: scheduled.amount, assetCode: scheduled.assetCode },
-      );
+      const kind = scheduled.interval ? 'recurring' : 'scheduled';
+      if (await this.createOccurrence(scheduled, kind)) {
+        created++;
+      }
     }
-    if (due.length) {
-      this.logger.info({ count: due.length }, 'scheduled payments processed');
+    if (created) {
+      this.logger.info({ created }, 'scheduled payment occurrences created');
     }
+  }
+
+  /**
+   * Create one PENDING occurrence transaction for a due schedule — without
+   * touching the schedule row. Skips when an occurrence is already in flight
+   * (a PENDING/SUBMITTED transaction referencing this schedule), so the
+   * overlapping scheduled/subscription ticks can never double-create.
+   * @returns true when a new occurrence was created.
+   */
+  private async createOccurrence(
+    scheduled: {
+      id: string;
+      userId: string;
+      fromPublicKey: string;
+      toPublicKey: string;
+      amount: string;
+      assetCode: string;
+      assetIssuer: string | null;
+      memo: string | null;
+      totalRuns: number;
+    },
+    kind: string,
+  ): Promise<boolean> {
+    const inFlight = await this.prisma.transaction.findFirst({
+      where: {
+        status: { in: ['PENDING', 'SUBMITTED'] },
+        meta: { path: ['scheduledId'], equals: scheduled.id },
+      } as never,
+    });
+    if (inFlight) {
+      return false; // occurrence already created and awaiting approval/confirmation
+    }
+    const tx = await this.prisma.transaction.create({
+      data: {
+        userId: scheduled.userId,
+        fromPublicKey: scheduled.fromPublicKey,
+        toPublicKey: scheduled.toPublicKey,
+        amount: scheduled.amount,
+        assetCode: scheduled.assetCode,
+        assetIssuer: scheduled.assetIssuer,
+        memo: scheduled.memo,
+        memoType: 'text',
+        status: 'PENDING',
+        direction: 'OUTGOING',
+        kind,
+        sourceNetwork: 'testnet',
+        meta: { scheduledId: scheduled.id, run: scheduled.totalRuns + 1 },
+      },
+    });
+    await this.notifications.notify(
+      scheduled.userId,
+      'ACCOUNT_ACTIVITY' as NotificationType,
+      kind === 'subscription_renewal'
+        ? 'Subscription renewal is due'
+        : 'Scheduled payment is ready',
+      { transactionId: tx.id, amount: scheduled.amount, assetCode: scheduled.assetCode },
+    );
+    return true;
   }
 
   /**
@@ -164,77 +190,32 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Process subscription renewals via the Soroban subscriptions contract.
-   * In production, this calls the contract's `renew` entry point through
-   * the Soroban RPC. The scaffold simulates renewal by creating a PENDING
-   * transaction for each due subscription and dispatching notifications.
+   * Due subscription renewals (interval schedules) become PENDING occurrence
+   * transactions. In production this calls the subscriptions contract's
+   * `renew` entry point through Soroban RPC; the local path keeps the same
+   * confirmation-gated lifecycle as scheduled payments — the schedule
+   * advances only when the occurrence transaction is confirmed on-chain.
    */
   private async processSubscriptionRenewals(): Promise<void> {
     if (!(await this.redis.acquireLock('scheduler:subscriptions', 110))) {
       return;
     }
-    // Find active subscriptions that are due for renewal.
-    // This is a simplified local check — in production, query the
-    // subscriptions contract on-chain for due subscriptions.
-    const now = new Date();
     const due = await this.prisma.scheduledPayment.findMany({
       where: {
         status: 'ACTIVE',
         interval: { not: null },
-        nextRunAt: { lte: now },
+        nextRunAt: { lte: new Date() },
       },
       take: 20,
     });
+    let created = 0;
     for (const scheduled of due) {
-      const runs = scheduled.totalRuns + 1;
-      const completed = scheduled.maxRuns ? runs >= scheduled.maxRuns : false;
-      const tx = await this.prisma.transaction.create({
-        data: {
-          userId: scheduled.userId,
-          fromPublicKey: scheduled.fromPublicKey,
-          toPublicKey: scheduled.toPublicKey,
-          amount: scheduled.amount,
-          assetCode: scheduled.assetCode,
-          assetIssuer: scheduled.assetIssuer,
-          memo: scheduled.memo,
-          memoType: 'text',
-          status: 'PENDING',
-          direction: 'OUTGOING',
-          kind: 'subscription_renewal',
-          sourceNetwork: 'testnet',
-          meta: { scheduledId: scheduled.id, run: runs },
-        },
-      });
-      // Advance to the next interval.
-      const intervalMs =
-        scheduled.interval === 'daily'
-          ? 24 * 3600 * 1000
-          : scheduled.interval === 'weekly'
-            ? 7 * 24 * 3600 * 1000
-            : 30 * 24 * 3600 * 1000;
-      await this.prisma.scheduledPayment.update({
-        where: { id: scheduled.id },
-        data: {
-          status: completed ? 'COMPLETED' : 'ACTIVE',
-          totalRuns: runs,
-          lastRunAt: now,
-          nextRunAt: completed ? now : new Date(now.getTime() + intervalMs),
-        },
-      });
-      await this.notifications.notify(
-        scheduled.userId,
-        'ACCOUNT_ACTIVITY' as NotificationType,
-        `Subscription renewal processed: ${scheduled.amount} ${scheduled.assetCode}`,
-        {
-          transactionId: tx.id,
-          amount: scheduled.amount,
-          assetCode: scheduled.assetCode,
-          run: runs,
-        },
-      );
+      if (await this.createOccurrence(scheduled, 'subscription_renewal')) {
+        created++;
+      }
     }
-    if (due.length) {
-      this.logger.info({ count: due.length }, 'subscription renewals processed');
+    if (created) {
+      this.logger.info({ created }, 'subscription renewal occurrences created');
     }
   }
 

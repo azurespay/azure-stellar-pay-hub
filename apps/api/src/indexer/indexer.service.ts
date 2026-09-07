@@ -8,6 +8,7 @@ import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { InboundReconciliationService } from './inbound.service';
 import { parsePaymentEventData, stroopsToUnits, topicIsPayment } from './soroban-event';
 import { MetricsService } from '../metrics/metrics.service';
+import { TransactionReconciliationService } from '../payments/transaction-reconciliation.service';
 
 const CURSOR_KEY = 'indexer:soroban:cursor';
 const DEFAULT_LOOKBACK_LEDGERS = 2000;
@@ -60,6 +61,7 @@ export class IndexerService {
     private readonly realtime: RealtimeGateway,
     private readonly inbound: InboundReconciliationService,
     private readonly metrics: MetricsService,
+    private readonly reconciliation: TransactionReconciliationService,
   ) {}
 
   private contractId(): string | undefined {
@@ -232,6 +234,7 @@ export class IndexerService {
     assetCode: string;
     toPublicKey: string | null;
     kind: string;
+    meta: unknown;
   }): Promise<void> {
     const updated = await this.prisma.transaction.updateMany({
       where: { id: tx.id, status: 'SUBMITTED' },
@@ -240,6 +243,10 @@ export class IndexerService {
     if (updated.count !== 1) {
       return; // already confirmed (or moved) — idempotent
     }
+
+    // Confirmation-gated schedules: advance the owning scheduled/recurring
+    // plan only on the winning on-chain CONFIRMED transition.
+    await this.reconciliation.advanceScheduledPayment(tx);
 
     // Contract sends are created by authenticated users, so userId is always
     // present; the guard keeps the fan-out safe if a row is ever orphaned.

@@ -24,8 +24,12 @@ describe('TransactionReconciliationService', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       paymentLink: { findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
+      scheduledPayment: {
+        findUnique: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
     };
-    mockNotifications = { invoicePaid: jest.fn() };
+    mockNotifications = { invoicePaid: jest.fn(), notify: jest.fn() };
     mockWebhooks = { dispatch: jest.fn() };
     service = new TransactionReconciliationService(
       mockPrisma as any,
@@ -181,6 +185,100 @@ describe('TransactionReconciliationService', () => {
       });
 
       expect(mockPrisma.paymentLink.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('scheduled payment advancement (confirmation-gated)', () => {
+    const schedule = {
+      id: 'sched-1',
+      userId: 'user-1',
+      interval: 'weekly',
+      totalRuns: 1,
+      maxRuns: null,
+      status: 'ACTIVE',
+    };
+
+    it('advances the schedule only when its occurrence transaction is confirmed', async () => {
+      mockPrisma.scheduledPayment.findUnique.mockResolvedValue(schedule);
+
+      await service.advanceScheduledPayment({
+        id: 'tx-occ-2',
+        meta: { scheduledId: 'sched-1', run: 2 },
+      });
+
+      expect(mockPrisma.scheduledPayment.findUnique).toHaveBeenCalledWith({
+        where: { id: 'sched-1' },
+      });
+      expect(mockPrisma.scheduledPayment.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'sched-1', status: 'ACTIVE' },
+          data: expect.objectContaining({ totalRuns: 2, status: 'ACTIVE' }),
+        }),
+      );
+      expect(mockNotifications.notify).toHaveBeenCalledWith(
+        'user-1',
+        'ACCOUNT_ACTIVITY',
+        'Scheduled payment confirmed',
+        { scheduledId: 'sched-1', transactionId: 'tx-occ-2', run: 2 },
+      );
+    });
+
+    it('marks the plan COMPLETED when maxRuns is reached and does not schedule further runs', async () => {
+      mockPrisma.scheduledPayment.findUnique.mockResolvedValue({
+        ...schedule,
+        totalRuns: 2,
+        maxRuns: 3,
+      });
+
+      await service.advanceScheduledPayment({
+        id: 'tx-occ-3',
+        meta: { scheduledId: 'sched-1' },
+      });
+
+      const call = mockPrisma.scheduledPayment.updateMany.mock.calls[0][0];
+      expect(call.data.status).toBe('COMPLETED');
+      expect(call.data.nextRunAt).toBeInstanceOf(Date);
+      expect(mockNotifications.notify).toHaveBeenCalledWith(
+        'user-1',
+        'ACCOUNT_ACTIVITY',
+        'Scheduled payment plan completed',
+        expect.any(Object),
+      );
+    });
+
+    it('is a no-op for transactions that are not schedule occurrences', async () => {
+      await service.advanceScheduledPayment({ id: 'tx-1', meta: { type: 'SEND' } });
+
+      expect(mockPrisma.scheduledPayment.findUnique).not.toHaveBeenCalled();
+      expect(mockPrisma.scheduledPayment.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('never advances a paused/canceled/completed schedule (idempotent guard)', async () => {
+      mockPrisma.scheduledPayment.findUnique.mockResolvedValue({
+        ...schedule,
+        status: 'COMPLETED',
+      });
+
+      await service.advanceScheduledPayment({
+        id: 'tx-occ-4',
+        meta: { scheduledId: 'sched-1' },
+      });
+
+      expect(mockPrisma.scheduledPayment.updateMany).not.toHaveBeenCalled();
+      expect(mockNotifications.notify).not.toHaveBeenCalled();
+    });
+
+    it('fires no side effects when a concurrent reconciler already advanced the schedule', async () => {
+      mockPrisma.scheduledPayment.findUnique.mockResolvedValue(schedule);
+      mockPrisma.scheduledPayment.updateMany.mockResolvedValue({ count: 0 });
+
+      await service.advanceScheduledPayment({
+        id: 'tx-occ-2',
+        meta: { scheduledId: 'sched-1' },
+      });
+
+      expect(mockPrisma.scheduledPayment.updateMany).toHaveBeenCalledTimes(1);
+      expect(mockNotifications.notify).not.toHaveBeenCalled();
     });
   });
 

@@ -68,7 +68,7 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
     mockRealtime = { emitToUser: jest.fn() };
     mockRates = { getRate: jest.fn().mockResolvedValue(1) };
     mockIpfs = { pinReceipt: jest.fn().mockResolvedValue({}), buildReceiptPayload: jest.fn() };
-    mockReconciliation = { onPaymentSucceeded: jest.fn() };
+    mockReconciliation = { onPaymentSucceeded: jest.fn(), advanceScheduledPayment: jest.fn() };
     mockMetrics = { inc: jest.fn(), set: jest.fn() };
 
     mockNetwork = {

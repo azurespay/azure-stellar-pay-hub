@@ -51,8 +51,8 @@ infrastructure (currently on **Stellar testnet** with demo data — mainnet not 
 | ------------------------ | --------------------------------------------------------------------------------------------------- |
 | Send / Receive           | XLM, USDC, and any Stellar-issued asset                                                             |
 | QR codes & payment links | Shareable checkout links with hosted payment pages                                                  |
-| Scheduled payments       | One-time future-dated transfers (scheduler scaffold)                                                |
-| Recurring payments       | Daily, weekly, monthly billing (scheduler scaffold)                                                 |
+| Scheduled payments       | One-time future-dated transfers (confirmation-gated scheduler)                                      |
+| Recurring payments       | Daily, weekly, monthly billing (confirmation-gated scheduler)                                       |
 | Batch payments           | Pay up to 100 recipients in a single transaction (XDR built & submitted via the classic path)       |
 | Split payments           | Distribute a single payment across multiple recipients (XDR built & submitted via the classic path) |
 | Fee estimation           | Real-time fee quotes from Horizon                                                                   |
@@ -143,7 +143,7 @@ off by default / not the live path · **SCAFFOLD** = placeholder behavior.
 | Checkout / payment links / invoices                  | DEV (tested)                                         |
 | Merchant registry, products, links, invoices (DB)    | DEV (partial)                                        |
 | Other Soroban contracts (escrow, multisig, etc.)     | DEV (contract-level)                                 |
-| Scheduled / recurring / subscription jobs            | SCAFFOLD                                             |
+| Scheduled / recurring / subscription jobs            | DEV (confirmation-gated; no auto-signer)             |
 | Inbound detection (direct merchant-address payments) | DEV (testnet-verified)                               |
 | Realtime (Socket.IO)                                 | DEV (single-instance)                                |
 | Notifications & webhooks                             | DEV (partial)                                        |
@@ -539,8 +539,10 @@ Accurate as of 2026-09; see [`docs/architecture.md`](docs/architecture.md),
 - **The Soroban contract route is experimental and off by default**; enabling it also
   requires an on-chain SAC allowlist step (`set_allowed` by the deployer key) that has not
   been run, so no contract-route payment has completed end-to-end on testnet yet.
-- **Scheduled / recurring / subscription jobs are scaffolded** — the scheduler creates
-  PENDING rows only; no approval/signing/chain execution yet.
+- **Scheduled / recurring / subscription jobs advance only on on-chain confirmation** — the
+  scheduler creates one PENDING occurrence per due run (deduped), and the plan's
+  `totalRuns`/`nextRunAt` move only when that occurrence's transaction is confirmed;
+  each occurrence still needs a user-approved signed submission (no auto-signer yet).
 - **Realtime fan-out is per-process (in-memory rooms)** — no Redis Socket.IO adapter yet,
   so multi-instance scale-out would need it. Redis is used for cache/rate-limit/session/locks.
 - **Audit logging** records mutating API requests best-effort via a global interceptor;

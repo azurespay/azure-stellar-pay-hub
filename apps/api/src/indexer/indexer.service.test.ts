@@ -30,6 +30,7 @@ describe('IndexerService', () => {
   let mockRealtime: Record<string, jest.Mock>;
   let mockInbound: Record<string, jest.Mock>;
   let mockMetrics: { inc: jest.Mock; set: jest.Mock };
+  let mockReconciliation: Record<string, jest.Mock>;
   let fetchMock: jest.Mock;
 
   const submittedTx = {
@@ -62,6 +63,7 @@ describe('IndexerService', () => {
     mockRealtime = { emitToUser: jest.fn() };
     mockInbound = { handle: jest.fn().mockResolvedValue({ created: false }) };
     mockMetrics = { inc: jest.fn(), set: jest.fn() };
+    mockReconciliation = { advanceScheduledPayment: jest.fn().mockResolvedValue(undefined) };
 
     fetchMock = jest.fn();
     global.fetch = fetchMock as unknown as typeof fetch;
@@ -77,6 +79,7 @@ describe('IndexerService', () => {
       mockRealtime as any,
       mockInbound as any,
       mockMetrics as any,
+      mockReconciliation as any,
     );
   });
 
@@ -94,6 +97,7 @@ describe('IndexerService', () => {
         mockRealtime as any,
         mockInbound as any,
         mockMetrics as any,
+        mockReconciliation as any,
       );
       await idle.syncOnce();
       await idle.syncOnce();
@@ -128,6 +132,9 @@ describe('IndexerService', () => {
         assetCode: 'XLM',
         toPublicKey: 'GPAYEE',
       });
+      // The schedule (if this tx belongs to one) advances only on the winning
+      // on-chain CONFIRMED transition.
+      expect(mockReconciliation.advanceScheduledPayment).toHaveBeenCalledWith(submittedTx);
       // No webhook broadcast on a payer-initiated contract send: it has no
       // merchant owner, so fan-out would leak other merchants' data.
       expect(mockWebhooks.dispatch).not.toHaveBeenCalled();
@@ -150,6 +157,8 @@ describe('IndexerService', () => {
       expect(mockRealtime.emitToUser).not.toHaveBeenCalled();
       expect(mockNotifications.paymentSent).not.toHaveBeenCalled();
       expect(mockWebhooks.dispatch).not.toHaveBeenCalled();
+      // No advance on a lost race either: side effects fire only on the winner.
+      expect(mockReconciliation.advanceScheduledPayment).not.toHaveBeenCalled();
     });
 
     it('does not confirm when the ledger does not report SUCCESS', async () => {
