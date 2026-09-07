@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '@stellar-pay/database';
 import { NotificationsService } from '../notifications/notifications.service';
+import { MetricsService } from '../metrics/metrics.service';
 import { WebhooksService } from '../webhooks/webhooks.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { TransactionReconciliationService } from '../payments/transaction-reconciliation.service';
@@ -58,6 +59,7 @@ export class InboundReconciliationService {
     private readonly webhooks: WebhooksService,
     private readonly realtime: RealtimeGateway,
     private readonly reconciliation: TransactionReconciliationService,
+    private readonly metrics: MetricsService,
   ) {}
 
   private networkLabel(): string {
@@ -209,6 +211,7 @@ export class InboundReconciliationService {
       source: input.source,
     });
 
+    this.metrics.inc('inbound_payments_credited_total', { source: input.source });
     this.logger.log(
       { eventId: eventKey, transactionId: transaction.id, kind: transaction.kind },
       'inbound payment credited',

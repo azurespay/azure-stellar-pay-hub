@@ -12,6 +12,7 @@ describe('InboundReconciliationService', () => {
   let mockWebhooks: Record<string, jest.Mock>;
   let mockRealtime: Record<string, jest.Mock>;
   let mockReconciliation: Record<string, jest.Mock>;
+  let mockMetrics: { inc: jest.Mock; set: jest.Mock };
 
   const merchant = {
     id: 'merchant-1',
@@ -48,6 +49,7 @@ describe('InboundReconciliationService', () => {
     mockWebhooks = { dispatch: jest.fn().mockResolvedValue(undefined) };
     mockRealtime = { emitToUser: jest.fn() };
     mockReconciliation = { onPaymentSucceeded: jest.fn().mockResolvedValue(undefined) };
+    mockMetrics = { inc: jest.fn(), set: jest.fn() };
 
     service = new InboundReconciliationService(
       mockPrisma as any,
@@ -56,6 +58,7 @@ describe('InboundReconciliationService', () => {
       mockWebhooks as any,
       mockRealtime as any,
       mockReconciliation as any,
+      mockMetrics as any,
     );
   });
 

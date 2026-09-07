@@ -29,6 +29,17 @@ describe('API (e2e)', () => {
     expect(response.body.service).toBe('stellar-pay-api');
   });
 
+  it('GET /api/health/ready reports ok when Postgres and Redis respond', async () => {
+    const response = await request(app.getHttpServer()).get('/api/health/ready').expect(200);
+    expect(response.body.status).toBe('ok');
+    expect(response.body.checks).toEqual({ database: 'up', redis: 'up' });
+  });
+
+  it('GET /api/metrics returns 404 when metrics are disabled', async () => {
+    // METRICS_ENABLED is not set in this environment, so the endpoint is off.
+    await request(app.getHttpServer()).get('/api/metrics').expect(404);
+  });
+
   it('POST /api/auth/challenge issues a challenge for a valid key', async () => {
     const key = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN';
     const response = await request(app.getHttpServer())

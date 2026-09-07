@@ -35,6 +35,7 @@
     "contracts:test": "cargo test --manifest-path contracts/Cargo.toml --workspace",
     "generate:env": "bash scripts/generate-env.sh",
     "setup": "bash scripts/setup.sh",
+    "deploy:testnet": "bash scripts/deploy-testnet.sh",
     "docker:up": "docker compose -f infrastructure/docker/docker-compose.yml up -d",
     "docker:down": "docker compose -f infrastructure/docker/docker-compose.yml down"
   },

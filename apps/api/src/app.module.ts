@@ -24,6 +24,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { AdminModule } from './admin/admin.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
+import { MetricsModule } from './metrics/metrics.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { SchedulerModule } from './scheduler/scheduler.module';
     AdminModule,
     RealtimeModule,
     SchedulerModule,
+    MetricsModule,
   ],
   controllers: [AppController],
   providers: [

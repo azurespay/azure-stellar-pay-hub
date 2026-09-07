@@ -7,6 +7,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { InboundReconciliationService } from './inbound.service';
 import { parsePaymentEventData, stroopsToUnits, topicIsPayment } from './soroban-event';
+import { MetricsService } from '../metrics/metrics.service';
 
 const CURSOR_KEY = 'indexer:soroban:cursor';
 const DEFAULT_LOOKBACK_LEDGERS = 2000;
@@ -58,6 +59,7 @@ export class IndexerService {
     private readonly notifications: NotificationsService,
     private readonly realtime: RealtimeGateway,
     private readonly inbound: InboundReconciliationService,
+    private readonly metrics: MetricsService,
   ) {}
 
   private contractId(): string | undefined {
@@ -93,6 +95,9 @@ export class IndexerService {
     await this.ingestContractEvents().catch((err) =>
       this.logger.warn({ err: (err as Error).message }, 'event ingestion failed'),
     );
+    // Expose indexer freshness for monitoring ("how far behind is the event
+    // processor") — a gauge of seconds since the last successful poll.
+    this.metrics.set('indexer_last_poll_seconds', Math.floor(Date.now() / 1000));
   }
 
   /** Primary confirmation: check every SUBMITTED contract send on-chain. */

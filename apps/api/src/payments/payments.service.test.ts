@@ -12,6 +12,7 @@ describe('PaymentsService', () => {
   let mockRates: Record<string, jest.Mock>;
   let mockIpfs: Record<string, jest.Mock>;
   let mockReconciliation: Record<string, jest.Mock>;
+  let mockMetrics: { inc: jest.Mock; set: jest.Mock };
 
   beforeEach(() => {
     mockConfig = {
@@ -51,6 +52,7 @@ describe('PaymentsService', () => {
       }),
     };
     mockReconciliation = { onPaymentSucceeded: jest.fn() };
+    mockMetrics = { inc: jest.fn(), set: jest.fn() };
 
     service = new PaymentsService(
       mockPrisma as any,
@@ -62,6 +64,7 @@ describe('PaymentsService', () => {
       mockRates as any,
       mockIpfs as any,
       mockReconciliation as any,
+      mockMetrics as any,
     );
   });
 

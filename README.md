@@ -373,31 +373,31 @@ pnpm dev
 
 ## Scripts Reference
 
-| Command                          | Purpose                                      |
-| -------------------------------- | -------------------------------------------- |
-| `pnpm dev`                       | Run all 5 apps in parallel (watch mode)      |
-| `pnpm build`                     | Build all apps and packages                  |
-| `pnpm build:apps`                | Build only the apps                          |
-| `pnpm build:packages`            | Build only the shared packages               |
-| `pnpm lint`                      | ESLint across the entire workspace           |
-| `pnpm typecheck`                 | `tsc --noEmit` on every TypeScript project   |
-| `pnpm test`                      | Run all unit and integration tests           |
-| `pnpm test:e2e`                  | Run the local-stack smoke test               |
-| `pnpm test:e2e:flow`             | Payment-lifecycle E2E (live Stellar testnet) |
-| `pnpm format`                    | Auto-format with Prettier                    |
-| `pnpm format:check`              | Check formatting without changing files      |
-| `pnpm db:generate`               | Generate Prisma client from schema           |
-| `pnpm db:migrate`                | Run Prisma migrations                        |
-| `pnpm db:push`                   | Push schema directly to database             |
-| `pnpm db:seed`                   | Seed the database with demo data             |
-| `pnpm db:studio`                 | Open Prisma Studio (database GUI)            |
-| `pnpm contracts:build`           | Compile Soroban contracts to WASM            |
-| `pnpm contracts:test`            | Run all Rust contract unit tests             |
-| `pnpm docker:up`                 | Start Postgres + Redis containers            |
-| `pnpm docker:down`               | Stop and remove containers                   |
-| `pnpm generate:env`              | Scaffold `.env` files from templates         |
-| `pnpm setup`                     | Full first-time bootstrap                    |
-| `bash scripts/deploy-testnet.sh` | Deploy contracts + API to Stellar testnet    |
+| Command                | Purpose                                      |
+| ---------------------- | -------------------------------------------- |
+| `pnpm dev`             | Run all 5 apps in parallel (watch mode)      |
+| `pnpm build`           | Build all apps and packages                  |
+| `pnpm build:apps`      | Build only the apps                          |
+| `pnpm build:packages`  | Build only the shared packages               |
+| `pnpm lint`            | ESLint across the entire workspace           |
+| `pnpm typecheck`       | `tsc --noEmit` on every TypeScript project   |
+| `pnpm test`            | Run all unit and integration tests           |
+| `pnpm test:e2e`        | Run the local-stack smoke test               |
+| `pnpm test:e2e:flow`   | Payment-lifecycle E2E (live Stellar testnet) |
+| `pnpm format`          | Auto-format with Prettier                    |
+| `pnpm format:check`    | Check formatting without changing files      |
+| `pnpm db:generate`     | Generate Prisma client from schema           |
+| `pnpm db:migrate`      | Run Prisma migrations                        |
+| `pnpm db:push`         | Push schema directly to database             |
+| `pnpm db:seed`         | Seed the database with demo data             |
+| `pnpm db:studio`       | Open Prisma Studio (database GUI)            |
+| `pnpm contracts:build` | Compile Soroban contracts to WASM            |
+| `pnpm contracts:test`  | Run all Rust contract unit tests             |
+| `pnpm docker:up`       | Start Postgres + Redis containers            |
+| `pnpm docker:down`     | Stop and remove containers                   |
+| `pnpm generate:env`    | Scaffold `.env` files from templates         |
+| `pnpm setup`           | Full first-time bootstrap                    |
+| `pnpm deploy:testnet`  | Deploy contracts + API to Stellar testnet    |
 
 ## API Overview
 
@@ -527,7 +527,7 @@ verified live production deployment, and nothing is deployed to Stellar mainnet.
 | `JWT_SECRET`                  | Railway dashboard          | Access/refresh token signing secret |
 | `REDIS_URL`                   | Railway dashboard          | Redis connection string             |
 
-- **Testnet (Stellar)**: `bash scripts/deploy-testnet.sh` — one-command deploy to Stellar testnet
+- **Testnet (Stellar)**: `pnpm deploy:testnet` — one-command deploy to Stellar testnet (wraps `scripts/deploy-testnet.sh`)
 
 ## Known limitations
 

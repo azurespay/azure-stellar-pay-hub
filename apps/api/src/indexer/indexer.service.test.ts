@@ -29,6 +29,7 @@ describe('IndexerService', () => {
   let mockWebhooks: Record<string, jest.Mock>;
   let mockRealtime: Record<string, jest.Mock>;
   let mockInbound: Record<string, jest.Mock>;
+  let mockMetrics: { inc: jest.Mock; set: jest.Mock };
   let fetchMock: jest.Mock;
 
   const submittedTx = {
@@ -60,6 +61,7 @@ describe('IndexerService', () => {
     mockWebhooks = { dispatch: jest.fn().mockResolvedValue(undefined) };
     mockRealtime = { emitToUser: jest.fn() };
     mockInbound = { handle: jest.fn().mockResolvedValue({ created: false }) };
+    mockMetrics = { inc: jest.fn(), set: jest.fn() };
 
     fetchMock = jest.fn();
     global.fetch = fetchMock as unknown as typeof fetch;
@@ -74,6 +76,7 @@ describe('IndexerService', () => {
       mockNotifications as any,
       mockRealtime as any,
       mockInbound as any,
+      mockMetrics as any,
     );
   });
 
@@ -90,6 +93,7 @@ describe('IndexerService', () => {
         mockNotifications as any,
         mockRealtime as any,
         mockInbound as any,
+        mockMetrics as any,
       );
       await idle.syncOnce();
       await idle.syncOnce();

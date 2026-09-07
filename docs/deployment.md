@@ -70,17 +70,81 @@ terraform init && terraform plan && terraform apply
 ## 5. Monitoring
 
 `infrastructure/monitoring/` ships Prometheus + Grafana (auto-provisioned datasource) and a
-base alert rule set (API error rate, 5xx spikes, payment failure rate). The API exposes
-metrics at `/metrics` when `METRICS_ENABLED=true`.
+base alert rule set (API error rate, 5xx spikes, payment failure rate). When
+`METRICS_ENABLED=true` the API serves a Prometheus text-format endpoint at
+**`/api/metrics`** (no auth — enable only where that is acceptable) with
+`http_requests_total`, `payments_succeeded_total`, `payments_failed_total`,
+`inbound_payments_credited_total`, and `indexer_last_poll_seconds` (event-processor
+freshness). Metrics are in-memory and reset on restart — the database remains the
+authoritative record. See `infrastructure/monitoring/README.md` for local run notes.
 
-## CI/CD
+## 6. Health & readiness probes
+
+- `GET /api/health` — liveness (process up; reports Postgres reachability).
+- `GET /api/health/ready` — readiness: 200 only when Postgres **and** Redis respond;
+  503 with per-component status otherwise. Intentionally shallow (no outbound Stellar
+  calls) so an upstream Stellar incident is not misreported as an API incident.
+
+## 7. CI/CD
 
 GitHub Actions (`.github/workflows/`) runs on every PR and push to `main`:
 
-- `ci.yml` — install, lint, typecheck, test, build contracts, build apps.
-- `deploy.yml` — build + push Docker images to a registry, then roll AKS deployments.
+- `ci.yml` — install, lint, typecheck, format, unit/integration tests, API integration
+  tests (tier 3, Postgres + Redis), contract build + tests, app builds, security scans.
+- `deploy-railway.yml` — deploys the API to Railway on push to `main` (API/Docker paths).
+- `deploy.yml` — build + push Docker images to a registry, then roll AKS deployments
+  (experimental path; not the live environment).
 
-## Environment variables
+Deployment is gated by the same pipeline a human reviews: PRs run the full CI suite
+before merge, and deploys only happen after merge to `main`. There is **no automated
+mainnet deployment** — Stellar mainnet requires explicit human approval
+(see `docs/testnet-deploy.md`).
 
-See `.env.example` and `apps/api/.env.example`. Never commit secrets; inject via K8s
-Secrets, Azure Key Vault, or the platform's secret store.
+## 8. Deployment checklist
+
+Before any deployment to testnet (or later, mainnet):
+
+- [ ] `pnpm typecheck` and `pnpm lint` pass
+- [ ] `pnpm test` passes (unit + integration tiers)
+- [ ] `pnpm --filter @stellar-pay/api test:e2e` passes (Postgres + Redis)
+- [ ] Contracts build (`pnpm contracts:build`) and contract tests pass
+- [ ] Contract addresses verified on-chain (testnet: `docs/testnet-deploy.md`)
+- [ ] `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, `ADMIN_PASSWORD`, `WEBHOOK_SIGNING_SECRET` set
+- [ ] Health + readiness probes return 200 (`/api/health`, `/api/health/ready`)
+- [ ] CORS origins and security headers configured (helmet is on by default)
+- [ ] Rate limiting enabled (global throttler is on by default)
+- [ ] Logging enabled (pino; JSON in production)
+- [ ] Monitoring reachable (`METRICS_ENABLED=true` where Prometheus scrapes)
+- [ ] No private keys/secrets in env files or images
+
+Mainnet additionally requires: security review, contract + admin/upgrade authority review,
+backup/recovery testing, monitoring verification, a rollback plan, and explicit human
+approval.
+
+## 9. Rollback & recovery
+
+- **API / frontend**: keep the previous image/commit — Railway and AKS deploys are
+  image-based, so rollback is re-deploying the prior version (`git revert` + push, or
+  re-tag the previous image).
+- **Database migrations**: migrations are forward-only (`prisma migrate deploy`).
+  Before applying a migration in a shared environment, back up the database. To roll
+  back a schema change, restore the pre-migration backup — never edit applied
+  migrations in place.
+- **Redis**: treat as recoverable cache/queue state, **not** the source of truth.
+  Losing Redis only loses cursors/locks/rate-limit state; the `ChainEvent` table and
+  on-chain Stellar state allow replay (see recovery below).
+- **Indexer/event recovery**: cursors are persisted in Redis, and the `ChainEvent`
+  unique-event ledger in Postgres is the correctness backstop — after a Redis loss,
+  re-polls resume from the ledger, and duplicate deliveries are ignored idempotently.
+- **Payments**: PostgreSQL + Stellar are authoritative. If a submit succeeded on-chain
+  but the API lost the response, the indexer re-polls `SUBMITTED` rows via
+  `getTransaction` and moves them to `CONFIRMED` on the ledger result.
+
+## 10. Environment variables
+
+See `.env.example` and `apps/api/.env.example` — every variable is documented with its
+purpose and whether it is required or optional. Never commit secrets; inject via K8s
+Secrets, Azure Key Vault, Railway dashboard, or the platform's secret store. Each
+environment (local / testnet / mainnet) uses its own database, Redis, credentials,
+contract addresses, and signing configuration — never reuse development credentials
+for production.

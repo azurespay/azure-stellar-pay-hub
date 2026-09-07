@@ -12,6 +12,7 @@ export const envSchema = z
     // API
     API_PORT: z.coerce.number().int().positive().default(4000),
     API_PUBLIC_URL: z.string().url().optional(),
+    METRICS_ENABLED: z.string().default('false'),
     CORS_ORIGINS: z
       .string()
       .default('http://localhost:3000')

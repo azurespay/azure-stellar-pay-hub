@@ -13,6 +13,7 @@ import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { ExchangeRateService } from './exchange-rate.service';
 import { TransactionReconciliationService } from './transaction-reconciliation.service';
 import { IpfsService } from '../infra/ipfs.service';
+import { MetricsService } from '../metrics/metrics.service';
 
 const TYPE_TO_KIND: Record<string, string> = {
   SEND: 'payment',
@@ -38,6 +39,7 @@ export class PaymentsService {
     private readonly rates: ExchangeRateService,
     private readonly ipfs: IpfsService,
     private readonly reconciliation: TransactionReconciliationService,
+    private readonly metrics: MetricsService,
   ) {}
 
   private network() {
@@ -328,6 +330,7 @@ export class PaymentsService {
     sourceNetwork: string;
     createdAt: Date;
   }) {
+    this.metrics.inc('payments_succeeded_total', { kind: tx.kind });
     // Update invoice / payment-link bookkeeping and dispatch the
     // `payment.received` webhook (shared with the public checkout flow).
     await this.reconciliation.onPaymentSucceeded(tx);
@@ -352,6 +355,7 @@ export class PaymentsService {
     assetCode: string;
     userId: string | null;
   }) {
+    this.metrics.inc('payments_failed_total');
     await this.notifications.paymentFailed({
       userId: tx.userId!,
       amount: tx.amount,

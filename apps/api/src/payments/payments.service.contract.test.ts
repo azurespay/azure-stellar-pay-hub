@@ -21,6 +21,7 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
   let mockWebhooks: Record<string, jest.Mock>;
   let mockRealtime: Record<string, jest.Mock>;
   let mockReconciliation: Record<string, jest.Mock>;
+  let mockMetrics: { inc: jest.Mock; set: jest.Mock };
   let mockRates: Record<string, jest.Mock>;
   let mockIpfs: Record<string, jest.Mock>;
   let mockWallet: Record<string, jest.Mock>;
@@ -68,6 +69,7 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
     mockRates = { getRate: jest.fn().mockResolvedValue(1) };
     mockIpfs = { pinReceipt: jest.fn().mockResolvedValue({}), buildReceiptPayload: jest.fn() };
     mockReconciliation = { onPaymentSucceeded: jest.fn() };
+    mockMetrics = { inc: jest.fn(), set: jest.fn() };
 
     mockNetwork = {
       buildPaymentTransaction: jest.fn().mockResolvedValue('classic-xdr'),
@@ -88,6 +90,7 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
       mockRates as any,
       mockIpfs as any,
       mockReconciliation as any,
+      mockMetrics as any,
     );
   });
 
@@ -373,6 +376,7 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
         mockRates as any,
         mockIpfs as any,
         mockReconciliation as any,
+        mockMetrics as any,
       );
 
       await classicService.create('user-1', dto as never);
