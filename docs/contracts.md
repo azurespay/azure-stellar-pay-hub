@@ -1,6 +1,6 @@
 ---
 title: Smart Contracts
-description: The seven Soroban contracts, their interfaces, events, and deployment.
+description: The eight Soroban contracts, their interfaces, events, and deployment.
 ---
 
 # Smart Contracts

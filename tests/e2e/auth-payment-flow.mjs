@@ -1,31 +1,47 @@
 #!/usr/bin/env node
 /**
- * E2E test: Auth challenge → verify → payment flow
+ * E2E test: Auth challenge → verify → payment lifecycle (create → sign →
+ * submit → confirm → realtime).
  *
  * Verifies the full authentication-and-payment lifecycle against a running
- * StellarPay API. Generates a testnet keypair, authenticates via the Ed25519
- * challenge-response flow, and creates a payment using the returned JWT.
+ * StellarPay API **and Stellar testnet**:
+ *
+ *   1. auth challenge → Ed25519 verify → JWT
+ *   2. fund accounts via Friendbot (testnet)
+ *   3. create a payment → get an unsigned XDR
+ *   4. sign the XDR with the wallet keypair
+ *   5. submit the signed transaction through the API
+ *   6. poll until the persisted transaction reaches its final SUCCEEDED state
+ *   7. assert the Socket.IO realtime channel delivered the `transaction.updated`
+ *      event to the authenticated user
+ *   8. logout and verify the JWT is invalidated
+ *
+ * This is a *testnet E2E test*: it requires a live API (Postgres + Redis) and
+ * live Stellar testnet access (Friendbot + Horizon). It is not part of CI,
+ * which runs deterministic unit/contract tests only.
  *
  * Usage:
- *   # Against a running API
- *   API_URL=http://localhost:4000 node tests/e2e/auth-payment-flow.mjs
+ *   # Against a running API (API_URL must include the /api prefix):
+ *   API_URL=http://localhost:4000/api node tests/e2e/auth-payment-flow.mjs
  *
- *   # Boot the API automatically (requires Docker for Postgres + Redis)
+ *   # Boot the API automatically (requires Docker for Postgres + Redis):
  *   pnpm --filter @stellar-pay/api build
  *   node tests/e2e/auth-payment-flow.mjs
- *
- * Requirements:
- *   - Node.js 22+
- *   - Running API with Postgres + Redis
  */
 
-import { Keypair, Networks } from '@stellar/stellar-sdk';
+import { Keypair, Networks, TransactionBuilder } from '@stellar/stellar-sdk';
+import { io } from 'socket.io-client';
 import { ApiClient, StellarNetwork } from '../../packages/sdk/dist/index.js';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 
-const API_URL = process.env.API_URL ?? 'http://localhost:4000/api';
+const INPUT_API_URL = process.env.API_URL ?? 'http://localhost:4000/api';
 const BOOT_API = !process.env.API_URL;
+
+// The REST API lives under the `/api` global prefix; the Socket.IO gateway is
+// mounted at the host root (`/realtime` namespace).
+const apiUrl = BOOT_API ? 'http://localhost:4100/api' : INPUT_API_URL.replace(/\/$/, '');
+const rootUrl = apiUrl.replace(/\/api$/, '');
 
 // ── Test helpers ────────────────────────────────────────────────────────────
 
@@ -53,7 +69,7 @@ async function bootApi() {
     stdio: 'inherit',
     env: {
       ...process.env,
-      PORT: '4100',
+      API_PORT: '4100',
       NODE_ENV: 'development',
       JWT_SECRET: 'e2e-test-secret-at-least-16-chars',
       DATABASE_URL:
@@ -67,14 +83,14 @@ async function bootApi() {
     shell: false,
   });
 
-  // Wait for the API to boot (NestJS takes a few seconds with Prisma + Redis)
+  // Wait for the API to boot (NestJS takes a few seconds with Prisma + Redis).
   for (let i = 0; i < 30; i++) {
     await delay(1_000);
     try {
       const res = await fetch(`http://localhost:4100/api/health`);
       if (res.ok) {
         console.log('  API is ready.');
-        return { child, baseUrl: 'http://localhost:4100' };
+        return child;
       }
     } catch {
       /* still booting */
@@ -84,44 +100,82 @@ async function bootApi() {
   throw new Error('API failed to start within 30 seconds');
 }
 
+/** Fund a testnet account via Friendbot and wait for the ledger to close. */
+async function fundAccount(publicKey, label) {
+  try {
+    const fbResp = await fetch(`https://friendbot.stellar.org?addr=${publicKey}`);
+    const fbData = await fbResp.json();
+    check(
+      `Friendbot funded ${label}`,
+      fbData?.successful === true,
+      `hash=${fbData?.hash?.slice(0, 8)}…`,
+    );
+    if (fbData?.successful) {
+      await delay(3_000); // wait for the ledger to close
+    }
+    return fbData?.successful === true;
+  } catch (err) {
+    check(`Friendbot funded ${label}`, false, err.message);
+    return false;
+  }
+}
+
+/**
+ * Wait for a realtime `transaction.updated` event for the given transaction id
+ * from the user's private Socket.IO room.
+ */
+function waitForTransactionEvent(socket, txId, timeoutMs = 30_000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      socket.off('transaction.updated', onEvent);
+      reject(new Error(`realtime transaction.updated event not received within ${timeoutMs}ms`));
+    }, timeoutMs);
+    function onEvent(payload) {
+      if (payload?.id !== txId) return;
+      clearTimeout(timer);
+      socket.off('transaction.updated', onEvent);
+      resolve(payload);
+    }
+    socket.on('transaction.updated', onEvent);
+  });
+}
+
 // ── Main test flow ──────────────────────────────────────────────────────────
 
 async function run() {
   let child = null;
-  let baseUrl = API_URL;
 
   if (BOOT_API) {
-    const booted = await bootApi();
-    child = booted.child;
-    baseUrl = booted.baseUrl;
+    child = await bootApi();
   }
 
   try {
     // -- Step 1: Health check ---------------------------------------------------
     console.log('\n1. Health check');
-    const health = await fetch(`${baseUrl}/health`).then((r) => r.json());
+    const health = await fetch(`${apiUrl}/health`).then((r) => r.json());
     check('API is healthy', health?.status === 'ok', JSON.stringify(health));
     if (health?.status !== 'ok') {
       console.error('  API not healthy — aborting');
       return;
     }
 
-    // -- Step 2: Generate test keypair ------------------------------------------
-    console.log('\n2. Generate testnet keypair');
-    const kp = Keypair.random();
+    // -- Step 2: Generate test keypairs -----------------------------------------
+    console.log('\n2. Generate testnet keypairs');
+    const payerKp = Keypair.random();
+    const destKp = Keypair.random();
     check(
-      'Keypair generated',
-      !!kp.secret() && !!kp.publicKey(),
-      `publicKey=${kp.publicKey().slice(0, 8)}…`,
+      'Payer keypair generated',
+      !!payerKp.secret() && !!payerKp.publicKey(),
+      `publicKey=${payerKp.publicKey().slice(0, 8)}…`,
     );
 
     // -- Step 3: Request auth challenge -----------------------------------------
     console.log('\n3. Request auth challenge');
-    const client = new ApiClient({ baseUrl });
+    const client = new ApiClient({ baseUrl: apiUrl });
 
     let challenge;
     try {
-      challenge = await client.auth.challenge(kp.publicKey());
+      challenge = await client.auth.challenge(payerKp.publicKey());
       check('Challenge received', !!challenge?.nonce && !!challenge?.message);
       check(
         'Challenge has correct format',
@@ -136,7 +190,7 @@ async function run() {
     // -- Step 4: Sign challenge -------------------------------------------------
     console.log('\n4. Sign challenge message');
     const messageBytes = Buffer.from(challenge.message, 'utf8');
-    const signatureBytes = kp.sign(messageBytes);
+    const signatureBytes = payerKp.sign(messageBytes);
     const signature = Buffer.from(signatureBytes).toString('hex');
     check('Challenge signed', signature.length >= 128, `sig=${signature.slice(0, 16)}…`);
 
@@ -145,7 +199,7 @@ async function run() {
     let authResult;
     try {
       authResult = await client.auth.verify({
-        publicKey: kp.publicKey(),
+        publicKey: payerKp.publicKey(),
         signature,
         message: challenge.message,
         nonce: challenge.nonce,
@@ -164,41 +218,27 @@ async function run() {
       return;
     }
 
-    // -- Step 5b: Fund the keypair via Friendbot (testnet) ---------------------
-    console.log('\n5b. Fund keypair via Friendbot');
-    try {
-      const fbResp = await fetch(`https://friendbot.stellar.org?addr=${kp.publicKey()}`);
-      const fbData = await fbResp.json();
-      check(
-        'Friendbot funded account',
-        fbData?.successful === true,
-        `hash=${fbData?.hash?.slice(0, 8)}…`,
-      );
-      // Wait for the ledger to close so the account is visible on Horizon
-      if (fbData?.successful) {
-        await delay(3_000);
-      }
-    } catch (err) {
-      check('Friendbot funded account', false, err.message);
-    }
-
-    // -- Step 6: Create payment with JWT ----------------------------------------
-    console.log('\n6. Create payment (JWT-authenticated)');
-
-    // Create a fresh client with the JWT
+    // Authenticated client for the rest of the flow.
     const authClient = new ApiClient({
-      baseUrl,
+      baseUrl: apiUrl,
       getToken: () => authResult.accessToken,
     });
 
-    // Create a destination keypair for the payment
-    const destKp = Keypair.random();
+    // -- Step 6: Fund the accounts via Friendbot (testnet) ----------------------
+    console.log('\n6. Fund accounts via Friendbot');
+    const payerFunded = await fundAccount(payerKp.publicKey(), 'payer');
+    const destFunded = await fundAccount(destKp.publicKey(), 'destination');
+    if (!payerFunded || !destFunded) {
+      console.error('  Friendbot funding failed — cannot complete an on-chain payment');
+    }
 
+    // -- Step 7: Create payment with JWT ----------------------------------------
+    console.log('\n7. Create payment (JWT-authenticated)');
     let payment;
     try {
       payment = await authClient.payments.create({
         type: 'SEND',
-        fromPublicKey: kp.publicKey(),
+        fromPublicKey: payerKp.publicKey(),
         destinations: [{ publicKey: destKp.publicKey(), amount: '10', memo: 'e2e-test-payment' }],
         assetCode: 'XLM',
         memo: 'e2e-test-payment',
@@ -214,22 +254,117 @@ async function run() {
       return;
     }
 
-    // -- Step 7: Retrieve payment by ID -----------------------------------------
-    console.log('\n7. Retrieve payment');
+    // -- Step 8: Connect realtime channel BEFORE submitting ----------------------
+    console.log('\n8. Connect realtime channel');
+    const socket = io(`${rootUrl}/realtime`, {
+      path: '/socket.io',
+      auth: { token: authResult.accessToken },
+      transports: ['websocket'],
+      timeout: 5_000,
+    });
+    let socketConnected = false;
     try {
-      const retrieved = await authClient.payments.get(payment.id);
-      check('Payment found', !!retrieved, `id=${retrieved?.id?.slice(0, 8)}…`);
-      check('Payment has correct amount', retrieved?.assetCode === 'XLM');
+      await new Promise((resolve, reject) => {
+        socket.once('connect', resolve);
+        socket.once('connect_error', reject);
+        setTimeout(() => reject(new Error('socket connect timeout')), 10_000);
+      });
+      socketConnected = true;
+      check('Socket.IO connected with JWT', true, `socket=${socket.id?.slice(0, 8)}…`);
     } catch (err) {
-      check('Payment found', false, err.message);
+      check('Socket.IO connected with JWT', false, err.message);
+    }
+    const realtimeEvent = socketConnected
+      ? waitForTransactionEvent(socket, payment.id).catch((err) => ({ error: err.message }))
+      : Promise.resolve({ error: 'socket not connected' });
+
+    // -- Step 9: Sign the unsigned XDR ------------------------------------------
+    console.log('\n9. Sign transaction XDR');
+    let signedXdr = null;
+    try {
+      const tx = TransactionBuilder.fromXDR(payment.unsignedXdr, Networks.TESTNET);
+      tx.sign(payerKp);
+      signedXdr = tx.toXDR();
+      check('Transaction signed', !!signedXdr, `xdr=${signedXdr.slice(0, 20)}…`);
+    } catch (err) {
+      check('Transaction signed', false, err.message);
     }
 
-    // -- Step 8: Logout ---------------------------------------------------------
-    console.log('\n8. Logout');
+    // -- Step 10: Submit the signed transaction ----------------------------------
+    console.log('\n10. Submit signed transaction');
+    let submitted = null;
+    if (signedXdr) {
+      try {
+        submitted = await authClient.request({
+          method: 'POST',
+          path: `/payments/${payment.id}/submit`,
+          body: { signedXdr },
+        });
+        check(
+          'Submission accepted',
+          submitted?.status === 'SUCCEEDED' || submitted?.status === 'FAILED',
+          JSON.stringify(submitted),
+        );
+      } catch (err) {
+        check('Submission accepted', false, err.message);
+      }
+    }
+
+    // -- Step 11: Poll until final persisted state -------------------------------
+    console.log('\n11. Poll for final transaction state');
+    let finalTx = null;
+    if (signedXdr) {
+      for (let i = 0; i < 45; i++) {
+        try {
+          const current = await authClient.payments.get(payment.id);
+          if (current?.status === 'SUCCEEDED' || current?.status === 'FAILED') {
+            finalTx = current;
+            break;
+          }
+        } catch {
+          /* not ready yet */
+        }
+        await delay(2_000);
+      }
+      check(
+        'Transaction reached final state',
+        finalTx?.status === 'SUCCEEDED',
+        finalTx ? `status=${finalTx.status} hash=${finalTx.hash?.slice(0, 8)}…` : 'still pending',
+      );
+      check('Hash persisted on the record', !!finalTx?.hash);
+      check(
+        'Recorded amount and asset match',
+        finalTx?.amount === '10' && finalTx?.assetCode === 'XLM',
+        `amount=${finalTx?.amount} ${finalTx?.assetCode}`,
+      );
+    } else {
+      check('Transaction reached final state', false, 'no signed XDR to submit');
+    }
+
+    // -- Step 12: Assert realtime delivery ---------------------------------------
+    console.log('\n12. Assert realtime delivery');
+    if (socketConnected && signedXdr) {
+      const event = await realtimeEvent;
+      if (event?.error) {
+        check('Realtime transaction.updated received', false, event.error);
+      } else {
+        check(
+          'Realtime transaction.updated received',
+          event?.status === 'SUCCEEDED' && event?.id === payment.id,
+          JSON.stringify(event),
+        );
+      }
+    } else {
+      check('Realtime transaction.updated received', false, 'socket not connected');
+    }
+    if (socketConnected) {
+      socket.close();
+    }
+
+    // -- Step 13: Logout ---------------------------------------------------------
+    console.log('\n13. Logout');
     try {
-      // Logout returns 204 No Content — the SDK's JSON parse may throw.
-      // Use a raw fetch to avoid the JSON parse error.
-      const logoutResp = await fetch(`${baseUrl}/auth/logout`, {
+      const logoutResp = await fetch(`${apiUrl}/auth/logout`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${authResult.accessToken}` },
       });
@@ -242,8 +377,8 @@ async function run() {
       check('Logout succeeded', false, err.message);
     }
 
-    // -- Step 9: Verify JWT is invalidated --------------------------------------
-    console.log('\n9. Verify JWT is invalidated');
+    // -- Step 14: Verify JWT is invalidated --------------------------------------
+    console.log('\n14. Verify JWT is invalidated');
     try {
       await authClient.payments.list({ page: 1, pageSize: 1 });
       check('JWT invalidated (401 expected)', false, 'still accepted');
@@ -255,13 +390,11 @@ async function run() {
       }
     }
 
-    // -- Step 10: Stellar network connectivity test -----------------------------
-    console.log('\n10. Stellar testnet connectivity');
+    // -- Step 15: Stellar network connectivity test ------------------------------
+    console.log('\n15. Stellar testnet connectivity');
     try {
       const network = StellarNetwork.forTestnet();
-      const account = await network.getAccount(
-        'GCYOTZR3A4JERO4SRKC2TG3LFVGZZ2AEUIYXXF6KXT2E2YDNPYRMQ5S5',
-      );
+      const account = await network.getAccount(destKp.publicKey());
       check('Testnet Horizon reachable', !!account, `sequence=${account?.sequenceNumber()}`);
     } catch (err) {
       check('Testnet Horizon reachable', false, err.message);

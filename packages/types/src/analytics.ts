@@ -23,7 +23,8 @@ export interface DashboardMetrics {
   activeUsers: number;
   activeMerchants: number;
   revenue: string;
-  paymentSuccessRate: number;
+  /** Percentage (0-100) of successful transactions; null when there is no data yet. */
+  paymentSuccessRate: number | null;
   failedTransactions: number;
   assetUsage: Record<string, string>;
   topMerchants: Array<{ merchantId: string; name: string; volume: string }>;

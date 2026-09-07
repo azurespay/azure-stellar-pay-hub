@@ -24,7 +24,7 @@ export default function ExplorerHome() {
     transactions: number;
     succeeded: number;
     failed: number;
-    successRate: number;
+    successRate: number | null;
   } | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -35,7 +35,7 @@ export default function ExplorerHome() {
         transactions: number;
         succeeded: number;
         failed: number;
-        successRate: number;
+        successRate: number | null;
       }>({ path: '/transactions/stats' }),
     ])
       .then(([txs, statsData]) => {
@@ -72,7 +72,8 @@ export default function ExplorerHome() {
                   {stats ? (stat.value ?? '—') : <Skeleton className="h-7 w-16" />}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {stat.label} · {stats?.successRate ?? '—'}% success
+                  {stat.label} ·{' '}
+                  {stats?.successRate == null ? 'no data yet' : `${stats.successRate}% success`}
                 </p>
               </div>
             </CardContent>

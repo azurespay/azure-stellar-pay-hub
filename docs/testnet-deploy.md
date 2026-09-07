@@ -180,6 +180,11 @@ curl -X POST http://localhost:4000/api/payments \
 
 Full addresses are in [`.deployed-contracts.env`](../.deployed-contracts.env).
 
+> **Verification (2026-09-07):** all eight contract addresses above were verified
+> live on Stellar testnet via the Soroban RPC `getLedgerEntries` method — each
+> returned a contract-instance ledger entry (deployed around ledger 4,067,8xx on
+> 2026-08-10 from `GCYOTZ…RMQ5S5`, per Horizon `invoke_host_function` history).
+
 ## Funding Test Accounts
 
 Stellar testnet uses Friendbot to fund accounts:
@@ -197,7 +202,20 @@ You can also use the [Stellar Laboratory](https://laboratory.stellar.org/#create
 
 ## Switching to Mainnet
 
-When ready for production, update these values:
+> **Mainnet deployment requires explicit human approval.** It is only
+> appropriate after the following are all complete and reviewed:
+>
+> 1. contract unit tests (`pnpm contracts:test`) pass for the exact commit
+> 2. integration + E2E coverage of the payment lifecycle (see `tests/README.md`)
+> 3. security review (contracts, key management, admin surface)
+> 4. key-management review — mainnet signing keys must never live in code/envs
+> 5. deployment verification on testnet and staging
+> 6. operational readiness (monitoring, alerting, rollback, support)
+>
+> Do **not** change the network settings below as a shortcut to satisfy a spec;
+> the platform currently runs on **Stellar testnet with demo data only**.
+
+When ready and approved, update these values:
 
 ```env
 STELLAR_NETWORK=public

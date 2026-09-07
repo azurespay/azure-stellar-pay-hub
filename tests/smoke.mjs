@@ -27,23 +27,27 @@ async function main() {
     console.log(`Booting API for smoke test…`);
     child = spawn('pnpm', ['--filter', '@stellar-pay/api', 'start'], {
       stdio: 'inherit',
-      env: { ...process.env, PORT: '4100' },
+      env: { ...process.env, API_PORT: '4100' },
       shell: false,
     });
     await delay(2500);
   }
 
   const base = shouldBoot ? 'http://localhost:4100' : API_URL;
+  // The REST API is served under the /api global prefix.
+  const apiBase = base.replace(/\/$/, '').endsWith('/api')
+    ? base.replace(/\/$/, '')
+    : `${base.replace(/\/$/, '')}/api`;
 
   try {
-    const health = await fetch(`${base}/health`).then((r) => r.json());
+    const health = await fetch(`${apiBase}/health`).then((r) => r.json());
     check('GET /health', health.status === 'ok', JSON.stringify(health));
   } catch (err) {
     check('GET /health', false, String(err?.message ?? err));
   }
 
   try {
-    const res = await fetch(`${base}/payments/rates`);
+    const res = await fetch(`${apiBase}/payments/rates`);
     check('GET /payments/rates (public)', res.status < 500, `status=${res.status}`);
   } catch (err) {
     check('GET /payments/rates (public)', false, String(err?.message ?? err));

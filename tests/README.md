@@ -1,19 +1,61 @@
 # Test Suites
 
+## Test tiers
+
+Tests are organised by how much live infrastructure they require, so each tier
+can be run in the right environment:
+
+| Tier                                     | Requires                                                                     | Run in CI?                                                    | Command                                   |
+| ---------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------- | ----------------------------------------- |
+| **1. Deterministic unit / integration**  | Nothing external (deps mocked)                                               | ✅ yes                                                        | `pnpm test`                               |
+| **2. Soroban contract tests**            | Rust toolchain (+ `wasm32v1-none`)                                           | ✅ yes                                                        | `pnpm contracts:test`                     |
+| **3. API integration (Nest, supertest)** | Postgres + Redis (docker-compose)                                            | ❌ not yet (CI starts the services but only runs `pnpm test`) | `pnpm --filter @stellar-pay/api test:e2e` |
+| **4. Local-stack smoke**                 | Booted API + Postgres + Redis                                                | ❌ no                                                         | `pnpm test:e2e`                           |
+| **5. Testnet E2E (payment lifecycle)**   | Booted API + Postgres + Redis + **live Stellar testnet** (Friendbot/Horizon) | ❌ no                                                         | `pnpm test:e2e:flow`                      |
+| **6. Load test**                         | Booted API + Postgres + Redis                                                | ❌ no                                                         | `k6 run tests/load/payment-load.js`       |
+
+Tiers 3–6 are not part of CI (`.github/workflows/ci.yml`) today. CI starts
+Postgres + Redis services but only runs `pnpm test` (tier 1) and
+`pnpm contracts:test` (tier 2). Tiers 3–6 need a live database/Redis and, for
+tier 5, live testnet access — they run locally or against a deployed testnet
+environment.
+
 | Suite                  | Location                          | Command                                   |
 | ---------------------- | --------------------------------- | ----------------------------------------- |
 | Package unit tests     | `packages/*/src/*.test.ts`        | `pnpm test`                               |
+| API unit tests (Nest)  | `apps/api/src/**/*.test.ts`       | `pnpm test`                               |
 | API integration (Nest) | `apps/api/test/app.e2e-spec.ts`   | `pnpm --filter @stellar-pay/api test:e2e` |
 | Soroban contract tests | `contracts/*/src/test.rs`         | `pnpm contracts:test`                     |
-| End-to-end smoke       | `tests/smoke.mjs`                 | `pnpm test:e2e`                           |
+| Local-stack smoke      | `tests/smoke.mjs`                 | `pnpm test:e2e`                           |
 | Auth + payment E2E     | `tests/e2e/auth-payment-flow.mjs` | `pnpm test:e2e:flow`                      |
 | Load test (k6)         | `tests/load/payment-load.js`      | `k6 run tests/load/payment-load.js`       |
 | Security checks        | `.github/workflows/ci.yml`        | zizmor + npm audit (CI)                   |
 
+## What each tier actually verifies
+
+- **Unit/integration (1)** — services and validators in isolation with mocked
+  infra. Includes the checkout/submission reconciliation tests that prove a
+  successful payment marks invoices `PAID`, bumps payment-link stats, dispatches
+  webhooks, and notifies merchants.
+- **Contract tests (2)** — every Soroban entry point in `test.rs` runs against
+  the Soroban test host (no network).
+- **API integration (3)** — boots the NestJS `AppModule` with supertest and
+  verifies real routes (health, auth challenge, guards) against Postgres + Redis.
+- **Smoke (4)** — boots the API and checks the health + a public endpoint. This
+  is **not** a payment E2E; use tier 5 for the payment lifecycle.
+- **Testnet E2E (5)** — the closest to real product behavior that runs without
+  mainnet: auth challenge → verify → JWT → Friendbot funding → payment create →
+  **sign → submit → on-chain confirmation → persisted final state → realtime
+  `transaction.updated` delivery over Socket.IO** → logout → token invalidation.
+  It requires `API_URL` (including the `/api` prefix) or a bootable local API.
+- **Load (6)** — Artillery/k6-based synthetic traffic.
+
 ## Running everything
 
 ```bash
-pnpm test
-pnpm contracts:test   # requires Rust toolchain
-pnpm test:e2e         # boots API against a live DB + Redis
+pnpm test                # Tier 1 — unit/integration
+pnpm contracts:test      # Tier 2 — requires Rust toolchain
+pnpm --filter @stellar-pay/api test:e2e   # Tier 3 — requires Postgres + Redis
+pnpm test:e2e            # Tier 4 — boots API against a live DB + Redis
+pnpm test:e2e:flow       # Tier 5 — as above + live Stellar testnet
 ```

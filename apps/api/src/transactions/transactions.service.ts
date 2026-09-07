@@ -89,7 +89,9 @@ export class TransactionsService {
       succeeded,
       failed,
       totalVolumeXlm: '0',
-      successRate: txCount ? Math.round((succeeded / txCount) * 1000) / 10 : 100,
+      // No transactions yet — there is no rate to report. Never default to a
+      // fabricated 100% success rate.
+      successRate: txCount ? Math.round((succeeded / txCount) * 1000) / 10 : null,
     };
   }
 }

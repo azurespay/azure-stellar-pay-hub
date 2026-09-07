@@ -3,12 +3,14 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '@stellar-pay/database';
 import { createStellarNetwork } from '../infra/stellar';
 import { isValidPublicKey } from '@stellar-pay/shared';
+import { TransactionReconciliationService } from '../payments/transaction-reconciliation.service';
 
 @Injectable()
 export class CheckoutService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly reconciliation: TransactionReconciliationService,
   ) {}
 
   private network() {
@@ -160,7 +162,7 @@ export class CheckoutService {
       throw new NotFoundException('Transaction not found');
     }
     const result = await this.network().submitSignedTransaction(signedXdr);
-    await this.prisma.transaction.update({
+    const updated = await this.prisma.transaction.update({
       where: { id: transactionId },
       data: {
         hash: result.hash || null,
@@ -169,6 +171,16 @@ export class CheckoutService {
         errorMessage: result.errorMessage,
       },
     });
+
+    // A successful public-checkout payment must still reconcile the merchant
+    // side: mark invoices PAID (notifying the merchant), bump payment-link
+    // stats, and dispatch webhooks. There is no payer user session here, so
+    // payer-scoped notifications are skipped (callers with a user handle that
+    // separately in PaymentsService).
+    if (updated.status === 'SUCCEEDED') {
+      await this.reconciliation.onPaymentSucceeded(updated);
+    }
+
     return { status: result.status, hash: result.hash, errorMessage: result.errorMessage };
   }
 }

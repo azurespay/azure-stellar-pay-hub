@@ -187,11 +187,20 @@ function formatInt(value: number | undefined): string {
   return String(value);
 }
 
-function SuccessGauge({ rate }: { rate: number }) {
+function SuccessGauge({ rate }: { rate: number | null }) {
   const radius = 44;
   const circumference = 2 * Math.PI * radius;
-  const offset = circumference * (1 - rate / 100);
-  const color = rate >= 95 ? '#34d399' : rate >= 85 ? '#fbbf24' : '#f87171';
+  const hasData = rate != null;
+  // No transactions yet — render a neutral empty gauge instead of a
+  // fabricated 100% success rate.
+  const offset = hasData ? circumference * (1 - rate! / 100) : circumference;
+  const color = !hasData
+    ? '#9b9bb0'
+    : rate! >= 95
+      ? '#34d399'
+      : rate! >= 85
+        ? '#fbbf24'
+        : '#f87171';
   return (
     <div className="flex flex-col items-center">
       <div className="relative">
@@ -212,9 +221,11 @@ function SuccessGauge({ rate }: { rate: number }) {
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span className="text-2xl font-bold" style={{ color }}>
-            {rate}%
+            {hasData ? `${rate}%` : '—'}
           </span>
-          <span className="text-[10px] text-muted-foreground">success</span>
+          <span className="text-[10px] text-muted-foreground">
+            {hasData ? 'success' : 'no data'}
+          </span>
         </div>
       </div>
     </div>
@@ -364,7 +375,7 @@ export default function DashboardCharts({
               {loading ? (
                 <Skeleton className="h-[120px] w-[120px] rounded-full" />
               ) : (
-                <SuccessGauge rate={metrics?.paymentSuccessRate ?? 100} />
+                <SuccessGauge rate={metrics?.paymentSuccessRate ?? null} />
               )}
             </CardContent>
           </Card>

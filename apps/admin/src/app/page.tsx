@@ -286,7 +286,7 @@ export default function OverviewPage() {
           <p className="text-sm text-muted-foreground">Real-time platform metrics and insights</p>
         </div>
         <div className="flex items-center gap-3">
-          {metrics && (
+          {metrics && metrics.paymentSuccessRate != null && (
             <Badge
               variant={metrics.paymentSuccessRate >= 95 ? 'success' : 'warning'}
               className="gap-1.5"
@@ -342,7 +342,7 @@ export default function OverviewPage() {
             <div>
               <p className="text-sm font-medium">Platform is running</p>
               <p className="text-xs text-muted-foreground">
-                v0.1.0 · mainnet-ready scaffolding · {new Date().toLocaleDateString()}
+                v0.1.0 · Stellar testnet · demo data · {new Date().toLocaleDateString()}
               </p>
             </div>
           </div>
@@ -359,9 +359,13 @@ export default function OverviewPage() {
                 </div>
                 <div className="text-center">
                   <p className="text-xs text-muted-foreground">Success</p>
-                  <p className="font-mono text-sm font-semibold text-emerald-400">
-                    {metrics?.paymentSuccessRate ?? 100}%
-                  </p>
+                  {metrics?.paymentSuccessRate != null ? (
+                    <p className="font-mono text-sm font-semibold text-emerald-400">
+                      {metrics.paymentSuccessRate}%
+                    </p>
+                  ) : (
+                    <p className="font-mono text-sm font-semibold text-muted-foreground">—</p>
+                  )}
                 </div>
               </>
             )}

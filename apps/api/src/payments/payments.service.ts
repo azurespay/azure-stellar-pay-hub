@@ -5,12 +5,13 @@ import { PrismaService } from '@stellar-pay/database';
 import { createStellarNetwork } from '../infra/stellar';
 import { createId } from '@stellar-pay/shared';
 import type { CreatePayment, PaymentRequestInput } from '@stellar-pay/validation';
-import type { PaymentType, TransactionDirection, WebhookEventType } from '@stellar-pay/types';
+import type { TransactionDirection } from '@stellar-pay/types';
 import { WalletService } from '../wallet/wallet.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { WebhooksService } from '../webhooks/webhooks.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { ExchangeRateService } from './exchange-rate.service';
+import { TransactionReconciliationService } from './transaction-reconciliation.service';
 import { IpfsService } from '../infra/ipfs.service';
 
 const TYPE_TO_KIND: Record<string, string> = {
@@ -36,6 +37,7 @@ export class PaymentsService {
     private readonly realtime: RealtimeGateway,
     private readonly rates: ExchangeRateService,
     private readonly ipfs: IpfsService,
+    private readonly reconciliation: TransactionReconciliationService,
   ) {}
 
   private network() {
@@ -166,25 +168,15 @@ export class PaymentsService {
     sourceNetwork: string;
     createdAt: Date;
   }) {
-    const meta = (tx.meta ?? {}) as { type?: PaymentType };
-    // Update invoice / payment-link / customer bookkeeping.
-    if (meta.type === 'INVOICE' || tx.kind === 'invoice') {
-      await this.reconcileInvoicePayment(tx);
-    } else if (meta.type === 'PAYMENT_LINK') {
-      await this.reconcilePaymentLinkPayment(tx);
-    }
+    // Update invoice / payment-link bookkeeping and dispatch the
+    // `payment.received` webhook (shared with the public checkout flow).
+    await this.reconciliation.onPaymentSucceeded(tx);
 
     await this.notifications.paymentSent({
       userId: tx.userId!,
       amount: tx.amount,
       assetCode: tx.assetCode,
       toPublicKey: tx.toPublicKey ?? '',
-    });
-    await this.webhooks.dispatch('payment.received' as WebhookEventType, {
-      transactionId: tx.id,
-      amount: tx.amount,
-      assetCode: tx.assetCode,
-      toPublicKey: tx.toPublicKey,
     });
     this.realtime.emitToUser(tx.userId!, 'transaction.updated', { id: tx.id, status: 'SUCCEEDED' });
 
@@ -207,47 +199,6 @@ export class PaymentsService {
       reason: 'Transaction was rejected by the network',
     });
     this.realtime.emitToUser(tx.userId!, 'transaction.updated', { id: tx.id, status: 'FAILED' });
-  }
-
-  private async reconcileInvoicePayment(tx: {
-    id: string;
-    amount: string;
-    toPublicKey: string | null;
-  }) {
-    const invoice = await this.prisma.invoice.findFirst({
-      where: { customerPublicKey: tx.toPublicKey, status: { in: ['ISSUED', 'DRAFT'] } },
-      orderBy: { createdAt: 'desc' },
-    });
-    if (!invoice) {
-      return;
-    }
-    await this.prisma.invoice.update({
-      where: { id: invoice.id },
-      data: { status: 'PAID', paidAt: new Date(), paymentTransactionId: tx.id },
-    });
-    await this.notifications.invoicePaid({
-      merchantId: invoice.merchantId,
-      invoiceNumber: invoice.number,
-    });
-    await this.webhooks.dispatch('invoice.paid' as WebhookEventType, {
-      invoiceNumber: invoice.number,
-    });
-  }
-
-  private async reconcilePaymentLinkPayment(tx: { amount: string; toPublicKey: string | null }) {
-    const link = await this.prisma.paymentLink.findFirst({
-      where: { merchant: { settlementPublicKey: tx.toPublicKey ?? '' }, status: 'ACTIVE' },
-    });
-    if (!link) {
-      return;
-    }
-    await this.prisma.paymentLink.update({
-      where: { id: link.id },
-      data: {
-        totalPayments: { increment: 1 },
-        totalCollected: String(Number(link.totalCollected) + Number(tx.amount)),
-      },
-    });
   }
 
   private async buildBatchXdr(dto: CreatePayment, asset: Asset): Promise<string> {

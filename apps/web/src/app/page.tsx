@@ -83,7 +83,7 @@ export default function LandingPage() {
           {[
             ['< 5s', 'Settlement time'],
             ['3', 'Wallet providers'],
-            ['7', 'Soroban contracts'],
+            ['8', 'Soroban contracts'],
             ['1', 'Unified SDK'],
           ].map(([value, label]) => (
             <div key={label} className="glass rounded-2xl p-5">

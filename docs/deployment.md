@@ -5,6 +5,27 @@ description: Docker, Kubernetes, Terraform (Azure), and monitoring — productio
 
 # Deployment
 
+## Deployment targets & status
+
+The repository supports several deployment paths. They are **not** equivalent
+production routes — classify them as follows:
+
+| Target                                                        | Class                                    | Notes                                                                                                                                                                                       |
+| ------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Docker Compose (`pnpm docker:up` + dev)                       | **Canonical (local dev)**                | Postgres + Redis for development and the test tiers below                                                                                                                                   |
+| Railway (`deploy-railway.yml`)                                | **Supported — current hosted API**       | Auto-deploys the API on push to `main`; smoke-tests the `/api/health` endpoint. This is the API that the hosted frontends point at. Uses testnet by default — **not a mainnet deployment**  |
+| Vercel (frontends)                                            | **Supported — current hosted frontends** | Auto-deploys on push via the Vercel GitHub integration (admin/web/explorer/docs)                                                                                                            |
+| Kubernetes / AKS (`deploy.yml` + `infrastructure/kubernetes`) | **Experimental / production-oriented**   | GHCR images + Kustomize + rollout on `main`. The workflow's smoke test still uses an `api.stellar-pay.example` placeholder domain, so this path is **not verified as the live environment** |
+| Terraform (Azure)                                             | **Experimental / production-oriented**   | Provisions AKS, managed Postgres/Redis and Key Vault — the IaC for the AKS path                                                                                                             |
+| Stellar testnet (`scripts/deploy-testnet.sh`)                 | **Canonical blockchain path**            | Reproducible Soroban contract + API deployment to **Stellar testnet only** (see `docs/testnet-deploy.md`)                                                                                   |
+| Stellar mainnet                                               | **Not deployed**                         | Requires explicit human approval after contract/integration/E2E/security review (see implementation guardrails)                                                                             |
+
+**Deployment state today:** the platform is production-_oriented_ (Docker/K8s/
+Terraform/monitoring all exist), but real usage runs on **Stellar testnet** with
+demo data. Nothing has been deployed to Stellar mainnet and no mainnet
+contracts exist. Do not read the existence of production infrastructure as
+proof of a production deployment.
+
 ## 1. Local with Docker Compose
 
 ```bash

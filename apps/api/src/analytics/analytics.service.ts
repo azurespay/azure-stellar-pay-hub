@@ -45,7 +45,11 @@ export class AnalyticsService {
 
     const totalCount = await this.prisma.transaction.count();
     const succeededCount = await this.prisma.transaction.count({ where: { status: 'SUCCEEDED' } });
-    const successRate = totalCount ? Math.round((succeededCount / totalCount) * 1000) / 10 : 100;
+    // No transactions yet — there is no rate to report. Never default to a
+    // fabricated 100% success rate.
+    const successRate: number | null = totalCount
+      ? Math.round((succeededCount / totalCount) * 1000) / 10
+      : null;
 
     const topMerchants = await this.prisma.merchant.findMany({
       where: { status: 'ACTIVE' },

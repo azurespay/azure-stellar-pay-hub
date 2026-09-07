@@ -17,7 +17,7 @@ Built for real-world commerce, not just demos.
 [![Vercel](https://img.shields.io/badge/Vercel-deployed-000000?logo=vercel&logoColor=white)](https://vercel.com)
 [![Testnet](https://img.shields.io/badge/Testnet-8_contracts_deployed-34d399?logo=stellar&logoColor=white)](docs/testnet-deploy.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-131_passing-34d399?logo=jest&logoColor=white)](https://github.com/Azure-StellarPay-Hub/azure-stellar-pay-hub/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-ran_in_CI-34d399?logo=jest&logoColor=white)](https://github.com/Azure-StellarPay-Hub/azure-stellar-pay-hub/actions/workflows/ci.yml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-818cf8.svg)](CONTRIBUTING.md)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Rust](https://img.shields.io/badge/Rust-stable-db5a3b?logo=rust&logoColor=white)](https://www.rust-lang.org/)
@@ -114,7 +114,9 @@ payment infrastructure:
 
 ## Live Demos
 
-Deployed and publicly accessible on Vercel:
+Deployed and publicly accessible — Vercel-hosted frontends pointed at the
+Railway-hosted API (see [Deployment state](#deployment)). All hosted apps run
+against **Stellar testnet with demo data**; none are mainnet deployments:
 
 | App                   | URL                                                                                                |
 | --------------------- | -------------------------------------------------------------------------------------------------- |
@@ -122,6 +124,11 @@ Deployed and publicly accessible on Vercel:
 | **Web App**           | [web-umber-one-53.vercel.app](https://web-umber-one-53.vercel.app)                                 |
 | **Explorer**          | (preview builds on push)                                                                           |
 | **Soroban Contracts** | [Stellar Testnet](docs/testnet-deploy.md)                                                          |
+
+> **Note — the ASCII wireframes below are UI mockups.** Figures such as volumes,
+> user counts, and success rates are _illustrative sample data_, not live metrics.
+> The deployed apps render real database values, which may legitimately show 0
+> transactions and no success rate until real usage exists.
 
 ### Admin Dashboard
 
@@ -215,20 +222,20 @@ and real-time transaction table with hash, amount, addresses, timestamps, and st
 
 ## Tech Stack
 
-| Layer               | Technology                                              |
-| ------------------- | ------------------------------------------------------- |
-| **Runtime**         | Node.js 22, Rust (stable, wasm32 target)                |
-| **Monorepo**        | Nx + pnpm workspaces                                    |
-| **API**             | NestJS (Express), Socket.IO for realtime events         |
-| **Web apps**        | Next.js 15 (App Router), React 19, Tailwind CSS         |
-| **Database**        | PostgreSQL 16, Prisma ORM                               |
-| **Cache / Pub-Sub** | Redis 7                                                 |
-| **Blockchain**      | Stellar Horizon API, Soroban RPC                        |
-| **Smart contracts** | Soroban SDK 21.7.1 (Rust)                               |
-| **Validation**      | Zod (runtime type safety)                               |
-| **Auth**            | Ed25519 signatures, JWT (access + refresh tokens), RBAC |
-| **Testing**         | Vitest (JS/TS), Rust test harness (contracts)           |
-| **CI/CD**           | GitHub Actions, Docker, Kubernetes, Terraform (Azure)   |
+| Layer               | Technology                                               |
+| ------------------- | -------------------------------------------------------- |
+| **Runtime**         | Node.js 22, Rust (stable, wasm32 target)                 |
+| **Monorepo**        | Nx + pnpm workspaces                                     |
+| **API**             | NestJS (Express), Socket.IO for realtime events          |
+| **Web apps**        | Next.js 15 (App Router), React 19, Tailwind CSS          |
+| **Database**        | PostgreSQL 16, Prisma ORM                                |
+| **Cache / Locks**   | Redis 7 (no pub/sub yet — realtime fan-out is in-memory) |
+| **Blockchain**      | Stellar Horizon API, Soroban RPC                         |
+| **Smart contracts** | Soroban SDK 21.7.1 (Rust)                                |
+| **Validation**      | Zod (runtime type safety)                                |
+| **Auth**            | Ed25519 signatures, JWT (access + refresh tokens), RBAC  |
+| **Testing**         | Jest (JS/TS), Rust test harness (contracts)              |
+| **CI/CD**           | GitHub Actions, Docker, Kubernetes, Terraform (Azure)    |
 
 ## Repository Structure
 
@@ -326,30 +333,31 @@ pnpm dev
 
 ## Scripts Reference
 
-| Command                          | Purpose                                    |
-| -------------------------------- | ------------------------------------------ |
-| `pnpm dev`                       | Run all 5 apps in parallel (watch mode)    |
-| `pnpm build`                     | Build all apps and packages                |
-| `pnpm build:apps`                | Build only the apps                        |
-| `pnpm build:packages`            | Build only the shared packages             |
-| `pnpm lint`                      | ESLint across the entire workspace         |
-| `pnpm typecheck`                 | `tsc --noEmit` on every TypeScript project |
-| `pnpm test`                      | Run all unit and integration tests         |
-| `pnpm test:e2e`                  | Run the end-to-end smoke test              |
-| `pnpm format`                    | Auto-format with Prettier                  |
-| `pnpm format:check`              | Check formatting without changing files    |
-| `pnpm db:generate`               | Generate Prisma client from schema         |
-| `pnpm db:migrate`                | Run Prisma migrations                      |
-| `pnpm db:push`                   | Push schema directly to database           |
-| `pnpm db:seed`                   | Seed the database with demo data           |
-| `pnpm db:studio`                 | Open Prisma Studio (database GUI)          |
-| `pnpm contracts:build`           | Compile Soroban contracts to WASM          |
-| `pnpm contracts:test`            | Run all Rust contract unit tests           |
-| `pnpm docker:up`                 | Start Postgres + Redis containers          |
-| `pnpm docker:down`               | Stop and remove containers                 |
-| `pnpm generate:env`              | Scaffold `.env` files from templates       |
-| `pnpm setup`                     | Full first-time bootstrap                  |
-| `bash scripts/deploy-testnet.sh` | Deploy contracts + API to Stellar testnet  |
+| Command                          | Purpose                                      |
+| -------------------------------- | -------------------------------------------- |
+| `pnpm dev`                       | Run all 5 apps in parallel (watch mode)      |
+| `pnpm build`                     | Build all apps and packages                  |
+| `pnpm build:apps`                | Build only the apps                          |
+| `pnpm build:packages`            | Build only the shared packages               |
+| `pnpm lint`                      | ESLint across the entire workspace           |
+| `pnpm typecheck`                 | `tsc --noEmit` on every TypeScript project   |
+| `pnpm test`                      | Run all unit and integration tests           |
+| `pnpm test:e2e`                  | Run the local-stack smoke test               |
+| `pnpm test:e2e:flow`             | Payment-lifecycle E2E (live Stellar testnet) |
+| `pnpm format`                    | Auto-format with Prettier                    |
+| `pnpm format:check`              | Check formatting without changing files      |
+| `pnpm db:generate`               | Generate Prisma client from schema           |
+| `pnpm db:migrate`                | Run Prisma migrations                        |
+| `pnpm db:push`                   | Push schema directly to database             |
+| `pnpm db:seed`                   | Seed the database with demo data             |
+| `pnpm db:studio`                 | Open Prisma Studio (database GUI)            |
+| `pnpm contracts:build`           | Compile Soroban contracts to WASM            |
+| `pnpm contracts:test`            | Run all Rust contract unit tests             |
+| `pnpm docker:up`                 | Start Postgres + Redis containers            |
+| `pnpm docker:down`               | Stop and remove containers                   |
+| `pnpm generate:env`              | Scaffold `.env` files from templates         |
+| `pnpm setup`                     | Full first-time bootstrap                    |
+| `bash scripts/deploy-testnet.sh` | Deploy contracts + API to Stellar testnet    |
 
 ## API Overview
 
@@ -401,35 +409,50 @@ Full SDK docs: [`docs/sdk.md`](docs/sdk.md)
 ## Testing
 
 ```bash
-pnpm test              # All unit + integration tests (Vitest)
+pnpm test              # All unit + integration tests (Jest)
 pnpm contracts:test    # All Rust contract tests (cargo test)
-pnpm test:e2e          # End-to-end smoke test
+pnpm test:e2e          # Smoke test (API health, needs Postgres + Redis)
+pnpm test:e2e:flow     # Full payment-lifecycle E2E (see below — needs testnet)
 ```
 
-Test categories:
+Test categories — see [`tests/README.md`](tests/README.md) for the full tier breakdown:
 
-- **Unit tests**: Every package has `*.test.ts` files
-- **Contract tests**: Every Soroban contract has per-entry-point tests in `test.rs`
-- **E2E tests**: `tests/smoke.mjs` — boots the API and verifies the health endpoint
-- **Load tests**: `tests/load/payment-load.js` — Artillery-based load generation
+- **Deterministic unit/integration tests (CI)**: every package and API service has
+  `*.test.ts` files; includes the checkout submission → invoice/payment-link
+  reconciliation tests
+- **Soroban contract tests (CI)**: per-entry-point tests in `contracts/*/src/test.rs`
+- **Smoke test (not CI)**: `tests/smoke.mjs` — boots the API and checks the health
+  endpoint (an API health check only, **not** a payment E2E)
+- **Payment-lifecycle E2E (not CI, live testnet)**: `tests/e2e/auth-payment-flow.mjs`
+  — auth challenge → verify → fund (Friendbot) → payment create → **sign → submit →
+  on-chain confirmation → persisted final state → realtime Socket.IO
+  `transaction.updated`** → logout → JWT invalidation
+- **Load tests**: `tests/load/payment-load.js` — k6/Artillery-style load generation
 
 ## CI/CD
 
-| Workflow              | File                                      | Triggers                               |
-| --------------------- | ----------------------------------------- | -------------------------------------- |
-| **CI**                | `.github/workflows/ci.yml`                | Every PR and push to `main`            |
-| **Deploy to Railway** | `.github/workflows/deploy-railway.yml`    | Push to `main` (API/Docker changes)    |
-| **Deploy to AKS**     | `.github/workflows/deploy.yml`            | Push to `main` (production)            |
-| **Release Extension** | `.github/workflows/publish-extension.yml` | Push `extension-v*` tag                |
-| **PR Auto-Labeler**   | `.github/workflows/pr-labeler.yml`        | PR opened/edited                       |
-| **Badge Updater**     | `.github/workflows/update-badges.yml`     | Push to `main` with Cargo.toml changes |
-| **Dependabot**        | `.github/dependabot.yml`                  | Weekly (npm + Cargo)                   |
+| Workflow              | File                                      | Triggers                                   |
+| --------------------- | ----------------------------------------- | ------------------------------------------ |
+| **CI**                | `.github/workflows/ci.yml`                | Every PR and push to `main`                |
+| **Deploy to Railway** | `.github/workflows/deploy-railway.yml`    | Push to `main` (API/Docker changes)        |
+| **Deploy to AKS**     | `.github/workflows/deploy.yml`            | Push to `main` (AKS — production-oriented) |
+| **Release Extension** | `.github/workflows/publish-extension.yml` | Push `extension-v*` tag                    |
+| **PR Auto-Labeler**   | `.github/workflows/pr-labeler.yml`        | PR opened/edited                           |
+| **Badge Updater**     | `.github/workflows/update-badges.yml`     | Push to `main` with Cargo.toml changes     |
+| **Dependabot**        | `.github/dependabot.yml`                  | Weekly (npm + Cargo)                       |
 
 CI runs: lint → typecheck → format check → tests → contract build → contract tests → app builds → security audit (zizmor).
 
 ## Deployment
 
-See [`docs/deployment.md`](docs/deployment.md) for full instructions.
+See [`docs/deployment.md`](docs/deployment.md) for full instructions, including a
+classification of every deployment target (canonical / supported / experimental).
+Current state: the hosted API + frontends run on **testnet with demo data**;
+Kubernetes/Terraform exist as production-oriented infrastructure but are **not** a
+verified live production deployment, and nothing is deployed to Stellar mainnet.
+
+> Note — the wireframe figures in this README (volumes, users, success rates) are
+> illustrative UI mockups, not live metrics.
 
 - **Docker Compose**: `pnpm docker:up` + `pnpm dev`
 - **Production Docker**: `infrastructure/docker/api.Dockerfile` and `web.Dockerfile`

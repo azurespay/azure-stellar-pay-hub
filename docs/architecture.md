@@ -26,7 +26,7 @@ payments, merchants, invoices, payment links, subscriptions, escrow, and analyti
                  ┌────────────▼───┐ ┌────▼─────┐ ┌───▼───────────┐
                  │ PostgreSQL     │ │ Redis    │ │ Stellar/Soroban│
                  │ (Prisma)       │ │ (cache,  │ │ Horizon +      │
-                 │                │ │ pub/sub) │ │ contract net   │
+                 │                │ │ locks)   │ │ contract net   │
                  └────────────────┘ └──────────┘ └───────────────┘
 ```
 
@@ -77,3 +77,24 @@ JWT → every protected route           → RBAC via roles guard
 - Secrets live in env vars / K8s secrets / Azure Key Vault (never in code).
 - Rate limiting and audit logs on sensitive endpoints.
 - Soroban contracts enforce multi-sig thresholds and escrow rules on-chain.
+
+## Current state & limitations (accurate as of 2026-09)
+
+- **Payments are classic Stellar transactions.** `POST /payments/:id/submit` and
+  the checkout submit path build/submit Stellar `Operation.payment` XDR. The API
+  does **not** currently invoke the deployed Soroban contracts; those contracts
+  exist, are unit-tested in Rust, and are verified on testnet, but contract calls
+  from the platform are not yet wired (see `docs/contracts.md`).
+- **No inbound chain-event ingestion.** Transactions that arrive on-chain without
+  going through an API submission (e.g. a wallet paying a merchant address
+  directly) are not detected, so nothing is persisted, reconciled, or
+  pushed over WebSockets for them. Realtime/notification/webhook events fire for
+  API-mediated submissions only.
+- **Socket.IO fan-out is per-process (in-memory rooms).** Horizontal scaling of
+  the API requires a Redis Socket.IO adapter, which is not wired yet. Redis is
+  currently used for caching, rate-limit state, session state, and scheduler
+  locks (no pub/sub).
+- **Deployment state.** The architecture and infrastructure (Docker, K8s,
+  Terraform, monitoring) are production-oriented, but the live platform runs on
+  **Stellar testnet with demo data**. Mainnet is not deployed. Deployment targets
+  are classified in `docs/deployment.md`.

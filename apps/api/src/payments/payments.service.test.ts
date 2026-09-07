@@ -11,6 +11,7 @@ describe('PaymentsService', () => {
   let mockRealtime: Record<string, jest.Mock>;
   let mockRates: Record<string, jest.Mock>;
   let mockIpfs: Record<string, jest.Mock>;
+  let mockReconciliation: Record<string, jest.Mock>;
 
   beforeEach(() => {
     mockConfig = {
@@ -49,6 +50,7 @@ describe('PaymentsService', () => {
         url: 'https://ipfs.io/ipfs/test-cid',
       }),
     };
+    mockReconciliation = { onPaymentSucceeded: jest.fn() };
 
     service = new PaymentsService(
       mockPrisma as any,
@@ -59,6 +61,7 @@ describe('PaymentsService', () => {
       mockRealtime as any,
       mockRates as any,
       mockIpfs as any,
+      mockReconciliation as any,
     );
   });
 
