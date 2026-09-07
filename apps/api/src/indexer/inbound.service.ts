@@ -132,30 +132,46 @@ export class InboundReconciliationService {
       ? normalizeAmount(invoice.amount) === normalizeAmount(input.amount)
       : false;
 
-    const transaction = await this.prisma.transaction.create({
-      data: {
-        userId: null,
-        fromPublicKey: input.fromPublicKey,
-        toPublicKey: input.toPublicKey,
-        amount: input.amount,
-        assetCode: input.assetCode,
-        assetIssuer: input.assetIssuer ?? null,
-        memo: input.memo ?? null,
-        memoType: 'text',
-        status: 'CONFIRMED',
-        direction: 'INCOMING',
-        kind: invoiceMatches ? 'invoice' : 'inbound',
-        hash: input.hash ?? null,
-        sourceNetwork: this.networkLabel(),
-        meta: {
-          source: input.source,
-          eventId: `${input.source}:${input.eventId}`,
-          ...(invoiceMatches
-            ? { type: 'INVOICE', invoiceNumber: invoice!.number, merchantId: merchant.id }
-            : { merchantId: merchant.id }),
+    let transaction;
+    try {
+      transaction = await this.prisma.transaction.create({
+        data: {
+          userId: null,
+          fromPublicKey: input.fromPublicKey,
+          toPublicKey: input.toPublicKey,
+          amount: input.amount,
+          assetCode: input.assetCode,
+          assetIssuer: input.assetIssuer ?? null,
+          memo: input.memo ?? null,
+          memoType: 'text',
+          status: 'CONFIRMED',
+          direction: 'INCOMING',
+          kind: invoiceMatches ? 'invoice' : 'inbound',
+          hash: input.hash ?? null,
+          sourceNetwork: this.networkLabel(),
+          meta: {
+            source: input.source,
+            eventId: `${input.source}:${input.eventId}`,
+            ...(invoiceMatches
+              ? { type: 'INVOICE', invoiceNumber: invoice!.number, merchantId: merchant.id }
+              : { merchantId: merchant.id }),
+          },
         },
-      },
-    });
+      });
+    } catch (err) {
+      // The `hash` unique constraint is the last line of defence: a different
+      // event id arriving for a hash that a concurrent worker already credited
+      // (e.g. the same on-chain payment seen by both listeners) must not create
+      // a second platform record or fire duplicate side effects.
+      if ((err as { code?: string }).code === DUPLICATE_CODE) {
+        return { created: false };
+      }
+      this.logger.warn(
+        { err: (err as Error).message, eventId: eventKey },
+        'inbound transaction insert failed',
+      );
+      return { created: false };
+    }
 
     if (invoiceMatches) {
       // Reuse the shared post-success reconciliation: marks the invoice PAID,

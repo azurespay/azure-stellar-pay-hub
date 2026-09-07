@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { createHmac, randomBytes } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { PrismaService } from '@stellar-pay/database';
 import { createLogger } from '@stellar-pay/logger';
 import type { WebhookEventType } from '@stellar-pay/types';
@@ -50,11 +50,21 @@ export class WebhooksService {
     });
     const subscribed = webhooks.filter((w) => ((w.events as string[]) ?? []).includes(event));
     for (const webhook of subscribed) {
+      // One stable id per logical event delivery: retries re-attempt the SAME
+      // delivery row (same signed body), so a merchant can dedupe on
+      // `deliveryId` even when the platform retries a webhook.
+      const deliveryId = randomUUID();
       const delivery = await this.prisma.webhookDelivery.create({
         data: {
+          id: deliveryId,
           webhookId: webhook.id,
           event,
-          payload: { ...payload, event, timestamp: new Date().toISOString() } as never,
+          payload: {
+            ...payload,
+            event,
+            deliveryId,
+            timestamp: new Date().toISOString(),
+          } as never,
           status: 'PENDING',
           nextRetryAt: new Date(Date.now() + 5_000),
         },

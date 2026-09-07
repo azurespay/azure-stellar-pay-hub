@@ -14217,6 +14217,7 @@ export namespace Prisma {
     id: string | null
     userId: string | null
     hash: string | null
+    idempotencyKey: string | null
     stellarTxId: string | null
     fromPublicKey: string | null
     toPublicKey: string | null
@@ -14241,6 +14242,7 @@ export namespace Prisma {
     id: string | null
     userId: string | null
     hash: string | null
+    idempotencyKey: string | null
     stellarTxId: string | null
     fromPublicKey: string | null
     toPublicKey: string | null
@@ -14265,6 +14267,7 @@ export namespace Prisma {
     id: number
     userId: number
     hash: number
+    idempotencyKey: number
     stellarTxId: number
     fromPublicKey: number
     toPublicKey: number
@@ -14292,6 +14295,7 @@ export namespace Prisma {
     id?: true
     userId?: true
     hash?: true
+    idempotencyKey?: true
     stellarTxId?: true
     fromPublicKey?: true
     toPublicKey?: true
@@ -14316,6 +14320,7 @@ export namespace Prisma {
     id?: true
     userId?: true
     hash?: true
+    idempotencyKey?: true
     stellarTxId?: true
     fromPublicKey?: true
     toPublicKey?: true
@@ -14340,6 +14345,7 @@ export namespace Prisma {
     id?: true
     userId?: true
     hash?: true
+    idempotencyKey?: true
     stellarTxId?: true
     fromPublicKey?: true
     toPublicKey?: true
@@ -14438,6 +14444,7 @@ export namespace Prisma {
     id: string
     userId: string | null
     hash: string | null
+    idempotencyKey: string | null
     stellarTxId: string | null
     fromPublicKey: string | null
     toPublicKey: string | null
@@ -14480,6 +14487,7 @@ export namespace Prisma {
     id?: boolean
     userId?: boolean
     hash?: boolean
+    idempotencyKey?: boolean
     stellarTxId?: boolean
     fromPublicKey?: boolean
     toPublicKey?: boolean
@@ -14506,6 +14514,7 @@ export namespace Prisma {
     id?: boolean
     userId?: boolean
     hash?: boolean
+    idempotencyKey?: boolean
     stellarTxId?: boolean
     fromPublicKey?: boolean
     toPublicKey?: boolean
@@ -14532,6 +14541,7 @@ export namespace Prisma {
     id?: boolean
     userId?: boolean
     hash?: boolean
+    idempotencyKey?: boolean
     stellarTxId?: boolean
     fromPublicKey?: boolean
     toPublicKey?: boolean
@@ -14558,6 +14568,7 @@ export namespace Prisma {
     id?: boolean
     userId?: boolean
     hash?: boolean
+    idempotencyKey?: boolean
     stellarTxId?: boolean
     fromPublicKey?: boolean
     toPublicKey?: boolean
@@ -14579,7 +14590,7 @@ export namespace Prisma {
     updatedAt?: boolean
   }
 
-  export type TransactionOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "userId" | "hash" | "stellarTxId" | "fromPublicKey" | "toPublicKey" | "amount" | "assetCode" | "assetIssuer" | "memo" | "memoType" | "status" | "direction" | "kind" | "fee" | "sequence" | "sourceNetwork" | "meta" | "errorMessage" | "receiptIpfsCid" | "createdAt" | "updatedAt", ExtArgs["result"]["transaction"]>
+  export type TransactionOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "userId" | "hash" | "idempotencyKey" | "stellarTxId" | "fromPublicKey" | "toPublicKey" | "amount" | "assetCode" | "assetIssuer" | "memo" | "memoType" | "status" | "direction" | "kind" | "fee" | "sequence" | "sourceNetwork" | "meta" | "errorMessage" | "receiptIpfsCid" | "createdAt" | "updatedAt", ExtArgs["result"]["transaction"]>
   export type TransactionInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     user?: boolean | Transaction$userArgs<ExtArgs>
   }
@@ -14599,6 +14610,7 @@ export namespace Prisma {
       id: string
       userId: string | null
       hash: string | null
+      idempotencyKey: string | null
       stellarTxId: string | null
       fromPublicKey: string | null
       toPublicKey: string | null
@@ -15045,6 +15057,7 @@ export namespace Prisma {
     readonly id: FieldRef<"Transaction", 'String'>
     readonly userId: FieldRef<"Transaction", 'String'>
     readonly hash: FieldRef<"Transaction", 'String'>
+    readonly idempotencyKey: FieldRef<"Transaction", 'String'>
     readonly stellarTxId: FieldRef<"Transaction", 'String'>
     readonly fromPublicKey: FieldRef<"Transaction", 'String'>
     readonly toPublicKey: FieldRef<"Transaction", 'String'>
@@ -35002,6 +35015,7 @@ export namespace Prisma {
     id: 'id',
     userId: 'userId',
     hash: 'hash',
+    idempotencyKey: 'idempotencyKey',
     stellarTxId: 'stellarTxId',
     fromPublicKey: 'fromPublicKey',
     toPublicKey: 'toPublicKey',
@@ -36402,6 +36416,7 @@ export namespace Prisma {
     id?: StringFilter<"Transaction"> | string
     userId?: StringNullableFilter<"Transaction"> | string | null
     hash?: StringNullableFilter<"Transaction"> | string | null
+    idempotencyKey?: StringNullableFilter<"Transaction"> | string | null
     stellarTxId?: StringNullableFilter<"Transaction"> | string | null
     fromPublicKey?: StringNullableFilter<"Transaction"> | string | null
     toPublicKey?: StringNullableFilter<"Transaction"> | string | null
@@ -36428,6 +36443,7 @@ export namespace Prisma {
     id?: SortOrder
     userId?: SortOrderInput | SortOrder
     hash?: SortOrderInput | SortOrder
+    idempotencyKey?: SortOrderInput | SortOrder
     stellarTxId?: SortOrderInput | SortOrder
     fromPublicKey?: SortOrderInput | SortOrder
     toPublicKey?: SortOrderInput | SortOrder
@@ -36453,10 +36469,12 @@ export namespace Prisma {
   export type TransactionWhereUniqueInput = Prisma.AtLeast<{
     id?: string
     hash?: string
+    userId_idempotencyKey?: TransactionUserIdIdempotencyKeyCompoundUniqueInput
     AND?: TransactionWhereInput | TransactionWhereInput[]
     OR?: TransactionWhereInput[]
     NOT?: TransactionWhereInput | TransactionWhereInput[]
     userId?: StringNullableFilter<"Transaction"> | string | null
+    idempotencyKey?: StringNullableFilter<"Transaction"> | string | null
     stellarTxId?: StringNullableFilter<"Transaction"> | string | null
     fromPublicKey?: StringNullableFilter<"Transaction"> | string | null
     toPublicKey?: StringNullableFilter<"Transaction"> | string | null
@@ -36477,12 +36495,13 @@ export namespace Prisma {
     createdAt?: DateTimeFilter<"Transaction"> | Date | string
     updatedAt?: DateTimeFilter<"Transaction"> | Date | string
     user?: XOR<UserNullableScalarRelationFilter, UserWhereInput> | null
-  }, "id" | "hash">
+  }, "id" | "hash" | "userId_idempotencyKey">
 
   export type TransactionOrderByWithAggregationInput = {
     id?: SortOrder
     userId?: SortOrderInput | SortOrder
     hash?: SortOrderInput | SortOrder
+    idempotencyKey?: SortOrderInput | SortOrder
     stellarTxId?: SortOrderInput | SortOrder
     fromPublicKey?: SortOrderInput | SortOrder
     toPublicKey?: SortOrderInput | SortOrder
@@ -36514,6 +36533,7 @@ export namespace Prisma {
     id?: StringWithAggregatesFilter<"Transaction"> | string
     userId?: StringNullableWithAggregatesFilter<"Transaction"> | string | null
     hash?: StringNullableWithAggregatesFilter<"Transaction"> | string | null
+    idempotencyKey?: StringNullableWithAggregatesFilter<"Transaction"> | string | null
     stellarTxId?: StringNullableWithAggregatesFilter<"Transaction"> | string | null
     fromPublicKey?: StringNullableWithAggregatesFilter<"Transaction"> | string | null
     toPublicKey?: StringNullableWithAggregatesFilter<"Transaction"> | string | null
@@ -38761,6 +38781,7 @@ export namespace Prisma {
   export type TransactionCreateInput = {
     id?: string
     hash?: string | null
+    idempotencyKey?: string | null
     stellarTxId?: string | null
     fromPublicKey?: string | null
     toPublicKey?: string | null
@@ -38787,6 +38808,7 @@ export namespace Prisma {
     id?: string
     userId?: string | null
     hash?: string | null
+    idempotencyKey?: string | null
     stellarTxId?: string | null
     fromPublicKey?: string | null
     toPublicKey?: string | null
@@ -38811,6 +38833,7 @@ export namespace Prisma {
   export type TransactionUpdateInput = {
     id?: StringFieldUpdateOperationsInput | string
     hash?: NullableStringFieldUpdateOperationsInput | string | null
+    idempotencyKey?: NullableStringFieldUpdateOperationsInput | string | null
     stellarTxId?: NullableStringFieldUpdateOperationsInput | string | null
     fromPublicKey?: NullableStringFieldUpdateOperationsInput | string | null
     toPublicKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -38837,6 +38860,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     userId?: NullableStringFieldUpdateOperationsInput | string | null
     hash?: NullableStringFieldUpdateOperationsInput | string | null
+    idempotencyKey?: NullableStringFieldUpdateOperationsInput | string | null
     stellarTxId?: NullableStringFieldUpdateOperationsInput | string | null
     fromPublicKey?: NullableStringFieldUpdateOperationsInput | string | null
     toPublicKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -38862,6 +38886,7 @@ export namespace Prisma {
     id?: string
     userId?: string | null
     hash?: string | null
+    idempotencyKey?: string | null
     stellarTxId?: string | null
     fromPublicKey?: string | null
     toPublicKey?: string | null
@@ -38886,6 +38911,7 @@ export namespace Prisma {
   export type TransactionUpdateManyMutationInput = {
     id?: StringFieldUpdateOperationsInput | string
     hash?: NullableStringFieldUpdateOperationsInput | string | null
+    idempotencyKey?: NullableStringFieldUpdateOperationsInput | string | null
     stellarTxId?: NullableStringFieldUpdateOperationsInput | string | null
     fromPublicKey?: NullableStringFieldUpdateOperationsInput | string | null
     toPublicKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -38911,6 +38937,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     userId?: NullableStringFieldUpdateOperationsInput | string | null
     hash?: NullableStringFieldUpdateOperationsInput | string | null
+    idempotencyKey?: NullableStringFieldUpdateOperationsInput | string | null
     stellarTxId?: NullableStringFieldUpdateOperationsInput | string | null
     fromPublicKey?: NullableStringFieldUpdateOperationsInput | string | null
     toPublicKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -41374,10 +41401,16 @@ export namespace Prisma {
     isNot?: UserWhereInput | null
   }
 
+  export type TransactionUserIdIdempotencyKeyCompoundUniqueInput = {
+    userId: string
+    idempotencyKey: string
+  }
+
   export type TransactionCountOrderByAggregateInput = {
     id?: SortOrder
     userId?: SortOrder
     hash?: SortOrder
+    idempotencyKey?: SortOrder
     stellarTxId?: SortOrder
     fromPublicKey?: SortOrder
     toPublicKey?: SortOrder
@@ -41403,6 +41436,7 @@ export namespace Prisma {
     id?: SortOrder
     userId?: SortOrder
     hash?: SortOrder
+    idempotencyKey?: SortOrder
     stellarTxId?: SortOrder
     fromPublicKey?: SortOrder
     toPublicKey?: SortOrder
@@ -41427,6 +41461,7 @@ export namespace Prisma {
     id?: SortOrder
     userId?: SortOrder
     hash?: SortOrder
+    idempotencyKey?: SortOrder
     stellarTxId?: SortOrder
     fromPublicKey?: SortOrder
     toPublicKey?: SortOrder
@@ -44580,6 +44615,7 @@ export namespace Prisma {
   export type TransactionCreateWithoutUserInput = {
     id?: string
     hash?: string | null
+    idempotencyKey?: string | null
     stellarTxId?: string | null
     fromPublicKey?: string | null
     toPublicKey?: string | null
@@ -44604,6 +44640,7 @@ export namespace Prisma {
   export type TransactionUncheckedCreateWithoutUserInput = {
     id?: string
     hash?: string | null
+    idempotencyKey?: string | null
     stellarTxId?: string | null
     fromPublicKey?: string | null
     toPublicKey?: string | null
@@ -45021,6 +45058,7 @@ export namespace Prisma {
     id?: StringFilter<"Transaction"> | string
     userId?: StringNullableFilter<"Transaction"> | string | null
     hash?: StringNullableFilter<"Transaction"> | string | null
+    idempotencyKey?: StringNullableFilter<"Transaction"> | string | null
     stellarTxId?: StringNullableFilter<"Transaction"> | string | null
     fromPublicKey?: StringNullableFilter<"Transaction"> | string | null
     toPublicKey?: StringNullableFilter<"Transaction"> | string | null
@@ -48292,6 +48330,7 @@ export namespace Prisma {
   export type TransactionCreateManyUserInput = {
     id?: string
     hash?: string | null
+    idempotencyKey?: string | null
     stellarTxId?: string | null
     fromPublicKey?: string | null
     toPublicKey?: string | null
@@ -48605,6 +48644,7 @@ export namespace Prisma {
   export type TransactionUpdateWithoutUserInput = {
     id?: StringFieldUpdateOperationsInput | string
     hash?: NullableStringFieldUpdateOperationsInput | string | null
+    idempotencyKey?: NullableStringFieldUpdateOperationsInput | string | null
     stellarTxId?: NullableStringFieldUpdateOperationsInput | string | null
     fromPublicKey?: NullableStringFieldUpdateOperationsInput | string | null
     toPublicKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -48629,6 +48669,7 @@ export namespace Prisma {
   export type TransactionUncheckedUpdateWithoutUserInput = {
     id?: StringFieldUpdateOperationsInput | string
     hash?: NullableStringFieldUpdateOperationsInput | string | null
+    idempotencyKey?: NullableStringFieldUpdateOperationsInput | string | null
     stellarTxId?: NullableStringFieldUpdateOperationsInput | string | null
     fromPublicKey?: NullableStringFieldUpdateOperationsInput | string | null
     toPublicKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -48653,6 +48694,7 @@ export namespace Prisma {
   export type TransactionUncheckedUpdateManyWithoutUserInput = {
     id?: StringFieldUpdateOperationsInput | string
     hash?: NullableStringFieldUpdateOperationsInput | string | null
+    idempotencyKey?: NullableStringFieldUpdateOperationsInput | string | null
     stellarTxId?: NullableStringFieldUpdateOperationsInput | string | null
     fromPublicKey?: NullableStringFieldUpdateOperationsInput | string | null
     toPublicKey?: NullableStringFieldUpdateOperationsInput | string | null

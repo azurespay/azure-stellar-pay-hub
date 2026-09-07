@@ -34,7 +34,11 @@ describe('CheckoutService', () => {
       get: jest.fn((key: string) => (key === 'STELLAR_NETWORK' ? 'testnet' : undefined)),
     };
     mockPrisma = {
-      transaction: { findUnique: jest.fn(), update: jest.fn() },
+      transaction: {
+        findUnique: jest.fn(),
+        update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
     };
     mockReconciliation = { onPaymentSucceeded: jest.fn() };
     submitMock = jest.fn();
@@ -50,6 +54,56 @@ describe('CheckoutService', () => {
   it('throws NotFoundException when the transaction does not exist', async () => {
     mockPrisma.transaction.findUnique.mockResolvedValue(null);
     await expect(service.submitSigned('missing', 'xdr')).rejects.toThrow('Transaction not found');
+  });
+
+  it('claims the intent PENDING → SUBMITTED before submitting', async () => {
+    mockPrisma.transaction.findUnique.mockResolvedValue(pendingTx);
+    submitMock.mockResolvedValue({
+      status: 'FAILED',
+      hash: null,
+      fee: '100',
+      errorMessage: 'op rejected',
+    });
+    mockPrisma.transaction.update.mockResolvedValue({
+      ...pendingTx,
+      status: 'FAILED',
+      errorMessage: 'op rejected',
+    });
+
+    await service.submitSigned('tx-1', 'signed-xdr');
+
+    expect(mockPrisma.transaction.updateMany).toHaveBeenCalledWith({
+      where: { id: 'tx-1', status: 'PENDING' },
+      data: { status: 'SUBMITTED' },
+    });
+  });
+
+  it('rejects a second submit whose atomic claim lost the race', async () => {
+    mockPrisma.transaction.findUnique.mockResolvedValue(pendingTx);
+    mockPrisma.transaction.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(service.submitSigned('tx-1', 'signed-xdr')).rejects.toThrow(
+      'Transaction already submitted',
+    );
+    expect(submitMock).not.toHaveBeenCalled();
+  });
+
+  it('reverts the claim to PENDING when the network transport fails', async () => {
+    mockPrisma.transaction.findUnique.mockResolvedValue(pendingTx);
+    submitMock.mockRejectedValue(new Error('ECONNRESET'));
+
+    await expect(service.submitSigned('tx-1', 'signed-xdr')).rejects.toThrow('ECONNRESET');
+
+    expect(mockPrisma.transaction.updateMany).toHaveBeenNthCalledWith(1, {
+      where: { id: 'tx-1', status: 'PENDING' },
+      data: { status: 'SUBMITTED' },
+    });
+    expect(mockPrisma.transaction.updateMany).toHaveBeenNthCalledWith(2, {
+      where: { id: 'tx-1', status: 'SUBMITTED' },
+      data: { status: 'PENDING' },
+    });
+    expect(mockPrisma.transaction.update).not.toHaveBeenCalled();
+    expect(mockReconciliation.onPaymentSucceeded).not.toHaveBeenCalled();
   });
 
   it('persists a SUCCEEDED submission and reconciles invoices/payment links', async () => {

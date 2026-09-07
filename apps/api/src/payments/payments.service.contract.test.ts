@@ -128,6 +128,59 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
       );
     });
 
+    it('stores the idempotency key + unsigned XDR and replays the original intent', async () => {
+      mockPrisma.transaction.findFirst.mockResolvedValue(null);
+
+      const first = await service.create('user-1', dto as never, 'create-key-1');
+
+      expect(mockPrisma.transaction.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          idempotencyKey: 'create-key-1',
+          kind: 'contract_send',
+          meta: expect.objectContaining({ unsignedXdr: 'soroban-xdr' }),
+        }),
+      });
+      expect(first).toEqual(
+        expect.objectContaining({ id: 'tx-contract', unsignedXdr: 'soroban-xdr' }),
+      );
+
+      // A retried request with the same key returns the original intent and
+      // does not create a second payment.
+      mockPrisma.transaction.create.mockClear();
+      mockPrisma.transaction.findFirst.mockResolvedValue({
+        id: 'tx-contract',
+        status: 'PENDING',
+        kind: 'contract_send',
+        meta: { unsignedXdr: 'soroban-xdr' },
+      });
+
+      const replay = await service.create('user-1', dto as never, 'create-key-1');
+
+      expect(replay).toEqual(
+        expect.objectContaining({
+          id: 'tx-contract',
+          idempotent: true,
+          unsignedXdr: 'soroban-xdr',
+        }),
+      );
+      expect(mockPrisma.transaction.create).not.toHaveBeenCalled();
+    });
+
+    it('returns the winner row when a concurrent create loses the unique-key race', async () => {
+      mockPrisma.transaction.findFirst.mockResolvedValueOnce(null); // pre-check
+      mockPrisma.transaction.create.mockRejectedValueOnce({ code: 'P2002' });
+      mockPrisma.transaction.findFirst.mockResolvedValueOnce({
+        id: 'tx-contract',
+        status: 'PENDING',
+        kind: 'contract_send',
+        meta: { unsignedXdr: 'soroban-xdr' },
+      }); // refetch in the catch
+
+      const result = await service.create('user-1', dto as never, 'create-key-1');
+
+      expect(result).toEqual(expect.objectContaining({ id: 'tx-contract', idempotent: true }));
+    });
+
     it('falls back to classic XDR when the asset is not in the contract-asset allowlist', async () => {
       const validIssuer = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN';
       const usdcDto = { ...dto, assetCode: 'USDC', assetIssuer: validIssuer };
@@ -175,6 +228,49 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
       expect(mockReconciliation.onPaymentSucceeded).not.toHaveBeenCalled();
       expect(mockNotifications.paymentSent).not.toHaveBeenCalled();
       expect(mockRealtime.emitToUser).not.toHaveBeenCalled();
+    });
+
+    it('rejects a concurrent duplicate submission whose claim lost the race', async () => {
+      mockPrisma.transaction.findFirst.mockResolvedValue({
+        id: 'tx-contract',
+        userId: 'user-1',
+        status: 'PENDING',
+        kind: 'contract_send',
+      });
+      mockPrisma.transaction.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(service.submit('user-1', 'tx-contract', 'signed-xdr')).rejects.toThrow(
+        'Transaction already submitted',
+      );
+      // The loser never reaches the network.
+      expect(mockNetwork.submitSignedTransaction).not.toHaveBeenCalled();
+    });
+
+    it('reverts the SUBMITTED claim to PENDING when the transport fails', async () => {
+      mockPrisma.transaction.findFirst.mockResolvedValue({
+        id: 'tx-contract',
+        userId: 'user-1',
+        status: 'PENDING',
+        kind: 'contract_send',
+        amount: '10',
+        assetCode: 'XLM',
+      });
+      mockNetwork.submitSignedTransaction.mockRejectedValue(new Error('ECONNRESET'));
+
+      await expect(service.submit('user-1', 'tx-contract', 'signed-xdr')).rejects.toThrow(
+        'ECONNRESET',
+      );
+
+      expect(mockPrisma.transaction.updateMany).toHaveBeenNthCalledWith(1, {
+        where: { id: 'tx-contract', status: 'PENDING' },
+        data: { status: 'SUBMITTED' },
+      });
+      expect(mockPrisma.transaction.updateMany).toHaveBeenNthCalledWith(2, {
+        where: { id: 'tx-contract', status: 'SUBMITTED' },
+        data: { status: 'PENDING' },
+      });
+      // An infrastructure failure is not a payment failure.
+      expect(mockNotifications.paymentFailed).not.toHaveBeenCalled();
     });
 
     it('notifies on failure like classic payments', async () => {

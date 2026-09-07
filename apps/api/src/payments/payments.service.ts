@@ -65,8 +65,16 @@ export class PaymentsService {
    * Create a payment intent.
    * - scheduled / recurring → persisted for the scheduler
    * - everything else → builds an unsigned XDR for the user's wallet to sign
+   *
+   * When an `idempotencyKey` is supplied (client `Idempotency-Key` header), a
+   * retried request returns the original intent instead of creating a second
+   * payment: the key is stored under a `@@unique([userId, idempotencyKey])`
+   * constraint and the original unsigned XDR is kept in `meta.unsignedXdr` so
+   * the replay returns the exact signable payload. SCHEDULED/RECURRING intents
+   * are created on the `ScheduledPayment` table and are not covered by this
+   * key (their scheduler executions are independently idempotent).
    */
-  async create(userId: string, dto: CreatePayment) {
+  async create(userId: string, dto: CreatePayment, idempotencyKey?: string) {
     await this.wallet.assertWalletOwnership(userId, dto.fromPublicKey);
     const asset =
       dto.assetCode === 'XLM' ? Asset.native() : new Asset(dto.assetCode, dto.assetIssuer ?? '');
@@ -94,6 +102,17 @@ export class PaymentsService {
     const isBatch = dto.type === 'BATCH' || dto.type === 'SPLIT';
     const total = dto.destinations.reduce((sum, d) => sum + Number(d.amount), 0).toString();
     const destination = dto.destinations[0];
+
+    // Idempotent replay: a retried request with the same key returns the
+    // original intent without rebuilding the XDR (or touching the network).
+    if (idempotencyKey) {
+      const existing = await this.prisma.transaction.findFirst({
+        where: { userId, idempotencyKey },
+      });
+      if (existing) {
+        return this.replay(existing);
+      }
+    }
 
     // Soroban contract route (experimental, `PAYMENT_ROUTE=contract`).
     // The contract memo carries a deterministic `sp:<correlationId>` so the
@@ -132,33 +151,71 @@ export class PaymentsService {
       });
     }
 
-    const transaction = await this.prisma.transaction.create({
-      data: {
-        userId,
-        fromPublicKey: dto.fromPublicKey,
-        toPublicKey: dto.destinations.length === 1 ? destination.publicKey : null,
-        amount: total,
-        assetCode: dto.assetCode,
-        assetIssuer: dto.assetIssuer,
-        memo: dto.memo,
-        memoType: dto.memoType ?? 'text',
-        status: 'PENDING',
-        direction: 'OUTGOING',
-        kind: contractRoute ? 'contract_send' : kind,
-        sourceNetwork: this.config.get<string>('STELLAR_NETWORK') ?? 'testnet',
-        meta: {
-          destinations: dto.destinations,
-          type: dto.type,
-          ...(contractMeta ?? {}),
+    let transaction;
+    try {
+      transaction = await this.prisma.transaction.create({
+        data: {
+          userId,
+          idempotencyKey: idempotencyKey ?? null,
+          fromPublicKey: dto.fromPublicKey,
+          toPublicKey: dto.destinations.length === 1 ? destination.publicKey : null,
+          amount: total,
+          assetCode: dto.assetCode,
+          assetIssuer: dto.assetIssuer,
+          memo: dto.memo,
+          memoType: dto.memoType ?? 'text',
+          status: 'PENDING',
+          direction: 'OUTGOING',
+          kind: contractRoute ? 'contract_send' : kind,
+          sourceNetwork: this.config.get<string>('STELLAR_NETWORK') ?? 'testnet',
+          meta: {
+            destinations: dto.destinations,
+            type: dto.type,
+            ...(contractMeta ?? {}),
+            // Keep the signable XDR so an idempotent replay returns the exact
+            // payload the client already holds (avoids a second, different XDR
+            // for the same intent).
+            ...(idempotencyKey ? { unsignedXdr } : {}),
+          },
         },
-      },
-    });
+      });
+    } catch (err) {
+      // Two concurrent requests with the same key: one wins the unique
+      // constraint, the loser returns the winner's row like any retry.
+      if (idempotencyKey && (err as { code?: string }).code === 'P2002') {
+        const existing = await this.prisma.transaction.findFirst({
+          where: { userId, idempotencyKey },
+        });
+        if (existing) {
+          return this.replay(existing);
+        }
+      }
+      throw err;
+    }
 
     return {
       kind: 'pending' as const,
       id: transaction.id,
       unsignedXdr,
       message: 'Sign the transaction with your wallet, then submit it',
+    };
+  }
+
+  /** Replay the stored intent for a retried request with the same key. */
+  private replay(existing: { id: string; status: string; kind: string; meta: unknown }): {
+    kind: 'pending' | 'scheduled';
+    id: string;
+    unsignedXdr?: string | null;
+    message: string;
+    idempotent: boolean;
+  } {
+    const meta = (existing.meta ?? {}) as { unsignedXdr?: string };
+    return {
+      kind: 'pending',
+      id: existing.id,
+      unsignedXdr: meta.unsignedXdr ?? null,
+      message: 'Payment intent already exists for this key — return the original',
+      idempotent: true,
     };
   }
 
@@ -174,13 +231,32 @@ export class PaymentsService {
       throw new BadRequestException('Transaction already submitted');
     }
 
-    // Atomically mark as SUBMITTED to prevent concurrent double-submission.
-    await this.prisma.transaction.updateMany({
+    // Atomically claim PENDING → SUBMITTED. Exactly one concurrent request can
+    // win the claim (the row may have been taken between the read and here);
+    // the loser is rejected before touching the network, so the same payment
+    // can never be submitted twice.
+    const claim = await this.prisma.transaction.updateMany({
       where: { id: transactionId, status: 'PENDING' },
       data: { status: 'SUBMITTED' },
     });
+    if (claim.count !== 1) {
+      throw new BadRequestException('Transaction already submitted');
+    }
 
-    const result = await this.network().submitSignedTransaction(signedXdr);
+    // Transport/infrastructure failures (timeout, Horizon down, RPC error) are
+    // NOT payment failures: revert the claim so the client can retry, and let
+    // the error propagate. A definitive FAILED result from the network is
+    // handled below and persists as FAILED.
+    let result;
+    try {
+      result = await this.network().submitSignedTransaction(signedXdr);
+    } catch (err) {
+      await this.prisma.transaction.updateMany({
+        where: { id: transactionId, status: 'SUBMITTED' },
+        data: { status: 'PENDING' },
+      });
+      throw err;
+    }
 
     // Contract-route payments only reach SUBMITTED on a successful Horizon
     // submission — settlement CONFIRMED requires the on-chain event indexer.

@@ -75,10 +75,16 @@ export class TransactionReconciliationService {
       return;
     }
 
-    await this.prisma.invoice.update({
-      where: { id: invoice.id },
+    // Guarded transition: only the first reconciler wins the ISSUED/DRAFT →
+    // PAID update, so two payments racing for the same invoice cannot fire
+    // double notifications/webhooks or overwrite the PAID state.
+    const paid = await this.prisma.invoice.updateMany({
+      where: { id: invoice.id, status: { in: ['ISSUED', 'DRAFT'] } },
       data: { status: 'PAID', paidAt: new Date(), paymentTransactionId: tx.id },
     });
+    if (paid.count !== 1) {
+      return; // another reconciler already marked it PAID
+    }
     await this.notifications.invoicePaid({
       merchantId: invoice.merchantId,
       invoiceNumber: invoice.number,

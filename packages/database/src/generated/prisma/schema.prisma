@@ -286,6 +286,7 @@ model Transaction {
   userId         String?
   user           User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
   hash           String?              @unique
+  idempotencyKey String?
   stellarTxId    String?
   fromPublicKey  String?
   toPublicKey    String?
@@ -306,6 +307,11 @@ model Transaction {
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
 
+  // Client-supplied dedupe: at most one payment intent per user + key, so a
+  // retried POST /payments returns the original row instead of creating a
+  // second payment. NULL keys are not deduped (Postgres treats NULLs as
+  // distinct in unique indexes).
+  @@unique([userId, idempotencyKey])
   @@index([userId])
   @@index([toPublicKey])
   @@index([status])

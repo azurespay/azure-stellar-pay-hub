@@ -238,6 +238,7 @@ exports.Prisma.TransactionScalarFieldEnum = {
   id: 'id',
   userId: 'userId',
   hash: 'hash',
+  idempotencyKey: 'idempotencyKey',
   stellarTxId: 'stellarTxId',
   fromPublicKey: 'fromPublicKey',
   toPublicKey: 'toPublicKey',

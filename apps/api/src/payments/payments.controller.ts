@@ -1,4 +1,14 @@
-import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Headers,
+  Param,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { CurrentUser, type AuthenticatedUser } from '../common/decorators';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import {
@@ -19,8 +29,9 @@ export class PaymentsController {
   create(
     @CurrentUser() user: AuthenticatedUser,
     @Body(new ZodValidationPipe({ body: createPaymentSchema })) body: CreatePayment,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    return this.payments.create(user.userId, body);
+    return this.payments.create(user.userId, body, this.normalizeKey(idempotencyKey));
   }
 
   @Post('simulate')
@@ -86,5 +97,17 @@ export class PaymentsController {
   @Get(':id')
   get(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.payments.get(user.userId, id);
+  }
+
+  /** Validate + normalize the optional client dedupe key. */
+  private normalizeKey(key?: string): string | undefined {
+    const trimmed = key?.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    if (trimmed.length > 128) {
+      throw new BadRequestException('Idempotency-Key must be at most 128 characters');
+    }
+    return trimmed;
   }
 }

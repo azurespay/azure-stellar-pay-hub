@@ -17,7 +17,12 @@ describe('TransactionReconciliationService', () => {
 
   beforeEach(() => {
     mockPrisma = {
-      invoice: { findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
+      invoice: {
+        findUnique: jest.fn(),
+        findFirst: jest.fn(),
+        update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
       paymentLink: { findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
     };
     mockNotifications = { invoicePaid: jest.fn() };
@@ -48,8 +53,8 @@ describe('TransactionReconciliationService', () => {
       expect(mockPrisma.invoice.findUnique).toHaveBeenCalledWith({
         where: { number: 'INV-2026-ABC123' },
       });
-      expect(mockPrisma.invoice.update).toHaveBeenCalledWith({
-        where: { id: 'inv-1' },
+      expect(mockPrisma.invoice.updateMany).toHaveBeenCalledWith({
+        where: { id: 'inv-1', status: { in: ['ISSUED', 'DRAFT'] } },
         data: {
           status: 'PAID',
           paidAt: expect.any(Date),
@@ -85,7 +90,7 @@ describe('TransactionReconciliationService', () => {
         meta: { type: 'INVOICE', invoiceNumber: 'INV-2026-ABC123' },
       });
 
-      expect(mockPrisma.invoice.update).not.toHaveBeenCalled();
+      expect(mockPrisma.invoice.updateMany).not.toHaveBeenCalled();
       expect(mockNotifications.invoicePaid).not.toHaveBeenCalled();
       // The generic webhook is still dispatched.
       expect(mockWebhooks.dispatch).toHaveBeenCalledWith('payment.received', expect.anything());
@@ -105,7 +110,29 @@ describe('TransactionReconciliationService', () => {
         where: { customerPublicKey: 'GPAYER', status: { in: ['ISSUED', 'DRAFT'] } },
         orderBy: { createdAt: 'desc' },
       });
-      expect(mockPrisma.invoice.update).toHaveBeenCalled();
+      expect(mockPrisma.invoice.updateMany).toHaveBeenCalled();
+    });
+
+    it('does not double-notify when a concurrent reconciler already marked the invoice PAID', async () => {
+      const invoice = {
+        id: 'inv-1',
+        number: 'INV-2026-ABC123',
+        merchantId: 'merchant-1',
+        status: 'ISSUED',
+      };
+      mockPrisma.invoice.findUnique.mockResolvedValue(invoice);
+      // Another worker won the guarded ISSUED/DRAFT → PAID transition.
+      mockPrisma.invoice.updateMany.mockResolvedValue({ count: 0 });
+
+      await service.onPaymentSucceeded({
+        ...baseTx,
+        kind: 'invoice',
+        meta: { type: 'INVOICE', invoiceNumber: 'INV-2026-ABC123' },
+      });
+
+      expect(mockPrisma.invoice.updateMany).toHaveBeenCalledTimes(1);
+      expect(mockNotifications.invoicePaid).not.toHaveBeenCalled();
+      expect(mockWebhooks.dispatch).not.toHaveBeenCalledWith('invoice.paid', expect.anything());
     });
   });
 

@@ -120,6 +120,21 @@ JWT → every protected route           → RBAC via roles guard
   Verified live on testnet: a direct Friendbot-funded XLM payment to a fresh
   ACTIVE merchant address was detected and credited exactly once (hash
   `60bb12aa…`), with the second poll a no-op.
+- **Idempotent, guarded payment state.** `POST /payments` accepts an optional
+  `Idempotency-Key` header enforced by a `@@unique([userId, idempotencyKey])`
+  constraint: a retried request returns the original intent (the unsigned XDR
+  is kept in `meta` so the replay returns the exact signable payload), and a
+  concurrent duplicate create loses the unique race and gets the winner's row.
+  Submission is an **atomic claimed transition** (PENDING → SUBMITTED via
+  `updateMany`) so only one request can reach the network — a loser is
+  rejected before any XDR is sent; a transport/infrastructure failure reverts
+  the claim to PENDING (retryable) instead of marking the payment FAILED,
+  while a definitive network rejection persists as FAILED. Invoice `PAID` is a
+  guarded ISSUED/DRAFT → PAID update (only the first reconciler notifies), and
+  inbound credits are backstopped by the unique `hash` on `Transaction` in
+  addition to `ChainEvent`. Signed webhook payloads embed a stable
+  `deliveryId` and retries reuse the same delivery row, so merchants can dedupe
+  exactly-once per logical event.
 - **Socket.IO fan-out is per-process (in-memory rooms).** Horizontal scaling of
   the API requires a Redis Socket.IO adapter, which is not wired yet. Redis is
   currently used for caching, rate-limit state, session state, and scheduler

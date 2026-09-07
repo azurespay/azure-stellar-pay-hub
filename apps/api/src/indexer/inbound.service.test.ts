@@ -134,6 +134,21 @@ describe('InboundReconciliationService', () => {
     expect(mockNotifications.paymentReceived).not.toHaveBeenCalled();
   });
 
+  it('never double-credits when a different event id races on the same hash', async () => {
+    // The hash `@unique` constraint is the backstop: a second event id for the
+    // same on-chain payment (e.g. both listeners observe it) loses the insert
+    // and must not create a second record or fire side effects.
+    mockPrisma.transaction.create.mockRejectedValueOnce({ code: 'P2002' });
+
+    const result = await service.handle(baseInput);
+
+    expect(result).toEqual({ created: false });
+    expect(mockNotifications.paymentReceived).not.toHaveBeenCalled();
+    expect(mockWebhooks.dispatch).not.toHaveBeenCalled();
+    expect(mockRealtime.emitToUser).not.toHaveBeenCalled();
+    expect(mockReconciliation.onPaymentSucceeded).not.toHaveBeenCalled();
+  });
+
   it('rejects non-positive amounts', async () => {
     const result = await service.handle({ ...baseInput, amount: '0' });
     expect(result).toEqual({ created: false });

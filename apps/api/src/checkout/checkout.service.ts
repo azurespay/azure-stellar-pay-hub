@@ -161,7 +161,29 @@ export class CheckoutService {
     if (!tx) {
       throw new NotFoundException('Transaction not found');
     }
-    const result = await this.network().submitSignedTransaction(signedXdr);
+
+    // Atomically claim PENDING → SUBMITTED so a duplicate/concurrent submit of
+    // the same intent is rejected before it can reach the network twice.
+    const claim = await this.prisma.transaction.updateMany({
+      where: { id: transactionId, status: 'PENDING' },
+      data: { status: 'SUBMITTED' },
+    });
+    if (claim.count !== 1) {
+      throw new BadRequestException('Transaction already submitted');
+    }
+
+    // A transport/infrastructure failure (timeout, Horizon unreachable) is not
+    // a payment failure: revert the claim so the payer can retry.
+    let result;
+    try {
+      result = await this.network().submitSignedTransaction(signedXdr);
+    } catch (err) {
+      await this.prisma.transaction.updateMany({
+        where: { id: transactionId, status: 'SUBMITTED' },
+        data: { status: 'PENDING' },
+      });
+      throw err;
+    }
     const updated = await this.prisma.transaction.update({
       where: { id: transactionId },
       data: {

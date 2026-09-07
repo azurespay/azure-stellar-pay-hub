@@ -37,7 +37,15 @@ they run locally or against a deployed testnet environment.
   successful payment marks invoices `PAID`, bumps payment-link stats, dispatches
   webhooks, and notifies merchants. Inbound-listener tests cover the Soroban
   event parser (vec + map payload layouts), Horizon feed polling/filtering, the
-  `ChainEvent` unique-event idempotency, and merchant/invoice inbound credit.
+  `ChainEvent` unique-event idempotency, and merchant/invoice inbound credit. Payment-path reliability is covered by unit tests:
+  `Idempotency-Key` replays on `POST /payments` (the key is unique per
+  user in the DB and the original unsigned XDR is stored for exact replay),
+  the atomic PENDING→SUBMITTED submission claim (a duplicate/concurrent
+  submit is rejected before it reaches the network, and a transport failure
+  reverts the claim to PENDING instead of marking the payment FAILED),
+  guarded invoice `PAID` transitions, and a stable `deliveryId` embedded in
+  signed webhook payloads so merchants can dedupe retried deliveries.
+
 - **Contract tests (2)** — every Soroban entry point in `test.rs` runs against
   the Soroban test host (no network).
 - **API integration (3)** — boots the NestJS `AppModule` with supertest and
@@ -55,14 +63,18 @@ they run locally or against a deployed testnet environment.
 
   Failure-path and duplicate coverage across tiers:
 
-  | Scenario                             | Covered where                                                                     |
-  | ------------------------------------ | --------------------------------------------------------------------------------- |
-  | Duplicate chain event                | Tier 3 lifecycle spec (re-delivered feed) + `ChainEvent` unique ledger unit tests |
-  | Duplicate submission of same payment | Unit tests (`payments.service.test.ts` — already-submitted guard)                 |
-  | Failed/zero/invalid amounts          | Unit tests (`inbound.service.test.ts`, payment validation)                        |
-  | Unknown event / unknown payment id   | Unit tests (non-merchant recipient ignored; unparseable payload skipped)          |
-  | Listener restart recovery            | Redis cursors + `ChainEvent` dedupe backstop (unit-tested idempotency)            |
-  | Failed network submission            | Unit tests (`payments.service.contract.test.ts`, `checkout.service.test.ts`)      |
+  | Scenario                             | Covered where                                                                                                                                              |
+  | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | Duplicate chain event                | Tier 3 lifecycle spec (re-delivered feed) + `ChainEvent` unique ledger unit tests                                                                          |
+  | Duplicate API request (same key)     | Unit tests — `Idempotency-Key` replay + P2002 race (`payments.service.contract.test.ts`)                                                                   |
+  | Duplicate submission of same payment | Unit tests — atomic PENDING→SUBMITTED claim loses the race → rejected before the network (`payments.service.contract.test.ts`, `checkout.service.test.ts`) |
+  | Concurrent event processors          | `ChainEvent` unique insert + guarded state transitions (unit + tier 3)                                                                                     |
+  | Failed/zero/invalid amounts          | Unit tests (`inbound.service.test.ts`, payment validation)                                                                                                 |
+  | Unknown event / unknown payment id   | Unit tests (non-merchant recipient ignored; unparseable payload skipped)                                                                                   |
+  | Listener restart recovery            | Redis cursors + `ChainEvent` dedupe backstop (unit-tested idempotency)                                                                                     |
+  | Infra failure ≠ payment failure      | Unit tests — transport error reverts SUBMITTED → PENDING (no FAILED, no notify)                                                                            |
+  | Already-paid invoice / double credit | Unit tests — guarded ISSUED/DRAFT → PAID `updateMany`; `hash` `@unique` backstop                                                                           |
+  | Duplicate webhook delivery           | Unit tests — stable `deliveryId` in the signed payload; retries reuse the row                                                                              |
 
 - **Smoke (4)** — boots the API and checks the health + a public endpoint. This
   is **not** a payment E2E; use tier 5 for the payment lifecycle.
