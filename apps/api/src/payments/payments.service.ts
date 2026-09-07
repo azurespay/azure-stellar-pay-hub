@@ -45,6 +45,23 @@ export class PaymentsService {
   }
 
   /**
+   * Whether SEND payments for this asset should route through the Soroban
+   * payment contract (`send`) instead of a classic Stellar Operation.payment.
+   * Off by default; when enabled the on-chain token SAC must be allowlisted
+   * on the deployed contract (admin `set_allowed`), otherwise the contract
+   * reverts with TokenNotAllowed.
+   */
+  private isContractRoute(assetCode: string): boolean {
+    const route = this.config.get<string>('PAYMENT_ROUTE') ?? 'classic';
+    if (route !== 'contract') {
+      return false;
+    }
+    const contractId = this.config.get<string>('CONTRACT_STELLAR_PAY_PAYMENT');
+    const assets = this.config.get<string[]>('PAYMENT_CONTRACT_ASSETS') ?? ['XLM'];
+    return !!contractId && assets.includes(assetCode.toUpperCase());
+  }
+
+  /**
    * Create a payment intent.
    * - scheduled / recurring → persisted for the scheduler
    * - everything else → builds an unsigned XDR for the user's wallet to sign
@@ -76,24 +93,50 @@ export class PaymentsService {
     const kind = TYPE_TO_KIND[dto.type] ?? 'payment';
     const isBatch = dto.type === 'BATCH' || dto.type === 'SPLIT';
     const total = dto.destinations.reduce((sum, d) => sum + Number(d.amount), 0).toString();
+    const destination = dto.destinations[0];
 
-    const unsignedXdr = isBatch
-      ? await this.buildBatchXdr(dto, asset)
-      : await this.network().buildPaymentTransaction({
-          from: dto.fromPublicKey,
-          to: dto.destinations[0].publicKey,
-          amount: dto.destinations[0].amount,
-          assetCode: dto.assetCode,
-          assetIssuer: dto.assetIssuer,
-          memo: dto.memo,
-          memoType: dto.memoType,
-        });
+    // Soroban contract route (experimental, `PAYMENT_ROUTE=contract`).
+    // The contract memo carries a deterministic `sp:<correlationId>` so the
+    // future event indexer can correlate an on-chain `payment` event with this
+    // database row without trusting the client.
+    const contractRoute = dto.type === 'SEND' && !isBatch && this.isContractRoute(dto.assetCode);
+    let unsignedXdr: string;
+    let contractMeta:
+      | { route: 'contract'; contractId: string; tokenAddress: string; correlationId: string }
+      | undefined;
+
+    if (isBatch) {
+      unsignedXdr = await this.buildBatchXdr(dto, asset);
+    } else if (contractRoute) {
+      const network = this.network();
+      const contractId = this.config.get<string>('CONTRACT_STELLAR_PAY_PAYMENT')!;
+      const tokenAddress = network.sorobanTokenAddress(dto.assetCode, dto.assetIssuer);
+      const correlationId = createId();
+      unsignedXdr = await network.buildSorobanSendTransaction({
+        from: dto.fromPublicKey,
+        to: destination.publicKey,
+        tokenAddress,
+        amount: destination.amount,
+        memo: `sp:${correlationId}`,
+      });
+      contractMeta = { route: 'contract', contractId, tokenAddress, correlationId };
+    } else {
+      unsignedXdr = await this.network().buildPaymentTransaction({
+        from: dto.fromPublicKey,
+        to: destination.publicKey,
+        amount: destination.amount,
+        assetCode: dto.assetCode,
+        assetIssuer: dto.assetIssuer,
+        memo: dto.memo,
+        memoType: dto.memoType,
+      });
+    }
 
     const transaction = await this.prisma.transaction.create({
       data: {
         userId,
         fromPublicKey: dto.fromPublicKey,
-        toPublicKey: dto.destinations.length === 1 ? dto.destinations[0].publicKey : null,
+        toPublicKey: dto.destinations.length === 1 ? destination.publicKey : null,
         amount: total,
         assetCode: dto.assetCode,
         assetIssuer: dto.assetIssuer,
@@ -101,9 +144,13 @@ export class PaymentsService {
         memoType: dto.memoType ?? 'text',
         status: 'PENDING',
         direction: 'OUTGOING',
-        kind,
+        kind: contractRoute ? 'contract_send' : kind,
         sourceNetwork: this.config.get<string>('STELLAR_NETWORK') ?? 'testnet',
-        meta: { destinations: dto.destinations, type: dto.type },
+        meta: {
+          destinations: dto.destinations,
+          type: dto.type,
+          ...(contractMeta ?? {}),
+        },
       },
     });
 
@@ -135,18 +182,29 @@ export class PaymentsService {
 
     const result = await this.network().submitSignedTransaction(signedXdr);
 
+    // Contract-route payments only reach SUBMITTED on a successful Horizon
+    // submission — settlement CONFIRMED requires the on-chain event indexer.
+    // Classic payments keep their existing immediate SUCCEEDED semantics.
+    const isContractSend = tx.kind === 'contract_send';
+    const persistedStatus =
+      isContractSend && result.status === 'SUCCEEDED' ? 'SUBMITTED' : result.status;
+
     const updated = await this.prisma.transaction.update({
       where: { id: transactionId },
       data: {
         hash: result.hash || null,
-        status: result.status,
+        status: persistedStatus,
         fee: result.fee,
         errorMessage: result.errorMessage,
       },
     });
 
     if (result.status === 'SUCCEEDED') {
-      await this.afterSuccess(updated);
+      if (!isContractSend) {
+        await this.afterSuccess(updated);
+      }
+      // Contract sends: no payer-facing success events yet — wait for the
+      // indexer to observe the on-chain `payment` event before notifying.
     } else {
       await this.afterFailure(tx);
     }

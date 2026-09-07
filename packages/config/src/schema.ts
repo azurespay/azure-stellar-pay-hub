@@ -40,6 +40,21 @@ export const envSchema = z
     SOROBAN_RPC_URL: z.string().url().optional(),
     NETWORK_PASSPHRASE: z.string().optional(),
 
+    // Soroban payment route (experimental). `classic` builds Stellar
+    // Operation.payment XDR; `contract` invokes the deployed payment contract's
+    // `send` entry point for the configured assets.
+    PAYMENT_ROUTE: z.enum(['classic', 'contract']).default('classic'),
+    CONTRACT_STELLAR_PAY_PAYMENT: z.string().optional(),
+    PAYMENT_CONTRACT_ASSETS: z
+      .string()
+      .default('XLM')
+      .transform((v) =>
+        v
+          .split(',')
+          .map((s) => s.trim().toUpperCase())
+          .filter(Boolean),
+      ),
+
     // Admin seed
     ADMIN_EMAIL: z.string().email().default('admin@stellar-pay.dev'),
     ADMIN_PASSWORD: z.string().min(8),

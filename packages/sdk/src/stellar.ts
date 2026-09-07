@@ -6,7 +6,9 @@ import {
   Memo,
   Networks,
   Operation,
+  StrKey,
   TransactionBuilder,
+  xdr,
   type Asset as StellarAsset,
   type Transaction,
 } from '@stellar/stellar-sdk';
@@ -35,6 +37,19 @@ export interface SubmitResult {
   ledger: number | null;
   status: 'SUCCEEDED' | 'FAILED';
   errorMessage?: string;
+}
+
+export interface SorobanSendInput {
+  /** Payer account (G…). Must sign the transaction for `from.require_auth()`. */
+  from: string;
+  /** Recipient account (G…). */
+  to: string;
+  /** Token contract address (C…) — use `sorobanTokenAddress()` for SAC assets. */
+  tokenAddress: string;
+  /** Amount in decimal asset units (e.g. "10" for 10 XLM). */
+  amount: string;
+  /** Correlation memo passed to the contract's `send` (surfaces in the event). */
+  memo?: string;
 }
 
 /** Wraps Horizon for balances, tx building and submission. */
@@ -129,6 +144,60 @@ export class StellarNetwork {
     return tx.toXDR();
   }
 
+  /**
+   * Resolve the Soroban token (SAC) contract address for an asset. Returns the
+   * C… strkey of the Stellar Asset Contract for the given asset+network.
+   */
+  sorobanTokenAddress(assetCode: string, assetIssuer?: string | null): string {
+    const asset: StellarAsset =
+      assetCode === 'XLM' ? Asset.native() : new Asset(assetCode, assetIssuer!);
+    return asset.contractId(this.config.networkPassphrase);
+  }
+
+  /**
+   * Build an unsigned Soroban transaction that invokes the payment contract's
+   * `send(from, to, token, amount, memo)` entry point. The payer must sign the
+   * returned XDR (the contract calls `from.require_auth()`), then submit via
+   * `submitSignedTransaction`.
+   */
+  async buildSorobanSendTransaction(input: SorobanSendInput): Promise<string> {
+    const source = await this.server.loadAccount(input.from);
+    const amountStroops = BigInt(toStroops(input.amount));
+
+    const hostFunction = xdr.HostFunction.hostFunctionTypeInvokeContract(
+      new xdr.InvokeContractArgs({
+        contractAddress: xdr.ScAddress.scAddressTypeContract(
+          StrKey.decodeContract(input.tokenAddress),
+        ),
+        functionName: 'send',
+        args: [
+          this.accountScVal(input.from),
+          this.accountScVal(input.to),
+          this.accountScVal(input.tokenAddress),
+          xdr.ScVal.scvI128(
+            // Runtime expects bigint hi/lo; the generated typings use branded
+            // Uint64/Int64, hence the cast.
+            new xdr.Int128Parts({
+              hi: BigInt.asUintN(64, amountStroops >> 64n),
+              lo: BigInt.asUintN(64, amountStroops),
+            } as never),
+          ),
+          // Option<String> is encoded as the value itself, or void for None.
+          input.memo ? xdr.ScVal.scvString(input.memo) : xdr.ScVal.scvVoid(),
+        ],
+      }),
+    );
+
+    const tx = new TransactionBuilder(source, {
+      fee: BASE_FEE,
+      networkPassphrase: this.config.networkPassphrase,
+    })
+      .addOperation(Operation.invokeHostFunction({ func: hostFunction, auth: [] }))
+      .setTimeout(300)
+      .build();
+    return tx.toXDR();
+  }
+
   /** Build a changeTrust transaction (unsigned XDR for wallet signing). */
   async buildTrustlineTransaction(input: {
     from: string;
@@ -172,6 +241,19 @@ export class StellarNetwork {
       ledger: response.ledger,
       status: 'SUCCEEDED',
     };
+  }
+
+  private accountScVal(address: string): xdr.ScVal {
+    if (address.startsWith('C')) {
+      return xdr.ScVal.scvAddress(
+        xdr.ScAddress.scAddressTypeContract(StrKey.decodeContract(address)),
+      );
+    }
+    return xdr.ScVal.scvAddress(
+      xdr.ScAddress.scAddressTypeAccount(
+        xdr.PublicKey.publicKeyTypeEd25519(StrKey.decodeEd25519PublicKey(address)),
+      ),
+    );
   }
 
   /** Build a simulated fee estimate without submitting. */

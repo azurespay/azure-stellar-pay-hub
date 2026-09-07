@@ -20,6 +20,7 @@ All contracts live in `contracts/` and are written in Rust with
 | `subscriptions` | Recurring billing with plan management and cancellation         |
 | `invoices`      | On-chain invoice registry with paid/expired states              |
 | `merchant`      | Merchant registry + settlement distribution to multiple wallets |
+| `rewards`       | Loyalty points: earn/redeem with tiers                          |
 
 ## Common conventions
 
@@ -51,6 +52,30 @@ soroban contract deploy \
 ```
 
 Then instantiate with the admin address: `soroban contract invoke --id <ID> -- initialize --admin G…`
+
+## Platform wiring (payment contract — experimental)
+
+The API can route authenticated `SEND` payments through the `payment`
+contract's `send(from, to, token, amount, memo)` entry point instead of a
+classic Stellar `Operation.payment`. Status as of 2026-09:
+
+- **Opt-in and off by default.** Set `PAYMENT_ROUTE=contract` and provide the
+  deployed contract address via `CONTRACT_STELLAR_PAY_PAYMENT` (see
+  `.deployed-contracts.env`). Only assets in `PAYMENT_CONTRACT_ASSETS` (default
+  `XLM`) are routed; everything else falls back to the classic path.
+- **On-chain allowlist is required.** `send` reverts with `TokenNotAllowed`
+  unless the token's SAC address was allowlisted by the admin
+  (`set_allowed`). The SAC address for an asset can be resolved with the SDK's
+  `sorobanTokenAddress()` (XLM native → `Asset.native().contractId(network)`).
+  This must be done on-chain with the deployer key before the route is enabled.
+- **No on-chain confirmation yet.** A contract-route payment is stored as
+  `SUBMITTED` after a successful Horizon submission — payer-facing success
+  events fire only after the (planned) event indexer observes the contract's
+  `payment` event and moves the row to `CONFIRMED`. Do **not** mark contract
+  payments `SUCCEEDED` from submission alone.
+- **Correlation.** The `memo` argument passed to `send` is `sp:<correlationId>`
+  (stored in the transaction `meta`), so a future indexer can map the emitted
+  `payment` event back to the database row without trusting the client.
 
 ## Security considerations
 

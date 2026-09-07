@@ -38,8 +38,11 @@ stellar contract deploy --wasm target/wasm32v1-none/release/stellar_pay_payment.
   --source <admin-secret> --network testnet
 ```
 
-Deployed addresses are recorded in the API database (`Setting` table) so the
-backend can route contract calls through the Soroban RPC.
+Deployed addresses are recorded in `.deployed-contracts.env` (and mirrored into
+`.env.testnet` by `scripts/deploy-testnet.sh`). The backend reads them as env
+vars (e.g. `CONTRACT_STELLAR_PAY_PAYMENT`) and can route payments through the
+contract behind the experimental `PAYMENT_ROUTE=contract` flag — see
+`docs/contracts.md` → “Platform wiring” for the current status.
 
 ## Security
 
