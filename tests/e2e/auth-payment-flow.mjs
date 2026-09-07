@@ -11,10 +11,18 @@
  *   3. create a payment → get an unsigned XDR
  *   4. sign the XDR with the wallet keypair
  *   5. submit the signed transaction through the API
- *   6. poll until the persisted transaction reaches its final SUCCEEDED state
+ *   6. poll until the persisted transaction reaches its final state
  *   7. assert the Socket.IO realtime channel delivered the `transaction.updated`
  *      event to the authenticated user
  *   8. logout and verify the JWT is invalidated
+ *
+ * By default the payment goes through the **classic** Stellar path (final
+ * state SUCCEEDED). Set E2E_CONTRACT=1 to route the same payment through the
+ * Soroban `payment` contract instead: the flow then expects SUBMITTED after
+ * submission and polls until the API's event indexer confirms the invocation
+ * on-chain (final state CONFIRMED). Contract mode requires the deployed
+ * contract's XLM SAC to be allowlisted on-chain (admin `set_allowed`) and, in
+ * boot mode, a CONTRACT_STELLAR_PAY_PAYMENT env var.
  *
  * This is a *testnet E2E test*: it requires a live API (Postgres + Redis) and
  * live Stellar testnet access (Friendbot + Horizon). It is not part of CI,
@@ -37,6 +45,13 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 const INPUT_API_URL = process.env.API_URL ?? 'http://localhost:4000/api';
 const BOOT_API = !process.env.API_URL;
+const CONTRACT_ROUTE = process.env.E2E_CONTRACT === '1';
+
+// Terminal/persisted states differ by route: classic payments reach SUCCEEDED
+// on submission; contract-route payments settle to CONFIRMED only after the
+// scheduler-driven event indexer observes the on-chain invocation.
+const FINAL_STATUS = CONTRACT_ROUTE ? 'CONFIRMED' : 'SUCCEEDED';
+const SUBMIT_STATUS = CONTRACT_ROUTE ? 'SUBMITTED' : 'SUCCEEDED';
 
 // The REST API lives under the `/api` global prefix; the Socket.IO gateway is
 // mounted at the host root (`/realtime` namespace).
@@ -79,6 +94,15 @@ async function bootApi() {
       STELLAR_NETWORK: 'testnet',
       ADMIN_EMAIL: 'e2e@test.dev',
       ADMIN_PASSWORD: 'E2eTest123!',
+      ...(CONTRACT_ROUTE
+        ? {
+            // Soroban contract route (experimental, off by default).
+            PAYMENT_ROUTE: 'contract',
+            CONTRACT_STELLAR_PAY_PAYMENT: process.env.CONTRACT_STELLAR_PAY_PAYMENT,
+            PAYMENT_CONTRACT_ASSETS: process.env.PAYMENT_CONTRACT_ASSETS ?? 'XLM',
+            SOROBAN_RPC_URL: process.env.SOROBAN_RPC_URL,
+          }
+        : {}),
     },
     shell: false,
   });
@@ -144,6 +168,14 @@ function waitForTransactionEvent(socket, txId, timeoutMs = 30_000) {
 
 async function run() {
   let child = null;
+
+  if (CONTRACT_ROUTE && BOOT_API && !process.env.CONTRACT_STELLAR_PAY_PAYMENT) {
+    console.error(
+      'E2E_CONTRACT=1 in boot mode requires CONTRACT_STELLAR_PAY_PAYMENT (deployed contract id).',
+    );
+    process.exitCode = 1;
+    return;
+  }
 
   if (BOOT_API) {
     child = await bootApi();
@@ -233,7 +265,9 @@ async function run() {
     }
 
     // -- Step 7: Create payment with JWT ----------------------------------------
-    console.log('\n7. Create payment (JWT-authenticated)');
+    console.log(
+      `\n7. Create payment (JWT-authenticated) — route: ${CONTRACT_ROUTE ? 'soroban contract' : 'classic'}`,
+    );
     let payment;
     try {
       payment = await authClient.payments.create({
@@ -302,7 +336,7 @@ async function run() {
         });
         check(
           'Submission accepted',
-          submitted?.status === 'SUCCEEDED' || submitted?.status === 'FAILED',
+          submitted?.status === SUBMIT_STATUS || submitted?.status === 'FAILED',
           JSON.stringify(submitted),
         );
       } catch (err) {
@@ -317,7 +351,7 @@ async function run() {
       for (let i = 0; i < 45; i++) {
         try {
           const current = await authClient.payments.get(payment.id);
-          if (current?.status === 'SUCCEEDED' || current?.status === 'FAILED') {
+          if (current?.status === FINAL_STATUS || current?.status === 'FAILED') {
             finalTx = current;
             break;
           }
@@ -328,7 +362,7 @@ async function run() {
       }
       check(
         'Transaction reached final state',
-        finalTx?.status === 'SUCCEEDED',
+        finalTx?.status === FINAL_STATUS,
         finalTx ? `status=${finalTx.status} hash=${finalTx.hash?.slice(0, 8)}…` : 'still pending',
       );
       check('Hash persisted on the record', !!finalTx?.hash);
@@ -350,7 +384,7 @@ async function run() {
       } else {
         check(
           'Realtime transaction.updated received',
-          event?.status === 'SUCCEEDED' && event?.id === payment.id,
+          event?.status === FINAL_STATUS && event?.id === payment.id,
           JSON.stringify(event),
         );
       }

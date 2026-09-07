@@ -24,6 +24,8 @@ export function formatDateTime(input: string | Date): string {
 
 export const STATUS_STYLES: Record<string, string> = {
   SUCCEEDED: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
+  // Contract-route settlement confirmed on-chain by the indexer.
+  CONFIRMED: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
   PENDING: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
   SUBMITTED: 'text-sky-400 bg-sky-500/10 border-sky-500/20',
   FAILED: 'text-rose-400 bg-rose-500/10 border-rose-500/20',

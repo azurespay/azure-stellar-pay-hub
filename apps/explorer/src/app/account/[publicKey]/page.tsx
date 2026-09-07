@@ -96,7 +96,13 @@ export default function AccountPage({ params }: { params: Promise<{ publicKey: s
                           {formatDateTime(tx.createdAt)}
                         </p>
                       </div>
-                      <Badge variant={tx.status === 'SUCCEEDED' ? 'success' : 'warning'}>
+                      <Badge
+                        variant={
+                          tx.status === 'SUCCEEDED' || tx.status === 'CONFIRMED'
+                            ? 'success'
+                            : 'warning'
+                        }
+                      >
                         {tx.status}
                       </Badge>
                     </a>

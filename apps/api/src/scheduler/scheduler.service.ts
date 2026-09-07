@@ -4,6 +4,7 @@ import { RedisService } from '../infra/redis.service';
 import { WebhooksService } from '../webhooks/webhooks.service';
 import { createLogger } from '@stellar-pay/logger';
 import { NotificationsService } from '../notifications/notifications.service';
+import { IndexerService } from '../indexer/indexer.service';
 import type { NotificationType } from '@stellar-pay/types';
 
 /**
@@ -20,6 +21,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     private readonly redis: RedisService,
     private readonly webhooks: WebhooksService,
     private readonly notifications: NotificationsService,
+    private readonly indexer: IndexerService,
   ) {}
 
   onModuleInit(): void {
@@ -28,6 +30,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     this.timers.push(setInterval(() => void this.retryWebhooks(), 30_000));
     this.timers.push(setInterval(() => void this.expireSessions(), 10 * 60_000));
     this.timers.push(setInterval(() => void this.processPendingSettlements(), 5 * 60_000));
+    this.timers.push(setInterval(() => void this.pollIndexer(), 20_000));
     this.logger.info('scheduler started');
   }
 
@@ -101,6 +104,19 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     if (due.length) {
       this.logger.info({ count: due.length }, 'scheduled payments processed');
     }
+  }
+
+  /**
+   * Contract-route settlement confirmation: moves SUBMITTED contract sends to
+   * CONFIRMED once Soroban RPC reports the invocation succeeded on-chain, and
+   * best-effort ingests payment-contract events (cursor persisted in Redis).
+   * Idle (no RPC/contract configured) when the contract route is off.
+   */
+  private async pollIndexer(): Promise<void> {
+    if (!(await this.redis.acquireLock('scheduler:indexer', 15))) {
+      return;
+    }
+    await this.indexer.syncOnce();
   }
 
   private async retryWebhooks(): Promise<void> {

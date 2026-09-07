@@ -197,6 +197,7 @@ export type SessionStatus = (typeof SessionStatus)[keyof typeof SessionStatus]
 export const TransactionStatus: {
   PENDING: 'PENDING',
   SUBMITTED: 'SUBMITTED',
+  CONFIRMED: 'CONFIRMED',
   SUCCEEDED: 'SUCCEEDED',
   FAILED: 'FAILED',
   CANCELED: 'CANCELED'

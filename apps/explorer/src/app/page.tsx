@@ -115,7 +115,7 @@ export default function ExplorerHome() {
                   <div className="flex items-center gap-3">
                     <Badge
                       variant={
-                        tx.status === 'SUCCEEDED'
+                        tx.status === 'SUCCEEDED' || tx.status === 'CONFIRMED'
                           ? 'success'
                           : tx.status === 'FAILED'
                             ? 'destructive'

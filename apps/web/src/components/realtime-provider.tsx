@@ -18,6 +18,8 @@ function RealtimeInner() {
       const tx = payload as { status?: string };
       if (tx.status === 'SUCCEEDED') {
         toast.success('Payment succeeded');
+      } else if (tx.status === 'CONFIRMED') {
+        toast.success('Payment confirmed on-chain');
       } else if (tx.status === 'FAILED') {
         toast.error('Payment failed');
       }

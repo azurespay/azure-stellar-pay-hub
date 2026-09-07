@@ -84,16 +84,22 @@ JWT → every protected route           → RBAC via roles guard
 /payments/:id/submit` and the checkout submit path build/submit Stellar
   `Operation.payment` XDR. An **experimental Soroban route** exists behind
   `PAYMENT_ROUTE=contract`: `SEND` payments for allowlisted assets invoke the
-  `payment` contract's `send` entry point (built in `@stellar-pay/sdk`), and a
-  successful submission is persisted as `SUBMITTED` — it is **not** marked
-  `SUCCEEDED` until the (not-yet-implemented) on-chain event indexer moves it to
-  `CONFIRMED`. Contract calls are not enabled by default (see
-  `docs/contracts.md` → Platform wiring).
-- **No inbound chain-event ingestion.** Transactions that arrive on-chain without
-  going through an API submission (e.g. a wallet paying a merchant address
-  directly) are not detected, so nothing is persisted, reconciled, or
-  pushed over WebSockets for them. Realtime/notification/webhook events fire for
-  API-mediated submissions only.
+  `payment` contract's `send` entry point (built in `@stellar-pay/sdk`). A
+  successful Horizon submission is persisted as `SUBMITTED`, and the
+  **event indexer** (`apps/api/src/indexer`, run by the scheduler every ~20s)
+  polls Soroban RPC `getTransaction` and moves the row to `CONFIRMED` only when
+  the ledger reports `SUCCESS` — the atomic `SUBMITTED → CONFIRMED` update makes
+  confirmation idempotent, and payer realtime/notification events fire on that
+  transition. Contract calls are not enabled by default (see `docs/contracts.md`
+  → Platform wiring), and a full contract-route payment has not been executed
+  on testnet because the on-chain SAC allowlist step still needs the deployer
+  key.
+- **Inbound chain-event ingestion is groundwork only.** The indexer ingests
+  contract `payment` events (cursor persisted in Redis) but only _correlates_
+  them to platform-created `SUBMITTED` rows via the `sp:` memo. Transactions
+  that arrive on-chain without an API submission (e.g. a wallet paying a
+  merchant address directly) are logged and skipped — nothing is persisted,
+  reconciled, or pushed over WebSockets for them.
 - **Socket.IO fan-out is per-process (in-memory rooms).** Horizontal scaling of
   the API requires a Redis Socket.IO adapter, which is not wired yet. Redis is
   currently used for caching, rate-limit state, session state, and scheduler
@@ -109,20 +115,21 @@ Status is assigned from evidence in this repository (code, tests, deployment
 records), not from intent. Nothing is marked **PRODUCTION** while the platform
 runs on testnet with demo data.
 
-| Feature                                                    | Status                            | Evidence                                                                                                                              |
-| ---------------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Auth (Ed25519 challenge → JWT, sessions, RBAC)             | **DEV (tested)**                  | Unit tests + API e2e spec; exercised by the lifecycle E2E                                                                             |     | Payments (classic Stellar send) | **DEV (tested, testnet)** | Unit tests; lifecycle E2E submits real testnet XLM |
-| Soroban contract payment route (`PAYMENT_ROUTE=contract`)  | **EXPERIMENTAL (off by default)** | SDK invoke builder + unit tests; submit persists `SUBMITTED`; **no event indexer → `CONFIRMED` yet**; requires on-chain SAC allowlist |
-| Checkout — invoice/payment-link pay + reconciliation       | **DEV (tested)**                  | Reconciliation unit tests (invoice PAID, link stats, webhooks, merchant notify)                                                       |
-| Merchant registry, products, payment links, invoices (DB)  | **DEV (partial)**                 | Service code + Zod schemas; webhook/notification integration varies                                                                   |
-| Soroban contracts (8)                                      | **DEV (contract-level)**          | Rust unit tests; deployed + **verified live on testnet**; **not yet invoked by the platform**                                         |
-| Scheduled / recurring / subscription / settlement jobs     | **SCAFFOLD**                      | Scheduler creates PENDING rows only — no approval/signing/chain execution; comments admit the simulation                              |
-| Inbound chain-event detection (direct-to-address payments) | **NOT IMPLEMENTED**               | No Horizon/Soroban listener in the codebase                                                                                           |
-| Realtime (Socket.IO)                                       | **DEV (single-instance)**         | Unit coverage via flows; in-memory rooms, no Redis adapter yet                                                                        |
-| Notifications & webhooks                                   | **DEV (partial)**                 | Dispatched from API-mediated successes; retries via scheduler                                                                         |
-| IPFS receipts                                              | **DEV (provider-dependent)**      | Local/Pinata/web3.storage pinning; deterministic un-pinned CID fallback is not resolvable without a pin                               |
-| Explorer & admin analytics                                 | **DEV (empty-state correct)**     | Live DB queries; success rate is `null` (not 100%) when there is no data                                                              |
-| Deployment                                                 | **TESTNET / DEMO**                | Railway + Vercel on testnet; AKS/Terraform experimental; mainnet not deployed (`docs/deployment.md`)                                  |
+| Feature                                                    | Status                            | Evidence                                                                                                                                                                                                     |
+| ---------------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Auth (Ed25519 challenge → JWT, sessions, RBAC)             | **DEV (tested)**                  | Unit tests + API e2e spec; exercised by the lifecycle E2E                                                                                                                                                    |
+| Payments (classic Stellar send)                            | **DEV (tested, testnet)**         | Unit tests; lifecycle E2E submits real testnet XLM                                                                                                                                                           |
+| Soroban contract payment route (`PAYMENT_ROUTE=contract`)  | **EXPERIMENTAL (off by default)** | SDK invoke builder + indexer unit tests (11); submit persists `SUBMITTED`; indexer → `CONFIRMED` from on-chain `getTransaction` `SUCCESS`; **no testnet contract-route E2E yet** (SAC allowlist ops pending) |
+| Checkout — invoice/payment-link pay + reconciliation       | **DEV (tested)**                  | Reconciliation unit tests (invoice PAID, link stats, webhooks, merchant notify)                                                                                                                              |
+| Merchant registry, products, payment links, invoices (DB)  | **DEV (partial)**                 | Service code + Zod schemas; webhook/notification integration varies                                                                                                                                          |
+| Soroban contracts (8)                                      | **DEV (contract-level)**          | Rust unit tests; deployed + **verified live on testnet**; only the `payment` contract is reachable via the experimental off-by-default route                                                                 |
+| Scheduled / recurring / subscription / settlement jobs     | **SCAFFOLD**                      | Scheduler creates PENDING rows only — no approval/signing/chain execution; comments admit the simulation                                                                                                     |
+| Inbound chain-event detection (direct-to-address payments) | **NOT IMPLEMENTED**               | Indexer `getEvents` ingestion correlates only platform `SUBMITTED` rows; external payments are logged/skipped, not persisted                                                                                 |
+| Realtime (Socket.IO)                                       | **DEV (single-instance)**         | Unit coverage via flows; in-memory rooms, no Redis adapter yet                                                                                                                                               |
+| Notifications & webhooks                                   | **DEV (partial)**                 | Dispatched from API-mediated successes; retries via scheduler                                                                                                                                                |
+| IPFS receipts                                              | **DEV (provider-dependent)**      | Local/Pinata/web3.storage pinning; deterministic un-pinned CID fallback is not resolvable without a pin                                                                                                      |
+| Explorer & admin analytics                                 | **DEV (empty-state correct)**     | Live DB queries; success rate is `null` (not 100%) when there is no data                                                                                                                                     |
+| Deployment                                                 | **TESTNET / DEMO**                | Railway + Vercel on testnet; AKS/Terraform experimental; mainnet not deployed (`docs/deployment.md`)                                                                                                         |
 
 Legend: **PRODUCTION** (mainnet, ops-ready) · **DEV** (implemented & tested on
 this stack) · **SCAFFOLD** (placeholder behavior) · **NOT IMPLEMENTED**.

@@ -6,6 +6,11 @@ import { addAmounts } from '@stellar-pay/shared';
 export class AnalyticsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /** Terminal success states: SUCCEEDED (classic) and CONFIRMED (contract route). */
+  private readonly succeededFilter: { in: ('SUCCEEDED' | 'CONFIRMED')[] } = {
+    in: ['SUCCEEDED', 'CONFIRMED'],
+  };
+
   private sumAmounts(amounts: Array<{ amount: string } | null | undefined>): string {
     return amounts.reduce((sum, row) => addAmounts(sum, row?.amount ?? '0'), '0');
   }
@@ -26,15 +31,15 @@ export class AnalyticsService {
       assetGroups,
     ] = await Promise.all([
       this.prisma.transaction.findMany({
-        where: { status: 'SUCCEEDED', createdAt: { gte: startOfDay } },
+        where: { status: this.succeededFilter, createdAt: { gte: startOfDay } },
         select: { amount: true },
       }),
       this.prisma.transaction.findMany({
-        where: { status: 'SUCCEEDED', createdAt: { gte: startOfMonth } },
+        where: { status: this.succeededFilter, createdAt: { gte: startOfMonth } },
         select: { amount: true },
       }),
       this.prisma.transaction.findMany({
-        where: { status: 'SUCCEEDED' },
+        where: { status: this.succeededFilter },
         select: { amount: true },
       }),
       this.prisma.transaction.count({ where: { status: 'FAILED' } }),
@@ -44,7 +49,9 @@ export class AnalyticsService {
     ]);
 
     const totalCount = await this.prisma.transaction.count();
-    const succeededCount = await this.prisma.transaction.count({ where: { status: 'SUCCEEDED' } });
+    const succeededCount = await this.prisma.transaction.count({
+      where: { status: this.succeededFilter },
+    });
     // No transactions yet — there is no rate to report. Never default to a
     // fabricated 100% success rate.
     const successRate: number | null = totalCount
@@ -86,7 +93,7 @@ export class AnalyticsService {
     const days = range === '7d' ? 7 : range === '30d' ? 30 : 90;
     const since = new Date(Date.now() - days * 24 * 3600 * 1000);
     const txs = await this.prisma.transaction.findMany({
-      where: { status: 'SUCCEEDED', createdAt: { gte: since } },
+      where: { status: this.succeededFilter, createdAt: { gte: since } },
       select: { amount: true, createdAt: true },
     });
 

@@ -543,6 +543,7 @@ exports.TrustlineStatus = exports.$Enums.TrustlineStatus = {
 exports.TransactionStatus = exports.$Enums.TransactionStatus = {
   PENDING: 'PENDING',
   SUBMITTED: 'SUBMITTED',
+  CONFIRMED: 'CONFIRMED',
   SUCCEEDED: 'SUCCEEDED',
   FAILED: 'FAILED',
   CANCELED: 'CANCELED'

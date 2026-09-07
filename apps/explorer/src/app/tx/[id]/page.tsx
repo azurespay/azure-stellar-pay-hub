@@ -66,7 +66,11 @@ export default function TxDetailPage({ params }: { params: Promise<{ id: string 
       <Badge
         key="status"
         variant={
-          tx.status === 'SUCCEEDED' ? 'success' : tx.status === 'FAILED' ? 'destructive' : 'warning'
+          tx.status === 'SUCCEEDED' || tx.status === 'CONFIRMED'
+            ? 'success'
+            : tx.status === 'FAILED'
+              ? 'destructive'
+              : 'warning'
         }
       >
         {tx.status}

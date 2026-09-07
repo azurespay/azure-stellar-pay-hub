@@ -68,14 +68,25 @@ classic Stellar `Operation.payment`. Status as of 2026-09:
   (`set_allowed`). The SAC address for an asset can be resolved with the SDK's
   `sorobanTokenAddress()` (XLM native → `Asset.native().contractId(network)`).
   This must be done on-chain with the deployer key before the route is enabled.
-- **No on-chain confirmation yet.** A contract-route payment is stored as
-  `SUBMITTED` after a successful Horizon submission — payer-facing success
-  events fire only after the (planned) event indexer observes the contract's
-  `payment` event and moves the row to `CONFIRMED`. Do **not** mark contract
-  payments `SUCCEEDED` from submission alone.
+- **On-chain confirmation via the event indexer.** A successful Horizon
+  submission is stored as `SUBMITTED` — never `SUCCEEDED`/`CONFIRMED` from
+  submission alone. The API scheduler runs `apps/api/src/indexer` every ~20s:
+  it polls Soroban RPC `getTransaction` for every `SUBMITTED` contract send and
+  moves the row to `CONFIRMED` only when the ledger reports `SUCCESS` (the
+  `send` invocation executed; it reverts otherwise). Payer realtime/notification
+  events fire on that transition, and the atomic `SUBMITTED → CONFIRMED`
+  update makes confirmation idempotent (a duplicate observation can only win
+  once). It also ingests contract `payment` events (`getEvents`, cursor
+  persisted in Redis) as best-effort groundwork for inbound detection.
 - **Correlation.** The `memo` argument passed to `send` is `sp:<correlationId>`
-  (stored in the transaction `meta`), so a future indexer can map the emitted
-  `payment` event back to the database row without trusting the client.
+  (stored in the transaction `meta`); the indexer maps the emitted `payment`
+  event back to the database row via that memo without trusting the client.
+- **Status consumers treat `CONFIRMED` as success.** Transactions/analytics
+  stats and the explorer/admin/web UIs count `CONFIRMED` alongside
+  `SUCCEEDED` (transaction `status` enum includes `CONFIRMED`).
+- **Blocked on one ops prerequisite.** End-to-end contract-route payment on
+  testnet still requires the admin to `set_allowed` the XLM SAC on the deployed
+  contract (deployer key); until then a `send` reverts with `TokenNotAllowed`.
 
 ## Security considerations
 

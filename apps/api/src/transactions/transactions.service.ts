@@ -81,7 +81,9 @@ export class TransactionsService {
   async stats() {
     const [txCount, succeeded, failed] = await Promise.all([
       this.prisma.transaction.count(),
-      this.prisma.transaction.count({ where: { status: 'SUCCEEDED' } }),
+      // SUCCEEDED (classic path) and CONFIRMED (contract route, indexed
+      // on-chain) are both successful terminal states.
+      this.prisma.transaction.count({ where: { status: { in: ['SUCCEEDED', 'CONFIRMED'] } } }),
       this.prisma.transaction.count({ where: { status: 'FAILED' } }),
     ]);
     return {

@@ -19,6 +19,8 @@ interface AdminTx {
 
 const STATUS_STYLES: Record<string, string> = {
   SUCCEEDED: 'text-emerald-400 bg-emerald-500/10',
+  CONFIRMED: 'text-emerald-400 bg-emerald-500/10',
+  SUBMITTED: 'text-sky-400 bg-sky-500/10',
   PENDING: 'text-amber-400 bg-amber-500/10',
   FAILED: 'text-rose-400 bg-rose-500/10',
 };

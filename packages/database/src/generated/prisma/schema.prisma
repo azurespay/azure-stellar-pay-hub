@@ -50,6 +50,7 @@ enum SessionStatus {
 enum TransactionStatus {
   PENDING
   SUBMITTED
+  CONFIRMED // contract-route settlement confirmed on-chain by the event indexer
   SUCCEEDED
   FAILED
   CANCELED
