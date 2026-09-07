@@ -65,16 +65,25 @@ describe('TransactionReconciliationService', () => {
         merchantId: 'merchant-1',
         invoiceNumber: 'INV-2026-ABC123',
       });
-      expect(mockWebhooks.dispatch).toHaveBeenCalledWith('invoice.paid', {
-        invoiceNumber: 'INV-2026-ABC123',
-        transactionId: 'tx-1',
-      });
-      expect(mockWebhooks.dispatch).toHaveBeenCalledWith('payment.received', {
-        transactionId: 'tx-1',
-        amount: '14.5',
-        assetCode: 'USDC',
-        toPublicKey: 'GPAYER',
-      });
+      expect(mockWebhooks.dispatch).toHaveBeenCalledWith(
+        'invoice.paid',
+        {
+          invoiceNumber: 'INV-2026-ABC123',
+          transactionId: 'tx-1',
+        },
+        { merchantId: 'merchant-1' },
+      );
+      // Owner-scoped: the merchant that owns the invoice receives the event.
+      expect(mockWebhooks.dispatch).toHaveBeenCalledWith(
+        'payment.received',
+        {
+          transactionId: 'tx-1',
+          amount: '14.5',
+          assetCode: 'USDC',
+          toPublicKey: 'GPAYER',
+        },
+        { merchantId: 'merchant-1' },
+      );
     });
 
     it('does not modify an invoice that is already PAID or CANCELED', async () => {
@@ -92,8 +101,8 @@ describe('TransactionReconciliationService', () => {
 
       expect(mockPrisma.invoice.updateMany).not.toHaveBeenCalled();
       expect(mockNotifications.invoicePaid).not.toHaveBeenCalled();
-      // The generic webhook is still dispatched.
-      expect(mockWebhooks.dispatch).toHaveBeenCalledWith('payment.received', expect.anything());
+      // No owner-scoped fan-out either: nothing may be broadcast platform-wide.
+      expect(mockWebhooks.dispatch).not.toHaveBeenCalled();
     });
 
     it('falls back to the customer-public-key heuristic when no invoice number is recorded', async () => {
@@ -176,18 +185,15 @@ describe('TransactionReconciliationService', () => {
   });
 
   describe('plain payments', () => {
-    it('only dispatches payment.received — no invoice/link lookups', async () => {
+    it('performs no invoice/link lookups and never broadcasts without a merchant owner', async () => {
       await service.onPaymentSucceeded({ ...baseTx, kind: 'payment', meta: { type: 'SEND' } });
 
       expect(mockPrisma.invoice.findFirst).not.toHaveBeenCalled();
       expect(mockPrisma.paymentLink.findFirst).not.toHaveBeenCalled();
-      expect(mockWebhooks.dispatch).toHaveBeenCalledTimes(1);
-      expect(mockWebhooks.dispatch).toHaveBeenCalledWith('payment.received', {
-        transactionId: 'tx-1',
-        amount: '14.5',
-        assetCode: 'USDC',
-        toPublicKey: 'GPAYER',
-      });
+      // A payer-initiated send has no merchant webhook consumer: broadcasting
+      // payment.received to every subscribed webhook would leak other
+      // merchants' transaction data, so nothing is dispatched.
+      expect(mockWebhooks.dispatch).not.toHaveBeenCalled();
     });
   });
 });

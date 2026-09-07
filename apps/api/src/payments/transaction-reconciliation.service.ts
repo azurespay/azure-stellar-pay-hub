@@ -43,24 +43,35 @@ export class TransactionReconciliationService {
   async onPaymentSucceeded(tx: ReconcilableTransaction): Promise<void> {
     const meta = (tx.meta ?? {}) as TxMeta;
 
+    // Resolve the merchant that owns this payment so webhook fan-out stays
+    // owner-scoped. Payer-initiated sends without an invoice/link have no
+    // merchant owner and must not trigger a broadcast.
+    let ownerMerchantId: string | undefined;
     if (meta.type === 'INVOICE' || tx.kind === 'invoice') {
-      await this.reconcileInvoicePayment(tx, meta.invoiceNumber);
+      ownerMerchantId = await this.reconcileInvoicePayment(tx, meta.invoiceNumber);
     } else if (meta.type === 'PAYMENT_LINK') {
-      await this.reconcilePaymentLinkPayment(tx, meta.paymentLinkCode);
+      ownerMerchantId = await this.reconcilePaymentLinkPayment(tx, meta.paymentLinkCode);
     }
 
-    await this.webhooks.dispatch('payment.received' as WebhookEventType, {
-      transactionId: tx.id,
-      amount: tx.amount,
-      assetCode: tx.assetCode,
-      toPublicKey: tx.toPublicKey,
-    });
+    if (ownerMerchantId) {
+      await this.webhooks.dispatch(
+        'payment.received' as WebhookEventType,
+        {
+          transactionId: tx.id,
+          amount: tx.amount,
+          assetCode: tx.assetCode,
+          toPublicKey: tx.toPublicKey,
+        },
+        { merchantId: ownerMerchantId },
+      );
+    }
   }
 
+  /** @returns the owning merchant id when the invoice was newly marked PAID. */
   private async reconcileInvoicePayment(
     tx: ReconcilableTransaction,
     invoiceNumber?: string,
-  ): Promise<void> {
+  ): Promise<string | undefined> {
     const invoice = invoiceNumber
       ? await this.prisma.invoice.findUnique({ where: { number: invoiceNumber } })
       : await this.prisma.invoice.findFirst({
@@ -72,7 +83,7 @@ export class TransactionReconciliationService {
         });
 
     if (!invoice || !['ISSUED', 'DRAFT'].includes(invoice.status)) {
-      return;
+      return undefined;
     }
 
     // Guarded transition: only the first reconciler wins the ISSUED/DRAFT →
@@ -83,22 +94,28 @@ export class TransactionReconciliationService {
       data: { status: 'PAID', paidAt: new Date(), paymentTransactionId: tx.id },
     });
     if (paid.count !== 1) {
-      return; // another reconciler already marked it PAID
+      return undefined; // another reconciler already marked it PAID
     }
     await this.notifications.invoicePaid({
       merchantId: invoice.merchantId,
       invoiceNumber: invoice.number,
     });
-    await this.webhooks.dispatch('invoice.paid' as WebhookEventType, {
-      invoiceNumber: invoice.number,
-      transactionId: tx.id,
-    });
+    await this.webhooks.dispatch(
+      'invoice.paid' as WebhookEventType,
+      {
+        invoiceNumber: invoice.number,
+        transactionId: tx.id,
+      },
+      { merchantId: invoice.merchantId },
+    );
+    return invoice.merchantId;
   }
 
+  /** @returns the owning merchant id when the link was ACTIVE and credited. */
   private async reconcilePaymentLinkPayment(
     tx: ReconcilableTransaction,
     code?: string,
-  ): Promise<void> {
+  ): Promise<string | undefined> {
     const link = code
       ? await this.prisma.paymentLink.findUnique({ where: { code } })
       : await this.prisma.paymentLink.findFirst({
@@ -106,7 +123,7 @@ export class TransactionReconciliationService {
         });
 
     if (!link || link.status !== 'ACTIVE') {
-      return;
+      return undefined;
     }
 
     await this.prisma.paymentLink.update({
@@ -116,5 +133,6 @@ export class TransactionReconciliationService {
         totalCollected: String(Number(link.totalCollected) + Number(tx.amount)),
       },
     });
+    return link.merchantId;
   }
 }

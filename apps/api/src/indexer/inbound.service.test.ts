@@ -95,6 +95,7 @@ describe('InboundReconciliationService', () => {
     expect(mockWebhooks.dispatch).toHaveBeenCalledWith(
       'payment.received',
       expect.objectContaining({ transactionId: 'tx-inbound', amount: '10' }),
+      { merchantId: 'merchant-1' },
     );
     expect(mockRealtime.emitToUser).toHaveBeenCalledWith(
       'user-merchant',

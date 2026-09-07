@@ -184,14 +184,18 @@ export class InboundReconciliationService {
         assetCode: input.assetCode,
         toPublicKey: input.fromPublicKey,
       });
-      await this.webhooks.dispatch('payment.received' as WebhookEventType, {
-        transactionId: transaction.id,
-        merchantId: merchant.id,
-        fromPublicKey: input.fromPublicKey,
-        amount: input.amount,
-        assetCode: input.assetCode,
-        source: input.source,
-      });
+      await this.webhooks.dispatch(
+        'payment.received' as WebhookEventType,
+        {
+          transactionId: transaction.id,
+          merchantId: merchant.id,
+          fromPublicKey: input.fromPublicKey,
+          amount: input.amount,
+          assetCode: input.assetCode,
+          source: input.source,
+        },
+        { merchantId: merchant.id },
+      );
     }
 
     // 5. Push the live update to the merchant dashboard.

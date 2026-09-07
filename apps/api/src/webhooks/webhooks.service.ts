@@ -40,13 +40,27 @@ export class WebhooksService {
   }
 
   /**
-   * Dispatch an event to every subscribed webhook. Creates a delivery record
-   * and POSTs with an HMAC-SHA256 signature header; failed deliveries are
-   * retried by the scheduler with exponential backoff.
+   * Dispatch an event to the webhooks of the merchant that owns it. Delivery is
+   * strictly owner-scoped: a merchant must never receive another merchant's
+   * payment data (cross-tenant confidentiality). When no owner can be
+   * attributed (e.g. a payer-initiated send with no merchant), nothing is
+   * broadcast. Creates a delivery record and POSTs with an HMAC-SHA256
+   * signature header; failed deliveries are retried by the scheduler with
+   * exponential backoff.
    */
-  async dispatch(event: WebhookEventType, payload: Record<string, unknown>): Promise<void> {
+  async dispatch(
+    event: WebhookEventType,
+    payload: Record<string, unknown>,
+    owner?: { merchantId: string },
+  ): Promise<void> {
+    const ownerMerchantId =
+      owner?.merchantId ??
+      (typeof payload.merchantId === 'string' ? (payload.merchantId as string) : undefined);
+    if (!ownerMerchantId) {
+      return; // not attributable to a merchant — never broadcast platform-wide
+    }
     const webhooks = await this.prisma.webhook.findMany({
-      where: { status: 'ACTIVE' },
+      where: { merchantId: ownerMerchantId, status: 'ACTIVE' },
     });
     const subscribed = webhooks.filter((w) => ((w.events as string[]) ?? []).includes(event));
     for (const webhook of subscribed) {

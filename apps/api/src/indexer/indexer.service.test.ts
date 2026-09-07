@@ -72,7 +72,6 @@ describe('IndexerService', () => {
       }),
       mockRedis as any,
       mockNotifications as any,
-      mockWebhooks as any,
       mockRealtime as any,
       mockInbound as any,
     );
@@ -89,7 +88,6 @@ describe('IndexerService', () => {
         keyedConfig({}),
         mockRedis as any,
         mockNotifications as any,
-        mockWebhooks as any,
         mockRealtime as any,
         mockInbound as any,
       );
@@ -126,10 +124,9 @@ describe('IndexerService', () => {
         assetCode: 'XLM',
         toPublicKey: 'GPAYEE',
       });
-      expect(mockWebhooks.dispatch).toHaveBeenCalledWith(
-        'payment.received',
-        expect.objectContaining({ transactionId: 'tx-contract-1' }),
-      );
+      // No webhook broadcast on a payer-initiated contract send: it has no
+      // merchant owner, so fan-out would leak other merchants' data.
+      expect(mockWebhooks.dispatch).not.toHaveBeenCalled();
     });
 
     it('is idempotent: a lost updateMany race (count 0) fires no side effects twice', async () => {

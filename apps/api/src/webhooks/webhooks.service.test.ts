@@ -7,9 +7,19 @@ describe('WebhooksService', () => {
 
   const webhook = {
     id: 'merchant-1:https://example.com/hook',
+    merchantId: 'merchant-1',
     url: 'https://example.com/hook',
     secret: 'secret-material',
     events: ['payment.received', 'invoice.paid'],
+    status: 'ACTIVE',
+  };
+
+  const otherMerchantWebhook = {
+    id: 'merchant-2:https://other.example.com/hook',
+    merchantId: 'merchant-2',
+    url: 'https://other.example.com/hook',
+    secret: 'secret-2',
+    events: ['payment.received'],
     status: 'ACTIVE',
   };
 
@@ -35,7 +45,11 @@ describe('WebhooksService', () => {
   it('persists a delivery with a stable deliveryId embedded in the signed payload', async () => {
     mockPrisma.webhook.findMany.mockResolvedValue([webhook]);
 
-    await service.dispatch('payment.received' as never, { transactionId: 'tx-1', amount: '5' });
+    await service.dispatch(
+      'payment.received' as never,
+      { transactionId: 'tx-1', amount: '5' },
+      { merchantId: 'merchant-1' },
+    );
 
     expect(mockPrisma.webhookDelivery.create).toHaveBeenCalledTimes(1);
     const { data } = mockPrisma.webhookDelivery.create.mock.calls[0][0];
@@ -55,8 +69,8 @@ describe('WebhooksService', () => {
   it('gives every logical event a distinct deliveryId', async () => {
     mockPrisma.webhook.findMany.mockResolvedValue([webhook]);
 
-    await service.dispatch('payment.received' as never, {});
-    await service.dispatch('payment.received' as never, {});
+    await service.dispatch('payment.received' as never, {}, { merchantId: 'merchant-1' });
+    await service.dispatch('payment.received' as never, {}, { merchantId: 'merchant-1' });
 
     const ids = mockPrisma.webhookDelivery.create.mock.calls.map(
       (call: [{ data: { id: string } }]) => call[0].data.id,
@@ -64,10 +78,43 @@ describe('WebhooksService', () => {
     expect(ids[0]).not.toBe(ids[1]);
   });
 
+  it("never delivers another merchant's event (cross-tenant isolation)", async () => {
+    // Two merchants subscribed to the same event type; the query filters by
+    // the owning merchant, so an event for merchant-1 never reaches merchant-2.
+    mockPrisma.webhook.findMany.mockImplementation(
+      async ({ where }: { where: { merchantId: string } }) =>
+        Promise.resolve(
+          [webhook, otherMerchantWebhook].filter((w) => w.merchantId === where.merchantId),
+        ),
+    );
+
+    await service.dispatch('payment.received' as never, {}, { merchantId: 'merchant-1' });
+
+    expect(mockPrisma.webhook.findMany).toHaveBeenCalledWith({
+      where: { merchantId: 'merchant-1', status: 'ACTIVE' },
+    });
+    expect(mockPrisma.webhookDelivery.create).toHaveBeenCalledTimes(1);
+    const delivery = mockPrisma.webhookDelivery.create.mock.calls[0][0];
+    expect(delivery.data.webhookId).toBe('merchant-1:https://example.com/hook');
+  });
+
+  it('never broadcasts an event with no attributable merchant', async () => {
+    mockPrisma.webhook.findMany.mockResolvedValue([webhook, otherMerchantWebhook]);
+
+    await service.dispatch('payment.received' as never, {});
+
+    expect(mockPrisma.webhook.findMany).not.toHaveBeenCalled();
+    expect(mockPrisma.webhookDelivery.create).not.toHaveBeenCalled();
+  });
+
   it('retries re-attempt the same delivery id and signed body', async () => {
     mockPrisma.webhook.findMany.mockResolvedValue([webhook]);
     mockPrisma.webhookDelivery.findUnique.mockResolvedValue(null); // first attempt no-ops
-    await service.dispatch('invoice.paid' as never, { invoiceNumber: 'INV-1' });
+    await service.dispatch(
+      'invoice.paid' as never,
+      { invoiceNumber: 'INV-1' },
+      { merchantId: 'merchant-1' },
+    );
     const { data } = mockPrisma.webhookDelivery.create.mock.calls[0][0];
     const id = data.id;
 
@@ -101,7 +148,7 @@ describe('WebhooksService', () => {
   it('only dispatches to webhooks subscribed to the event', async () => {
     mockPrisma.webhook.findMany.mockResolvedValue([webhook]);
 
-    await service.dispatch('transaction.updated' as never, {});
+    await service.dispatch('transaction.updated' as never, {}, { merchantId: 'merchant-1' });
 
     expect(mockPrisma.webhookDelivery.create).not.toHaveBeenCalled();
   });

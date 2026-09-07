@@ -75,7 +75,10 @@ JWT → every protected route           → RBAC via roles guard
 
 - All persistence goes through Prisma with Zod-validated DTOs.
 - Secrets live in env vars / K8s secrets / Azure Key Vault (never in code).
-- Rate limiting and audit logs on sensitive endpoints.
+- Rate limiting on every endpoint (auth endpoints throttled tighter).
+- **Audit logs: the `AuditLog` model and an admin listing endpoint exist, but no
+  service writes audit entries yet** — sensitive admin operations are not
+  currently journaled (documented limitation).
 - Soroban contracts enforce multi-sig thresholds and escrow rules on-chain.
 
 ## Current state & limitations (accurate as of 2026-09)

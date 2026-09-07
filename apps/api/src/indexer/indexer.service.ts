@@ -4,9 +4,7 @@ import { Asset, Networks, xdr } from '@stellar/stellar-sdk';
 import { PrismaService } from '@stellar-pay/database';
 import { RedisService } from '../infra/redis.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { WebhooksService } from '../webhooks/webhooks.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
-import type { WebhookEventType } from '@stellar-pay/types';
 import { InboundReconciliationService } from './inbound.service';
 import { parsePaymentEventData, stroopsToUnits, topicIsPayment } from './soroban-event';
 
@@ -58,7 +56,6 @@ export class IndexerService {
     private readonly config: ConfigService,
     private readonly redis: RedisService,
     private readonly notifications: NotificationsService,
-    private readonly webhooks: WebhooksService,
     private readonly realtime: RealtimeGateway,
     private readonly inbound: InboundReconciliationService,
   ) {}
@@ -253,12 +250,10 @@ export class IndexerService {
         toPublicKey: tx.toPublicKey ?? '',
       });
     }
-    await this.webhooks.dispatch('payment.received' as WebhookEventType, {
-      transactionId: tx.id,
-      amount: tx.amount,
-      assetCode: tx.assetCode,
-      toPublicKey: tx.toPublicKey,
-    });
+    // No webhook dispatch here: a contract send has no merchant owner (it is a
+    // payer-initiated transfer, not a merchant-received event), so fanning out
+    // to webhooks would leak another merchant's transaction data. Merchant
+    // inbound payments are webhooked by the owner-scoped inbound path.
     this.logger.log(`contract payment confirmed: ${tx.id}`);
   }
 
