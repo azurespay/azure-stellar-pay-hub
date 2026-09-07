@@ -469,6 +469,16 @@ exports.Prisma.WebhookDeliveryScalarFieldEnum = {
   deliveredAt: 'deliveredAt'
 };
 
+exports.Prisma.ChainEventScalarFieldEnum = {
+  id: 'id',
+  eventId: 'eventId',
+  source: 'source',
+  txHash: 'txHash',
+  contractId: 'contractId',
+  ledger: 'ledger',
+  createdAt: 'createdAt'
+};
+
 exports.Prisma.SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -630,7 +640,8 @@ exports.Prisma.ModelName = {
   RolePermission: 'RolePermission',
   Setting: 'Setting',
   Webhook: 'Webhook',
-  WebhookDelivery: 'WebhookDelivery'
+  WebhookDelivery: 'WebhookDelivery',
+  ChainEvent: 'ChainEvent'
 };
 
 /**

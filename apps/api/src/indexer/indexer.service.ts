@@ -1,12 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { xdr } from '@stellar/stellar-sdk';
+import { Asset, Networks, xdr } from '@stellar/stellar-sdk';
 import { PrismaService } from '@stellar-pay/database';
 import { RedisService } from '../infra/redis.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { WebhooksService } from '../webhooks/webhooks.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import type { WebhookEventType } from '@stellar-pay/types';
+import { InboundReconciliationService } from './inbound.service';
+import { parsePaymentEventData, stroopsToUnits, topicIsPayment } from './soroban-event';
 
 const CURSOR_KEY = 'indexer:soroban:cursor';
 const DEFAULT_LOOKBACK_LEDGERS = 2000;
@@ -14,6 +16,7 @@ const PAYMENT_MEMO_PREFIX = 'sp:';
 
 interface SorobanEvent {
   id?: string;
+  txHash?: string;
   contractId?: string;
   ledger?: number;
   topic?: string[] | Array<{ xdr: string }>;
@@ -57,6 +60,7 @@ export class IndexerService {
     private readonly notifications: NotificationsService,
     private readonly webhooks: WebhooksService,
     private readonly realtime: RealtimeGateway,
+    private readonly inbound: InboundReconciliationService,
   ) {}
 
   private contractId(): string | undefined {
@@ -69,6 +73,15 @@ export class IndexerService {
 
   private isEnabled(): boolean {
     return !!(this.contractId() && this.rpcUrl());
+  }
+
+  /** Native SAC contract id for the configured network (XLM inbound only). */
+  private nativeSacAddress(): string {
+    const network = this.config.get<string>('STELLAR_NETWORK') ?? 'testnet';
+    const passphrase =
+      this.config.get<string>('NETWORK_PASSPHRASE') ??
+      (network === 'public' ? Networks.PUBLIC : Networks.TESTNET);
+    return Asset.native().contractId(passphrase);
   }
 
   async syncOnce(): Promise<void> {
@@ -144,16 +157,64 @@ export class IndexerService {
   }
 
   private async handleContractEvent(event: SorobanEvent): Promise<void> {
+    // Platform correlation: `sp:<correlationId>` memos map back to a row we
+    // created. When the row exists it governs the payment — confirm it if
+    // still SUBMITTED and never treat it as a separate inbound credit.
     const correlation = extractCorrelationMemo(event);
-    if (!correlation) {
-      return; // not a platform payment (no sp:<id> memo)
+    if (correlation) {
+      const tx = await this.prisma.transaction.findFirst({
+        where: { meta: { path: ['correlationId'], equals: correlation } } as never,
+      });
+      if (tx?.kind === 'contract_send') {
+        if (tx.status === 'SUBMITTED') {
+          await this.confirm(tx);
+        }
+        return;
+      }
+      if (tx) {
+        return; // some other platform record owns this memo — not inbound
+      }
     }
-    const tx = await this.prisma.transaction.findFirst({
-      where: { meta: { path: ['correlationId'], equals: correlation } } as never,
+
+    // Inbound: a `payment` event whose recipient is a registered merchant was
+    // NOT initiated through the API. Dedupe + reconciliation is delegated to
+    // the shared inbound service (ChainEvent unique ledger, invoice matching,
+    // merchant notification + Socket.IO + webhooks).
+    if (!event.id) {
+      this.logger.warn('soroban event without id — cannot dedupe, skipping');
+      return;
+    }
+    const value = typeof event.value === 'string' ? event.value : event.value?.xdr;
+    if (!topicIsPayment(event.topic) || !value) {
+      return; // not a `payment` event (paused, batch, …)
+    }
+    const parsed = parsePaymentEventData(value);
+    if (!parsed) {
+      this.logger.warn({ eventId: event.id }, 'unparseable payment event payload');
+      return;
+    }
+    // XLM native only for now — other SAC assets need code/decimals resolution.
+    if (parsed.token !== this.nativeSacAddress()) {
+      this.logger.log(
+        { eventId: event.id, token: parsed.token },
+        'payment event for unsupported token — not inbound-credited',
+      );
+      return;
+    }
+
+    await this.inbound.handle({
+      eventId: event.id,
+      source: 'soroban',
+      fromPublicKey: parsed.from,
+      toPublicKey: parsed.to,
+      amount: stroopsToUnits(parsed.amountStroops, 7),
+      assetCode: 'XLM',
+      assetIssuer: null,
+      hash: event.txHash ?? null,
+      memo: parsed.memo || null,
+      contractId: this.contractId(),
+      ledger: event.ledger ?? null,
     });
-    if (tx && tx.kind === 'contract_send' && tx.status === 'SUBMITTED') {
-      await this.confirm(tx);
-    }
   }
 
   /**

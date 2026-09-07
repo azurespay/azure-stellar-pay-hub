@@ -564,7 +564,6 @@ model Webhook {
 
   @@index([merchantId])
 }
-
 model WebhookDelivery {
   id             String    @id @default(uuid())
   webhookId      String
@@ -580,4 +579,22 @@ model WebhookDelivery {
   deliveredAt    DateTime?
 
   @@index([status, nextRetryAt])
+}
+
+model ChainEvent {
+  // One row per on-chain event/operation that was ingested, keyed by a
+  // deterministic chain id so duplicate deliveries (re-polls after a cursor
+  // loss, Horizon paging retries, Soroban RPC re-scans) can never be processed
+  // twice. `eventId` is the Horizon payment paging token (source=horizon) or
+  // the Soroban RPC event id (source=soroban).
+  id         String   @id @default(uuid())
+  eventId    String   @unique
+  source     String // 'horizon' | 'soroban'
+  txHash     String?
+  contractId String?
+  ledger     Int?
+  createdAt  DateTime @default(now())
+
+  @@index([source])
+  @@index([createdAt])
 }

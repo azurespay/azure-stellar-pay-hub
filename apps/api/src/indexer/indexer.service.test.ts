@@ -1,5 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import { xdr } from '@stellar/stellar-sdk';
+import { Asset, Keypair, Networks, StrKey, xdr } from '@stellar/stellar-sdk';
 import { IndexerService, extractCorrelationMemo } from './indexer.service';
 
 const RPC_URL = 'https://soroban-testnet.example.com/rpc';
@@ -28,6 +28,7 @@ describe('IndexerService', () => {
   let mockNotifications: Record<string, jest.Mock>;
   let mockWebhooks: Record<string, jest.Mock>;
   let mockRealtime: Record<string, jest.Mock>;
+  let mockInbound: Record<string, jest.Mock>;
   let fetchMock: jest.Mock;
 
   const submittedTx = {
@@ -58,6 +59,7 @@ describe('IndexerService', () => {
     mockNotifications = { paymentSent: jest.fn().mockResolvedValue(undefined) };
     mockWebhooks = { dispatch: jest.fn().mockResolvedValue(undefined) };
     mockRealtime = { emitToUser: jest.fn() };
+    mockInbound = { handle: jest.fn().mockResolvedValue({ created: false }) };
 
     fetchMock = jest.fn();
     global.fetch = fetchMock as unknown as typeof fetch;
@@ -72,6 +74,7 @@ describe('IndexerService', () => {
       mockNotifications as any,
       mockWebhooks as any,
       mockRealtime as any,
+      mockInbound as any,
     );
   });
 
@@ -88,6 +91,7 @@ describe('IndexerService', () => {
         mockNotifications as any,
         mockWebhooks as any,
         mockRealtime as any,
+        mockInbound as any,
       );
       await idle.syncOnce();
       await idle.syncOnce();
@@ -247,6 +251,163 @@ describe('IndexerService', () => {
 
       expect(mockPrisma.transaction.findFirst).not.toHaveBeenCalled();
       expect(mockPrisma.transaction.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('inbound payment events (not initiated through the API)', () => {
+    const NATIVE_SAC = Asset.native().contractId(Networks.TESTNET);
+
+    function accountScVal(publicKey: string): xdr.ScVal {
+      return xdr.ScVal.scvAddress(
+        xdr.ScAddress.scAddressTypeAccount(
+          xdr.PublicKey.publicKeyTypeEd25519(StrKey.decodeEd25519PublicKey(publicKey)),
+        ),
+      );
+    }
+
+    function contractScVal(contractId: string): xdr.ScVal {
+      return xdr.ScVal.scvAddress(
+        xdr.ScAddress.scAddressTypeContract(StrKey.decodeContract(contractId)),
+      );
+    }
+
+    function paymentValue(opts: {
+      from: string;
+      to: string;
+      token: string;
+      stroops: bigint;
+      memo?: string;
+    }): string {
+      const scVal = xdr.ScVal.scvVec([
+        accountScVal(opts.from),
+        accountScVal(opts.to),
+        contractScVal(opts.token),
+        xdr.ScVal.scvI128(
+          new xdr.Int128Parts({ lo: opts.stroops, hi: 0n } as unknown as ConstructorParameters<
+            typeof xdr.Int128Parts
+          >[0]),
+        ),
+        xdr.ScVal.scvString(opts.memo ?? ''),
+      ]);
+      return scVal.toXDR('base64').toString();
+    }
+
+    function paymentTopic(): string[] {
+      return [xdr.ScVal.scvSymbol('payment').toXDR('base64').toString()];
+    }
+
+    function withIngestedEvents(events: Array<Record<string, unknown>>) {
+      mockPrisma.transaction.findMany.mockResolvedValue([]);
+      fetchMock.mockImplementation(async (_url: string, init: { body: string }) => {
+        const body = JSON.parse(init.body);
+        if (body.method === 'getLatestLedger') {
+          return jsonResponse({ result: { sequence: 4068001 } });
+        }
+        if (body.method === 'getEvents') {
+          return jsonResponse({ result: { events, cursor: 'c-final' } });
+        }
+        return jsonResponse({ result: null });
+      });
+    }
+
+    it('delegates an XLM merchant payment event to inbound reconciliation (stroops → units)', async () => {
+      const payer = Keypair.random();
+      const merchant = Keypair.random();
+      withIngestedEvents([
+        {
+          id: 'evt-inbound-1',
+          type: 'contract',
+          contractId: CONTRACT_ID,
+          txHash: 'a'.repeat(64),
+          ledger: 4068001,
+          topic: paymentTopic(),
+          value: paymentValue({
+            from: payer.publicKey(),
+            to: merchant.publicKey(),
+            token: NATIVE_SAC,
+            stroops: 100_000_000n, // 10 XLM
+            memo: '',
+          }),
+        },
+      ]);
+
+      await service.syncOnce();
+
+      expect(mockInbound.handle).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventId: 'evt-inbound-1',
+          source: 'soroban',
+          fromPublicKey: payer.publicKey(),
+          toPublicKey: merchant.publicKey(),
+          amount: '10',
+          assetCode: 'XLM',
+          assetIssuer: null,
+          hash: 'a'.repeat(64),
+          memo: null,
+          contractId: CONTRACT_ID,
+          ledger: 4068001,
+        }),
+      );
+    });
+
+    it('does not delegate events for unsupported (non-native) tokens', async () => {
+      const other = Keypair.random();
+      const merchant = Keypair.random();
+      const otherSac = StrKey.encodeContract(Buffer.alloc(32, 9));
+      withIngestedEvents([
+        {
+          id: 'evt-inbound-2',
+          type: 'contract',
+          contractId: CONTRACT_ID,
+          topic: paymentTopic(),
+          value: paymentValue({
+            from: other.publicKey(),
+            to: merchant.publicKey(),
+            token: otherSac,
+            stroops: 50_000_000n,
+          }),
+        },
+      ]);
+
+      await service.syncOnce();
+
+      expect(mockInbound.handle).not.toHaveBeenCalled();
+    });
+
+    it('never treats a platform send as inbound when its row exists', async () => {
+      const payer = Keypair.random();
+      const merchant = Keypair.random();
+      // The correlation branch finds the platform row and returns early.
+      mockPrisma.transaction.findFirst.mockResolvedValue({
+        id: 'tx-platform',
+        kind: 'contract_send',
+        status: 'CONFIRMED',
+        userId: 'user-1',
+        amount: '10',
+        assetCode: 'XLM',
+        toPublicKey: merchant.publicKey(),
+      });
+      withIngestedEvents([
+        {
+          id: 'evt-inbound-3',
+          type: 'contract',
+          contractId: CONTRACT_ID,
+          txHash: 'b'.repeat(64),
+          topic: paymentTopic(),
+          value: paymentValue({
+            from: payer.publicKey(),
+            to: merchant.publicKey(),
+            token: NATIVE_SAC,
+            stroops: 100_000_000n,
+            memo: 'sp:corr-123',
+          }),
+        },
+      ]);
+
+      await service.syncOnce();
+
+      expect(mockInbound.handle).not.toHaveBeenCalled();
+      expect(mockPrisma.transaction.updateMany).not.toHaveBeenCalled(); // already CONFIRMED
     });
   });
 });

@@ -143,6 +143,11 @@ export type Webhook = $Result.DefaultSelection<Prisma.$WebhookPayload>
  * 
  */
 export type WebhookDelivery = $Result.DefaultSelection<Prisma.$WebhookDeliveryPayload>
+/**
+ * Model ChainEvent
+ * 
+ */
+export type ChainEvent = $Result.DefaultSelection<Prisma.$ChainEventPayload>
 
 /**
  * Enums
@@ -744,6 +749,16 @@ export class PrismaClient<
     * ```
     */
   get webhookDelivery(): Prisma.WebhookDeliveryDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.chainEvent`: Exposes CRUD operations for the **ChainEvent** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more ChainEvents
+    * const chainEvents = await prisma.chainEvent.findMany()
+    * ```
+    */
+  get chainEvent(): Prisma.ChainEventDelegate<ExtArgs, ClientOptions>;
 }
 
 export namespace Prisma {
@@ -1210,7 +1225,8 @@ export namespace Prisma {
     RolePermission: 'RolePermission',
     Setting: 'Setting',
     Webhook: 'Webhook',
-    WebhookDelivery: 'WebhookDelivery'
+    WebhookDelivery: 'WebhookDelivery',
+    ChainEvent: 'ChainEvent'
   };
 
   export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -1229,7 +1245,7 @@ export namespace Prisma {
       omit: GlobalOmitOptions
     }
     meta: {
-      modelProps: "user" | "userPreference" | "wallet" | "session" | "device" | "contact" | "beneficiary" | "asset" | "trustline" | "transaction" | "scheduledPayment" | "merchant" | "product" | "customer" | "invoice" | "paymentLink" | "settlement" | "notification" | "apiKey" | "auditLog" | "role" | "permission" | "rolePermission" | "setting" | "webhook" | "webhookDelivery"
+      modelProps: "user" | "userPreference" | "wallet" | "session" | "device" | "contact" | "beneficiary" | "asset" | "trustline" | "transaction" | "scheduledPayment" | "merchant" | "product" | "customer" | "invoice" | "paymentLink" | "settlement" | "notification" | "apiKey" | "auditLog" | "role" | "permission" | "rolePermission" | "setting" | "webhook" | "webhookDelivery" | "chainEvent"
       txIsolationLevel: Prisma.TransactionIsolationLevel
     }
     model: {
@@ -3157,6 +3173,80 @@ export namespace Prisma {
           }
         }
       }
+      ChainEvent: {
+        payload: Prisma.$ChainEventPayload<ExtArgs>
+        fields: Prisma.ChainEventFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.ChainEventFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ChainEventPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.ChainEventFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ChainEventPayload>
+          }
+          findFirst: {
+            args: Prisma.ChainEventFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ChainEventPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.ChainEventFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ChainEventPayload>
+          }
+          findMany: {
+            args: Prisma.ChainEventFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ChainEventPayload>[]
+          }
+          create: {
+            args: Prisma.ChainEventCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ChainEventPayload>
+          }
+          createMany: {
+            args: Prisma.ChainEventCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.ChainEventCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ChainEventPayload>[]
+          }
+          delete: {
+            args: Prisma.ChainEventDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ChainEventPayload>
+          }
+          update: {
+            args: Prisma.ChainEventUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ChainEventPayload>
+          }
+          deleteMany: {
+            args: Prisma.ChainEventDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.ChainEventUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.ChainEventUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ChainEventPayload>[]
+          }
+          upsert: {
+            args: Prisma.ChainEventUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ChainEventPayload>
+          }
+          aggregate: {
+            args: Prisma.ChainEventAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateChainEvent>
+          }
+          groupBy: {
+            args: Prisma.ChainEventGroupByArgs<ExtArgs>
+            result: $Utils.Optional<ChainEventGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.ChainEventCountArgs<ExtArgs>
+            result: $Utils.Optional<ChainEventCountAggregateOutputType> | number
+          }
+        }
+      }
     }
   } & {
     other: {
@@ -3279,6 +3369,7 @@ export namespace Prisma {
     setting?: SettingOmit
     webhook?: WebhookOmit
     webhookDelivery?: WebhookDeliveryOmit
+    chainEvent?: ChainEventOmit
   }
 
   /* Types for Logging */
@@ -33699,6 +33790,1061 @@ export namespace Prisma {
 
 
   /**
+   * Model ChainEvent
+   */
+
+  export type AggregateChainEvent = {
+    _count: ChainEventCountAggregateOutputType | null
+    _avg: ChainEventAvgAggregateOutputType | null
+    _sum: ChainEventSumAggregateOutputType | null
+    _min: ChainEventMinAggregateOutputType | null
+    _max: ChainEventMaxAggregateOutputType | null
+  }
+
+  export type ChainEventAvgAggregateOutputType = {
+    ledger: number | null
+  }
+
+  export type ChainEventSumAggregateOutputType = {
+    ledger: number | null
+  }
+
+  export type ChainEventMinAggregateOutputType = {
+    id: string | null
+    eventId: string | null
+    source: string | null
+    txHash: string | null
+    contractId: string | null
+    ledger: number | null
+    createdAt: Date | null
+  }
+
+  export type ChainEventMaxAggregateOutputType = {
+    id: string | null
+    eventId: string | null
+    source: string | null
+    txHash: string | null
+    contractId: string | null
+    ledger: number | null
+    createdAt: Date | null
+  }
+
+  export type ChainEventCountAggregateOutputType = {
+    id: number
+    eventId: number
+    source: number
+    txHash: number
+    contractId: number
+    ledger: number
+    createdAt: number
+    _all: number
+  }
+
+
+  export type ChainEventAvgAggregateInputType = {
+    ledger?: true
+  }
+
+  export type ChainEventSumAggregateInputType = {
+    ledger?: true
+  }
+
+  export type ChainEventMinAggregateInputType = {
+    id?: true
+    eventId?: true
+    source?: true
+    txHash?: true
+    contractId?: true
+    ledger?: true
+    createdAt?: true
+  }
+
+  export type ChainEventMaxAggregateInputType = {
+    id?: true
+    eventId?: true
+    source?: true
+    txHash?: true
+    contractId?: true
+    ledger?: true
+    createdAt?: true
+  }
+
+  export type ChainEventCountAggregateInputType = {
+    id?: true
+    eventId?: true
+    source?: true
+    txHash?: true
+    contractId?: true
+    ledger?: true
+    createdAt?: true
+    _all?: true
+  }
+
+  export type ChainEventAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which ChainEvent to aggregate.
+     */
+    where?: ChainEventWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of ChainEvents to fetch.
+     */
+    orderBy?: ChainEventOrderByWithRelationInput | ChainEventOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the start position
+     */
+    cursor?: ChainEventWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` ChainEvents from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` ChainEvents.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Count returned ChainEvents
+    **/
+    _count?: true | ChainEventCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to average
+    **/
+    _avg?: ChainEventAvgAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to sum
+    **/
+    _sum?: ChainEventSumAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the minimum value
+    **/
+    _min?: ChainEventMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the maximum value
+    **/
+    _max?: ChainEventMaxAggregateInputType
+  }
+
+  export type GetChainEventAggregateType<T extends ChainEventAggregateArgs> = {
+        [P in keyof T & keyof AggregateChainEvent]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateChainEvent[P]>
+      : GetScalarType<T[P], AggregateChainEvent[P]>
+  }
+
+
+
+
+  export type ChainEventGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: ChainEventWhereInput
+    orderBy?: ChainEventOrderByWithAggregationInput | ChainEventOrderByWithAggregationInput[]
+    by: ChainEventScalarFieldEnum[] | ChainEventScalarFieldEnum
+    having?: ChainEventScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: ChainEventCountAggregateInputType | true
+    _avg?: ChainEventAvgAggregateInputType
+    _sum?: ChainEventSumAggregateInputType
+    _min?: ChainEventMinAggregateInputType
+    _max?: ChainEventMaxAggregateInputType
+  }
+
+  export type ChainEventGroupByOutputType = {
+    id: string
+    eventId: string
+    source: string
+    txHash: string | null
+    contractId: string | null
+    ledger: number | null
+    createdAt: Date
+    _count: ChainEventCountAggregateOutputType | null
+    _avg: ChainEventAvgAggregateOutputType | null
+    _sum: ChainEventSumAggregateOutputType | null
+    _min: ChainEventMinAggregateOutputType | null
+    _max: ChainEventMaxAggregateOutputType | null
+  }
+
+  type GetChainEventGroupByPayload<T extends ChainEventGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<ChainEventGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof ChainEventGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], ChainEventGroupByOutputType[P]>
+            : GetScalarType<T[P], ChainEventGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type ChainEventSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    eventId?: boolean
+    source?: boolean
+    txHash?: boolean
+    contractId?: boolean
+    ledger?: boolean
+    createdAt?: boolean
+  }, ExtArgs["result"]["chainEvent"]>
+
+  export type ChainEventSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    eventId?: boolean
+    source?: boolean
+    txHash?: boolean
+    contractId?: boolean
+    ledger?: boolean
+    createdAt?: boolean
+  }, ExtArgs["result"]["chainEvent"]>
+
+  export type ChainEventSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    eventId?: boolean
+    source?: boolean
+    txHash?: boolean
+    contractId?: boolean
+    ledger?: boolean
+    createdAt?: boolean
+  }, ExtArgs["result"]["chainEvent"]>
+
+  export type ChainEventSelectScalar = {
+    id?: boolean
+    eventId?: boolean
+    source?: boolean
+    txHash?: boolean
+    contractId?: boolean
+    ledger?: boolean
+    createdAt?: boolean
+  }
+
+  export type ChainEventOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "eventId" | "source" | "txHash" | "contractId" | "ledger" | "createdAt", ExtArgs["result"]["chainEvent"]>
+
+  export type $ChainEventPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "ChainEvent"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      id: string
+      eventId: string
+      source: string
+      txHash: string | null
+      contractId: string | null
+      ledger: number | null
+      createdAt: Date
+    }, ExtArgs["result"]["chainEvent"]>
+    composites: {}
+  }
+
+  type ChainEventGetPayload<S extends boolean | null | undefined | ChainEventDefaultArgs> = $Result.GetResult<Prisma.$ChainEventPayload, S>
+
+  type ChainEventCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<ChainEventFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: ChainEventCountAggregateInputType | true
+    }
+
+  export interface ChainEventDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['ChainEvent'], meta: { name: 'ChainEvent' } }
+    /**
+     * Find zero or one ChainEvent that matches the filter.
+     * @param {ChainEventFindUniqueArgs} args - Arguments to find a ChainEvent
+     * @example
+     * // Get one ChainEvent
+     * const chainEvent = await prisma.chainEvent.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends ChainEventFindUniqueArgs>(args: SelectSubset<T, ChainEventFindUniqueArgs<ExtArgs>>): Prisma__ChainEventClient<$Result.GetResult<Prisma.$ChainEventPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one ChainEvent that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {ChainEventFindUniqueOrThrowArgs} args - Arguments to find a ChainEvent
+     * @example
+     * // Get one ChainEvent
+     * const chainEvent = await prisma.chainEvent.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends ChainEventFindUniqueOrThrowArgs>(args: SelectSubset<T, ChainEventFindUniqueOrThrowArgs<ExtArgs>>): Prisma__ChainEventClient<$Result.GetResult<Prisma.$ChainEventPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first ChainEvent that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ChainEventFindFirstArgs} args - Arguments to find a ChainEvent
+     * @example
+     * // Get one ChainEvent
+     * const chainEvent = await prisma.chainEvent.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends ChainEventFindFirstArgs>(args?: SelectSubset<T, ChainEventFindFirstArgs<ExtArgs>>): Prisma__ChainEventClient<$Result.GetResult<Prisma.$ChainEventPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first ChainEvent that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ChainEventFindFirstOrThrowArgs} args - Arguments to find a ChainEvent
+     * @example
+     * // Get one ChainEvent
+     * const chainEvent = await prisma.chainEvent.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends ChainEventFindFirstOrThrowArgs>(args?: SelectSubset<T, ChainEventFindFirstOrThrowArgs<ExtArgs>>): Prisma__ChainEventClient<$Result.GetResult<Prisma.$ChainEventPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more ChainEvents that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ChainEventFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all ChainEvents
+     * const chainEvents = await prisma.chainEvent.findMany()
+     * 
+     * // Get first 10 ChainEvents
+     * const chainEvents = await prisma.chainEvent.findMany({ take: 10 })
+     * 
+     * // Only select the `id`
+     * const chainEventWithIdOnly = await prisma.chainEvent.findMany({ select: { id: true } })
+     * 
+     */
+    findMany<T extends ChainEventFindManyArgs>(args?: SelectSubset<T, ChainEventFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ChainEventPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a ChainEvent.
+     * @param {ChainEventCreateArgs} args - Arguments to create a ChainEvent.
+     * @example
+     * // Create one ChainEvent
+     * const ChainEvent = await prisma.chainEvent.create({
+     *   data: {
+     *     // ... data to create a ChainEvent
+     *   }
+     * })
+     * 
+     */
+    create<T extends ChainEventCreateArgs>(args: SelectSubset<T, ChainEventCreateArgs<ExtArgs>>): Prisma__ChainEventClient<$Result.GetResult<Prisma.$ChainEventPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many ChainEvents.
+     * @param {ChainEventCreateManyArgs} args - Arguments to create many ChainEvents.
+     * @example
+     * // Create many ChainEvents
+     * const chainEvent = await prisma.chainEvent.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *     
+     */
+    createMany<T extends ChainEventCreateManyArgs>(args?: SelectSubset<T, ChainEventCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many ChainEvents and returns the data saved in the database.
+     * @param {ChainEventCreateManyAndReturnArgs} args - Arguments to create many ChainEvents.
+     * @example
+     * // Create many ChainEvents
+     * const chainEvent = await prisma.chainEvent.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Create many ChainEvents and only return the `id`
+     * const chainEventWithIdOnly = await prisma.chainEvent.createManyAndReturn({
+     *   select: { id: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    createManyAndReturn<T extends ChainEventCreateManyAndReturnArgs>(args?: SelectSubset<T, ChainEventCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ChainEventPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a ChainEvent.
+     * @param {ChainEventDeleteArgs} args - Arguments to delete one ChainEvent.
+     * @example
+     * // Delete one ChainEvent
+     * const ChainEvent = await prisma.chainEvent.delete({
+     *   where: {
+     *     // ... filter to delete one ChainEvent
+     *   }
+     * })
+     * 
+     */
+    delete<T extends ChainEventDeleteArgs>(args: SelectSubset<T, ChainEventDeleteArgs<ExtArgs>>): Prisma__ChainEventClient<$Result.GetResult<Prisma.$ChainEventPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one ChainEvent.
+     * @param {ChainEventUpdateArgs} args - Arguments to update one ChainEvent.
+     * @example
+     * // Update one ChainEvent
+     * const chainEvent = await prisma.chainEvent.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    update<T extends ChainEventUpdateArgs>(args: SelectSubset<T, ChainEventUpdateArgs<ExtArgs>>): Prisma__ChainEventClient<$Result.GetResult<Prisma.$ChainEventPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more ChainEvents.
+     * @param {ChainEventDeleteManyArgs} args - Arguments to filter ChainEvents to delete.
+     * @example
+     * // Delete a few ChainEvents
+     * const { count } = await prisma.chainEvent.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     * 
+     */
+    deleteMany<T extends ChainEventDeleteManyArgs>(args?: SelectSubset<T, ChainEventDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more ChainEvents.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ChainEventUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many ChainEvents
+     * const chainEvent = await prisma.chainEvent.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    updateMany<T extends ChainEventUpdateManyArgs>(args: SelectSubset<T, ChainEventUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more ChainEvents and returns the data updated in the database.
+     * @param {ChainEventUpdateManyAndReturnArgs} args - Arguments to update many ChainEvents.
+     * @example
+     * // Update many ChainEvents
+     * const chainEvent = await prisma.chainEvent.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Update zero or more ChainEvents and only return the `id`
+     * const chainEventWithIdOnly = await prisma.chainEvent.updateManyAndReturn({
+     *   select: { id: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    updateManyAndReturn<T extends ChainEventUpdateManyAndReturnArgs>(args: SelectSubset<T, ChainEventUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ChainEventPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one ChainEvent.
+     * @param {ChainEventUpsertArgs} args - Arguments to update or create a ChainEvent.
+     * @example
+     * // Update or create a ChainEvent
+     * const chainEvent = await prisma.chainEvent.upsert({
+     *   create: {
+     *     // ... data to create a ChainEvent
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the ChainEvent we want to update
+     *   }
+     * })
+     */
+    upsert<T extends ChainEventUpsertArgs>(args: SelectSubset<T, ChainEventUpsertArgs<ExtArgs>>): Prisma__ChainEventClient<$Result.GetResult<Prisma.$ChainEventPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of ChainEvents.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ChainEventCountArgs} args - Arguments to filter ChainEvents to count.
+     * @example
+     * // Count the number of ChainEvents
+     * const count = await prisma.chainEvent.count({
+     *   where: {
+     *     // ... the filter for the ChainEvents we want to count
+     *   }
+     * })
+    **/
+    count<T extends ChainEventCountArgs>(
+      args?: Subset<T, ChainEventCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], ChainEventCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a ChainEvent.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ChainEventAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends ChainEventAggregateArgs>(args: Subset<T, ChainEventAggregateArgs>): Prisma.PrismaPromise<GetChainEventAggregateType<T>>
+
+    /**
+     * Group by ChainEvent.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ChainEventGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     * 
+    **/
+    groupBy<
+      T extends ChainEventGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: ChainEventGroupByArgs['orderBy'] }
+        : { orderBy?: ChainEventGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, ChainEventGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetChainEventGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the ChainEvent model
+   */
+  readonly fields: ChainEventFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for ChainEvent.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__ChainEventClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the ChainEvent model
+   */
+  interface ChainEventFieldRefs {
+    readonly id: FieldRef<"ChainEvent", 'String'>
+    readonly eventId: FieldRef<"ChainEvent", 'String'>
+    readonly source: FieldRef<"ChainEvent", 'String'>
+    readonly txHash: FieldRef<"ChainEvent", 'String'>
+    readonly contractId: FieldRef<"ChainEvent", 'String'>
+    readonly ledger: FieldRef<"ChainEvent", 'Int'>
+    readonly createdAt: FieldRef<"ChainEvent", 'DateTime'>
+  }
+    
+
+  // Custom InputTypes
+  /**
+   * ChainEvent findUnique
+   */
+  export type ChainEventFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ChainEvent
+     */
+    select?: ChainEventSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ChainEvent
+     */
+    omit?: ChainEventOmit<ExtArgs> | null
+    /**
+     * Filter, which ChainEvent to fetch.
+     */
+    where: ChainEventWhereUniqueInput
+  }
+
+  /**
+   * ChainEvent findUniqueOrThrow
+   */
+  export type ChainEventFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ChainEvent
+     */
+    select?: ChainEventSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ChainEvent
+     */
+    omit?: ChainEventOmit<ExtArgs> | null
+    /**
+     * Filter, which ChainEvent to fetch.
+     */
+    where: ChainEventWhereUniqueInput
+  }
+
+  /**
+   * ChainEvent findFirst
+   */
+  export type ChainEventFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ChainEvent
+     */
+    select?: ChainEventSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ChainEvent
+     */
+    omit?: ChainEventOmit<ExtArgs> | null
+    /**
+     * Filter, which ChainEvent to fetch.
+     */
+    where?: ChainEventWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of ChainEvents to fetch.
+     */
+    orderBy?: ChainEventOrderByWithRelationInput | ChainEventOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for ChainEvents.
+     */
+    cursor?: ChainEventWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` ChainEvents from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` ChainEvents.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of ChainEvents.
+     */
+    distinct?: ChainEventScalarFieldEnum | ChainEventScalarFieldEnum[]
+  }
+
+  /**
+   * ChainEvent findFirstOrThrow
+   */
+  export type ChainEventFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ChainEvent
+     */
+    select?: ChainEventSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ChainEvent
+     */
+    omit?: ChainEventOmit<ExtArgs> | null
+    /**
+     * Filter, which ChainEvent to fetch.
+     */
+    where?: ChainEventWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of ChainEvents to fetch.
+     */
+    orderBy?: ChainEventOrderByWithRelationInput | ChainEventOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for ChainEvents.
+     */
+    cursor?: ChainEventWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` ChainEvents from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` ChainEvents.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of ChainEvents.
+     */
+    distinct?: ChainEventScalarFieldEnum | ChainEventScalarFieldEnum[]
+  }
+
+  /**
+   * ChainEvent findMany
+   */
+  export type ChainEventFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ChainEvent
+     */
+    select?: ChainEventSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ChainEvent
+     */
+    omit?: ChainEventOmit<ExtArgs> | null
+    /**
+     * Filter, which ChainEvents to fetch.
+     */
+    where?: ChainEventWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of ChainEvents to fetch.
+     */
+    orderBy?: ChainEventOrderByWithRelationInput | ChainEventOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for listing ChainEvents.
+     */
+    cursor?: ChainEventWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` ChainEvents from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` ChainEvents.
+     */
+    skip?: number
+    distinct?: ChainEventScalarFieldEnum | ChainEventScalarFieldEnum[]
+  }
+
+  /**
+   * ChainEvent create
+   */
+  export type ChainEventCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ChainEvent
+     */
+    select?: ChainEventSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ChainEvent
+     */
+    omit?: ChainEventOmit<ExtArgs> | null
+    /**
+     * The data needed to create a ChainEvent.
+     */
+    data: XOR<ChainEventCreateInput, ChainEventUncheckedCreateInput>
+  }
+
+  /**
+   * ChainEvent createMany
+   */
+  export type ChainEventCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many ChainEvents.
+     */
+    data: ChainEventCreateManyInput | ChainEventCreateManyInput[]
+    skipDuplicates?: boolean
+  }
+
+  /**
+   * ChainEvent createManyAndReturn
+   */
+  export type ChainEventCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ChainEvent
+     */
+    select?: ChainEventSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the ChainEvent
+     */
+    omit?: ChainEventOmit<ExtArgs> | null
+    /**
+     * The data used to create many ChainEvents.
+     */
+    data: ChainEventCreateManyInput | ChainEventCreateManyInput[]
+    skipDuplicates?: boolean
+  }
+
+  /**
+   * ChainEvent update
+   */
+  export type ChainEventUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ChainEvent
+     */
+    select?: ChainEventSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ChainEvent
+     */
+    omit?: ChainEventOmit<ExtArgs> | null
+    /**
+     * The data needed to update a ChainEvent.
+     */
+    data: XOR<ChainEventUpdateInput, ChainEventUncheckedUpdateInput>
+    /**
+     * Choose, which ChainEvent to update.
+     */
+    where: ChainEventWhereUniqueInput
+  }
+
+  /**
+   * ChainEvent updateMany
+   */
+  export type ChainEventUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update ChainEvents.
+     */
+    data: XOR<ChainEventUpdateManyMutationInput, ChainEventUncheckedUpdateManyInput>
+    /**
+     * Filter which ChainEvents to update
+     */
+    where?: ChainEventWhereInput
+    /**
+     * Limit how many ChainEvents to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * ChainEvent updateManyAndReturn
+   */
+  export type ChainEventUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ChainEvent
+     */
+    select?: ChainEventSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the ChainEvent
+     */
+    omit?: ChainEventOmit<ExtArgs> | null
+    /**
+     * The data used to update ChainEvents.
+     */
+    data: XOR<ChainEventUpdateManyMutationInput, ChainEventUncheckedUpdateManyInput>
+    /**
+     * Filter which ChainEvents to update
+     */
+    where?: ChainEventWhereInput
+    /**
+     * Limit how many ChainEvents to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * ChainEvent upsert
+   */
+  export type ChainEventUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ChainEvent
+     */
+    select?: ChainEventSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ChainEvent
+     */
+    omit?: ChainEventOmit<ExtArgs> | null
+    /**
+     * The filter to search for the ChainEvent to update in case it exists.
+     */
+    where: ChainEventWhereUniqueInput
+    /**
+     * In case the ChainEvent found by the `where` argument doesn't exist, create a new ChainEvent with this data.
+     */
+    create: XOR<ChainEventCreateInput, ChainEventUncheckedCreateInput>
+    /**
+     * In case the ChainEvent was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<ChainEventUpdateInput, ChainEventUncheckedUpdateInput>
+  }
+
+  /**
+   * ChainEvent delete
+   */
+  export type ChainEventDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ChainEvent
+     */
+    select?: ChainEventSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ChainEvent
+     */
+    omit?: ChainEventOmit<ExtArgs> | null
+    /**
+     * Filter which ChainEvent to delete.
+     */
+    where: ChainEventWhereUniqueInput
+  }
+
+  /**
+   * ChainEvent deleteMany
+   */
+  export type ChainEventDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which ChainEvents to delete
+     */
+    where?: ChainEventWhereInput
+    /**
+     * Limit how many ChainEvents to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * ChainEvent without action
+   */
+  export type ChainEventDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ChainEvent
+     */
+    select?: ChainEventSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ChainEvent
+     */
+    omit?: ChainEventOmit<ExtArgs> | null
+  }
+
+
+  /**
    * Enums
    */
 
@@ -34136,6 +35282,19 @@ export namespace Prisma {
   };
 
   export type WebhookDeliveryScalarFieldEnum = (typeof WebhookDeliveryScalarFieldEnum)[keyof typeof WebhookDeliveryScalarFieldEnum]
+
+
+  export const ChainEventScalarFieldEnum: {
+    id: 'id',
+    eventId: 'eventId',
+    source: 'source',
+    txHash: 'txHash',
+    contractId: 'contractId',
+    ledger: 'ledger',
+    createdAt: 'createdAt'
+  };
+
+  export type ChainEventScalarFieldEnum = (typeof ChainEventScalarFieldEnum)[keyof typeof ChainEventScalarFieldEnum]
 
 
   export const SortOrder: {
@@ -36700,6 +37859,70 @@ export namespace Prisma {
     deliveredAt?: DateTimeNullableWithAggregatesFilter<"WebhookDelivery"> | Date | string | null
   }
 
+  export type ChainEventWhereInput = {
+    AND?: ChainEventWhereInput | ChainEventWhereInput[]
+    OR?: ChainEventWhereInput[]
+    NOT?: ChainEventWhereInput | ChainEventWhereInput[]
+    id?: StringFilter<"ChainEvent"> | string
+    eventId?: StringFilter<"ChainEvent"> | string
+    source?: StringFilter<"ChainEvent"> | string
+    txHash?: StringNullableFilter<"ChainEvent"> | string | null
+    contractId?: StringNullableFilter<"ChainEvent"> | string | null
+    ledger?: IntNullableFilter<"ChainEvent"> | number | null
+    createdAt?: DateTimeFilter<"ChainEvent"> | Date | string
+  }
+
+  export type ChainEventOrderByWithRelationInput = {
+    id?: SortOrder
+    eventId?: SortOrder
+    source?: SortOrder
+    txHash?: SortOrderInput | SortOrder
+    contractId?: SortOrderInput | SortOrder
+    ledger?: SortOrderInput | SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type ChainEventWhereUniqueInput = Prisma.AtLeast<{
+    id?: string
+    eventId?: string
+    AND?: ChainEventWhereInput | ChainEventWhereInput[]
+    OR?: ChainEventWhereInput[]
+    NOT?: ChainEventWhereInput | ChainEventWhereInput[]
+    source?: StringFilter<"ChainEvent"> | string
+    txHash?: StringNullableFilter<"ChainEvent"> | string | null
+    contractId?: StringNullableFilter<"ChainEvent"> | string | null
+    ledger?: IntNullableFilter<"ChainEvent"> | number | null
+    createdAt?: DateTimeFilter<"ChainEvent"> | Date | string
+  }, "id" | "eventId">
+
+  export type ChainEventOrderByWithAggregationInput = {
+    id?: SortOrder
+    eventId?: SortOrder
+    source?: SortOrder
+    txHash?: SortOrderInput | SortOrder
+    contractId?: SortOrderInput | SortOrder
+    ledger?: SortOrderInput | SortOrder
+    createdAt?: SortOrder
+    _count?: ChainEventCountOrderByAggregateInput
+    _avg?: ChainEventAvgOrderByAggregateInput
+    _max?: ChainEventMaxOrderByAggregateInput
+    _min?: ChainEventMinOrderByAggregateInput
+    _sum?: ChainEventSumOrderByAggregateInput
+  }
+
+  export type ChainEventScalarWhereWithAggregatesInput = {
+    AND?: ChainEventScalarWhereWithAggregatesInput | ChainEventScalarWhereWithAggregatesInput[]
+    OR?: ChainEventScalarWhereWithAggregatesInput[]
+    NOT?: ChainEventScalarWhereWithAggregatesInput | ChainEventScalarWhereWithAggregatesInput[]
+    id?: StringWithAggregatesFilter<"ChainEvent"> | string
+    eventId?: StringWithAggregatesFilter<"ChainEvent"> | string
+    source?: StringWithAggregatesFilter<"ChainEvent"> | string
+    txHash?: StringNullableWithAggregatesFilter<"ChainEvent"> | string | null
+    contractId?: StringNullableWithAggregatesFilter<"ChainEvent"> | string | null
+    ledger?: IntNullableWithAggregatesFilter<"ChainEvent"> | number | null
+    createdAt?: DateTimeWithAggregatesFilter<"ChainEvent"> | Date | string
+  }
+
   export type UserCreateInput = {
     id?: string
     email?: string | null
@@ -39206,6 +40429,76 @@ export namespace Prisma {
     deliveredAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   }
 
+  export type ChainEventCreateInput = {
+    id?: string
+    eventId: string
+    source: string
+    txHash?: string | null
+    contractId?: string | null
+    ledger?: number | null
+    createdAt?: Date | string
+  }
+
+  export type ChainEventUncheckedCreateInput = {
+    id?: string
+    eventId: string
+    source: string
+    txHash?: string | null
+    contractId?: string | null
+    ledger?: number | null
+    createdAt?: Date | string
+  }
+
+  export type ChainEventUpdateInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    eventId?: StringFieldUpdateOperationsInput | string
+    source?: StringFieldUpdateOperationsInput | string
+    txHash?: NullableStringFieldUpdateOperationsInput | string | null
+    contractId?: NullableStringFieldUpdateOperationsInput | string | null
+    ledger?: NullableIntFieldUpdateOperationsInput | number | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type ChainEventUncheckedUpdateInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    eventId?: StringFieldUpdateOperationsInput | string
+    source?: StringFieldUpdateOperationsInput | string
+    txHash?: NullableStringFieldUpdateOperationsInput | string | null
+    contractId?: NullableStringFieldUpdateOperationsInput | string | null
+    ledger?: NullableIntFieldUpdateOperationsInput | number | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type ChainEventCreateManyInput = {
+    id?: string
+    eventId: string
+    source: string
+    txHash?: string | null
+    contractId?: string | null
+    ledger?: number | null
+    createdAt?: Date | string
+  }
+
+  export type ChainEventUpdateManyMutationInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    eventId?: StringFieldUpdateOperationsInput | string
+    source?: StringFieldUpdateOperationsInput | string
+    txHash?: NullableStringFieldUpdateOperationsInput | string | null
+    contractId?: NullableStringFieldUpdateOperationsInput | string | null
+    ledger?: NullableIntFieldUpdateOperationsInput | number | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type ChainEventUncheckedUpdateManyInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    eventId?: StringFieldUpdateOperationsInput | string
+    source?: StringFieldUpdateOperationsInput | string
+    txHash?: NullableStringFieldUpdateOperationsInput | string | null
+    contractId?: NullableStringFieldUpdateOperationsInput | string | null
+    ledger?: NullableIntFieldUpdateOperationsInput | number | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
   export type StringFilter<$PrismaModel = never> = {
     equals?: string | StringFieldRefInput<$PrismaModel>
     in?: string[] | ListStringFieldRefInput<$PrismaModel>
@@ -41085,6 +42378,44 @@ export namespace Prisma {
   export type WebhookDeliverySumOrderByAggregateInput = {
     attempts?: SortOrder
     responseStatus?: SortOrder
+  }
+
+  export type ChainEventCountOrderByAggregateInput = {
+    id?: SortOrder
+    eventId?: SortOrder
+    source?: SortOrder
+    txHash?: SortOrder
+    contractId?: SortOrder
+    ledger?: SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type ChainEventAvgOrderByAggregateInput = {
+    ledger?: SortOrder
+  }
+
+  export type ChainEventMaxOrderByAggregateInput = {
+    id?: SortOrder
+    eventId?: SortOrder
+    source?: SortOrder
+    txHash?: SortOrder
+    contractId?: SortOrder
+    ledger?: SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type ChainEventMinOrderByAggregateInput = {
+    id?: SortOrder
+    eventId?: SortOrder
+    source?: SortOrder
+    txHash?: SortOrder
+    contractId?: SortOrder
+    ledger?: SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type ChainEventSumOrderByAggregateInput = {
+    ledger?: SortOrder
   }
 
   export type WalletCreateNestedManyWithoutUserInput = {

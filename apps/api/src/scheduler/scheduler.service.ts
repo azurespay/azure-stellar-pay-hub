@@ -5,6 +5,7 @@ import { WebhooksService } from '../webhooks/webhooks.service';
 import { createLogger } from '@stellar-pay/logger';
 import { NotificationsService } from '../notifications/notifications.service';
 import { IndexerService } from '../indexer/indexer.service';
+import { HorizonInboundService } from '../indexer/horizon-inbound.service';
 import type { NotificationType } from '@stellar-pay/types';
 
 /**
@@ -22,6 +23,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     private readonly webhooks: WebhooksService,
     private readonly notifications: NotificationsService,
     private readonly indexer: IndexerService,
+    private readonly horizonInbound: HorizonInboundService,
   ) {}
 
   onModuleInit(): void {
@@ -31,6 +33,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     this.timers.push(setInterval(() => void this.expireSessions(), 10 * 60_000));
     this.timers.push(setInterval(() => void this.processPendingSettlements(), 5 * 60_000));
     this.timers.push(setInterval(() => void this.pollIndexer(), 20_000));
+    this.timers.push(setInterval(() => void this.pollHorizonInbound(), 15_000));
     this.logger.info('scheduler started');
   }
 
@@ -117,6 +120,17 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
       return;
     }
     await this.indexer.syncOnce();
+  }
+
+  /**
+   * Inbound direct-to-merchant detection: polls Horizon account payment feeds
+   * and credits merchant inbound payments that never went through the API.
+   */
+  private async pollHorizonInbound(): Promise<void> {
+    if (!(await this.redis.acquireLock('scheduler:horizon-inbound', 12))) {
+      return;
+    }
+    await this.horizonInbound.syncOnce();
   }
 
   private async retryWebhooks(): Promise<void> {

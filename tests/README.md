@@ -35,7 +35,9 @@ they run locally or against a deployed testnet environment.
 - **Unit/integration (1)** — services and validators in isolation with mocked
   infra. Includes the checkout/submission reconciliation tests that prove a
   successful payment marks invoices `PAID`, bumps payment-link stats, dispatches
-  webhooks, and notifies merchants.
+  webhooks, and notifies merchants. Inbound-listener tests cover the Soroban
+  event parser (vec + map payload layouts), Horizon feed polling/filtering, the
+  `ChainEvent` unique-event idempotency, and merchant/invoice inbound credit.
 - **Contract tests (2)** — every Soroban entry point in `test.rs` runs against
   the Soroban test host (no network).
 - **API integration (3)** — boots the NestJS `AppModule` with supertest and

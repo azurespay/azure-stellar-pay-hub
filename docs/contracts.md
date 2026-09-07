@@ -84,6 +84,16 @@ classic Stellar `Operation.payment`. Status as of 2026-09:
 - **Status consumers treat `CONFIRMED` as success.** Transactions/analytics
   stats and the explorer/admin/web UIs count `CONFIRMED` alongside
   `SUCCEEDED` (transaction `status` enum includes `CONFIRMED`).
+- **Inbound event ingestion (merchant-address payments).** Besides confirming
+  platform sends, the indexer parses `payment` contract events whose recipient
+  is an ACTIVE merchant and credits them as inbound payments even though they
+  never went through the API. Payload parsing (`soroban-event.ts`) accepts
+  both the vec and the map layout of `PaymentEventData` and validates
+  recipient/token/amount before crediting; native XLM is supported today.
+  Inbound credits share one idempotent path (see `InboundReconciliationService`
+  in `docs/architecture.md`) with the classic-Horizon listener: a `ChainEvent`
+  unique-event ledger prevents double processing, and a memo equal to an open
+  invoice number (asset + amount match) marks the invoice PAID.
 - **Blocked on one ops prerequisite.** End-to-end contract-route payment on
   testnet still requires the admin to `set_allowed` the XLM SAC on the deployed
   contract (deployer key); until then a `send` reverts with `TokenNotAllowed`.
