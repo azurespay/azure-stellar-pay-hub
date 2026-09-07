@@ -70,6 +70,15 @@ jobs:
       - name: Unit & integration tests
         run: pnpm test
 
+      - name: API integration tests (tier 3, needs Postgres + Redis)
+        run: pnpm db:push && pnpm --filter @stellar-pay/api test:e2e
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stellar_pay?schema=public
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: ci-test-secret-at-least-16-chars
+          WEBHOOK_SIGNING_SECRET: ci-test-webhook-secret-16-chars
+          ADMIN_PASSWORD: CiTestPass123!
+
       - name: Security scan (npm audit)
         run: pnpm audit --audit-level high
         continue-on-error: true

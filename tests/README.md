@@ -5,20 +5,18 @@
 Tests are organised by how much live infrastructure they require, so each tier
 can be run in the right environment:
 
-| Tier                                     | Requires                                                                     | Run in CI?                                                    | Command                                   |
-| ---------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------- | ----------------------------------------- |
-| **1. Deterministic unit / integration**  | Nothing external (deps mocked)                                               | ✅ yes                                                        | `pnpm test`                               |
-| **2. Soroban contract tests**            | Rust toolchain (+ `wasm32v1-none`)                                           | ✅ yes                                                        | `pnpm contracts:test`                     |
-| **3. API integration (Nest, supertest)** | Postgres + Redis (docker-compose)                                            | ❌ not yet (CI starts the services but only runs `pnpm test`) | `pnpm --filter @stellar-pay/api test:e2e` |
-| **4. Local-stack smoke**                 | Booted API + Postgres + Redis                                                | ❌ no                                                         | `pnpm test:e2e`                           |
-| **5. Testnet E2E (payment lifecycle)**   | Booted API + Postgres + Redis + **live Stellar testnet** (Friendbot/Horizon) | ❌ no                                                         | `pnpm test:e2e:flow`                      |
-| **6. Load test**                         | Booted API + Postgres + Redis                                                | ❌ no                                                         | `k6 run tests/load/payment-load.js`       |
+| Tier                                    | Requires                                                                     | Run in CI? | Command                             |
+| --------------------------------------- | ---------------------------------------------------------------------------- | ---------- | ----------------------------------- |
+| **1. Deterministic unit / integration** | Nothing external (deps mocked)                                               | ✅ yes     | `pnpm test`                         |
+| **2. Soroban contract tests**           | Rust toolchain (+ `wasm32v1-none`)                                           | ✅ yes     | `pnpm contracts:test`               |     | **3. API integration (Nest, supertest)** | Postgres + Redis (docker-compose) | ✅ yes (CI provisions the services and runs `db:push` + the suite) | `pnpm --filter @stellar-pay/api test:e2e` |
+| **4. Local-stack smoke**                | Booted API + Postgres + Redis                                                | ❌ no      | `pnpm test:e2e`                     |
+| **5. Testnet E2E (payment lifecycle)**  | Booted API + Postgres + Redis + **live Stellar testnet** (Friendbot/Horizon) | ❌ no      | `pnpm test:e2e:flow`                |
+| **6. Load test**                        | Booted API + Postgres + Redis                                                | ❌ no      | `k6 run tests/load/payment-load.js` |
 
-Tiers 3–6 are not part of CI (`.github/workflows/ci.yml`) today. CI starts
-Postgres + Redis services but only runs `pnpm test` (tier 1) and
-`pnpm contracts:test` (tier 2). Tiers 3–6 need a live database/Redis and, for
-tier 5, live testnet access — they run locally or against a deployed testnet
-environment.
+Tiers 4–6 are not part of CI (`.github/workflows/ci.yml`). Tier 3 runs in CI
+(the job provisions Postgres + Redis and runs `pnpm db:push` + the suite).
+Tiers 4–6 need a live database/Redis and, for tier 5, live testnet access —
+they run locally or against a deployed testnet environment.
 
 | Suite                  | Location                          | Command                                   |
 | ---------------------- | --------------------------------- | ----------------------------------------- |

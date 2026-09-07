@@ -98,3 +98,27 @@ JWT → every protected route           → RBAC via roles guard
   Terraform, monitoring) are production-oriented, but the live platform runs on
   **Stellar testnet with demo data**. Mainnet is not deployed. Deployment targets
   are classified in `docs/deployment.md`.
+
+## Feature maturity (evidence-based)
+
+Status is assigned from evidence in this repository (code, tests, deployment
+records), not from intent. Nothing is marked **PRODUCTION** while the platform
+runs on testnet with demo data.
+
+| Feature                                                    | Status                        | Evidence                                                                                                 |
+| ---------------------------------------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Auth (Ed25519 challenge → JWT, sessions, RBAC)             | **DEV (tested)**              | Unit tests + API e2e spec; exercised by the lifecycle E2E                                                |
+| Payments (classic Stellar send)                            | **DEV (tested, testnet)**     | Unit tests; lifecycle E2E submits real testnet XLM                                                       |
+| Checkout — invoice/payment-link pay + reconciliation       | **DEV (tested)**              | Reconciliation unit tests (invoice PAID, link stats, webhooks, merchant notify)                          |
+| Merchant registry, products, payment links, invoices (DB)  | **DEV (partial)**             | Service code + Zod schemas; webhook/notification integration varies                                      |
+| Soroban contracts (8)                                      | **DEV (contract-level)**      | Rust unit tests; deployed + **verified live on testnet**; **not yet invoked by the platform**            |
+| Scheduled / recurring / subscription / settlement jobs     | **SCAFFOLD**                  | Scheduler creates PENDING rows only — no approval/signing/chain execution; comments admit the simulation |
+| Inbound chain-event detection (direct-to-address payments) | **NOT IMPLEMENTED**           | No Horizon/Soroban listener in the codebase                                                              |
+| Realtime (Socket.IO)                                       | **DEV (single-instance)**     | Unit coverage via flows; in-memory rooms, no Redis adapter yet                                           |
+| Notifications & webhooks                                   | **DEV (partial)**             | Dispatched from API-mediated successes; retries via scheduler                                            |
+| IPFS receipts                                              | **DEV (provider-dependent)**  | Local/Pinata/web3.storage pinning; deterministic un-pinned CID fallback is not resolvable without a pin  |
+| Explorer & admin analytics                                 | **DEV (empty-state correct)** | Live DB queries; success rate is `null` (not 100%) when there is no data                                 |
+| Deployment                                                 | **TESTNET / DEMO**            | Railway + Vercel on testnet; AKS/Terraform experimental; mainnet not deployed (`docs/deployment.md`)     |
+
+Legend: **PRODUCTION** (mainnet, ops-ready) · **DEV** (implemented & tested on
+this stack) · **SCAFFOLD** (placeholder behavior) · **NOT IMPLEMENTED**.
