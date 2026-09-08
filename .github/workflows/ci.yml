@@ -75,6 +75,7 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stellar_pay?schema=public
           REDIS_URL: redis://localhost:6379
+          THROTTLER_BACKEND: memory # per-booted-app budgets keep suites deterministic
           JWT_SECRET: ci-test-secret-at-least-16-chars
           WEBHOOK_SIGNING_SECRET: ci-test-webhook-secret-16-chars
           ADMIN_PASSWORD: CiTestPass123!
@@ -134,3 +135,60 @@ jobs:
         run: pnpm build:apps
         env:
           NEXT_TELEMETRY_DISABLED: '1'
+
+  testnet-e2e:
+    # Live end-to-end verification on Stellar testnet (auth → fund → create →
+    # sign → submit → on-chain confirm → realtime). Runs on main pushes only
+    # (Friendbot/ledger flakiness makes it unsuitable for PR gating) and is
+    # non-blocking so a transient testnet outage never breaks CI — failures
+    # still surface in the run summary for triage.
+    name: Testnet E2E (live, main only)
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    continue-on-error: true
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: stellar_pay
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm db:generate
+      - name: Build packages
+        run: pnpm build:packages
+      - name: Prepare schema
+        run: pnpm db:push
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stellar_pay?schema=public
+      - name: Build API (booted in-process by the E2E script)
+        run: pnpm --filter @stellar-pay/api build
+      - name: Run live testnet payment-lifecycle E2E
+        run: node tests/e2e/auth-payment-flow.mjs
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stellar_pay?schema=public
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: e2e-test-secret-at-least-16-chars
+          STELLAR_NETWORK: testnet
+          ADMIN_EMAIL: ci-e2e@test.dev
+          ADMIN_PASSWORD: CiE2eTest123!

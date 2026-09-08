@@ -94,16 +94,22 @@ JWT → every protected route           → RBAC via roles guard
 /payments/:id/submit` and the checkout submit path build/submit Stellar
   `Operation.payment` XDR. An **experimental Soroban route** exists behind
   `PAYMENT_ROUTE=contract`: `SEND` payments for allowlisted assets invoke the
-  `payment` contract's `send` entry point (built in `@stellar-pay/sdk`). A
-  successful Horizon submission is persisted as `SUBMITTED`, and the
+  `payment` contract's `send` entry point (built in `@stellar-pay/sdk`). The
   **event indexer** (`apps/api/src/indexer`, run by the scheduler every ~20s)
-  polls Soroban RPC `getTransaction` and moves the row to `CONFIRMED` only when
-  the ledger reports `SUCCESS` — the atomic `SUBMITTED → CONFIRMED` update makes
-  confirmation idempotent, and payer realtime/notification events fire on that
-  transition. Contract calls are not enabled by default (see `docs/contracts.md`
-  → Platform wiring), and a full contract-route payment has not been executed
-  on testnet because the on-chain SAC allowlist step still needs the deployer
-  key.
+  polls Soroban RPC `getTransaction` and would move a submitted row to
+  `CONFIRMED` only when the ledger reports `SUCCESS` — the atomic `SUBMITTED →
+CONFIRMED` update makes confirmation idempotent, and payer
+  realtime/notification events fire on that transition. **This route is not
+  end-to-end executable at this commit**: the SDK builds the Soroban invoke
+  XDR _without_ a simulation pass (no resource footprint / `sorobanData` /
+  signed authorization tree — the contract's `send` calls
+  `from.require_auth()` and a SAC `transfer`), and `submitSignedTransaction`
+  sends envelopes to Horizon's classic endpoint, which rejects Soroban
+  transactions. A valid Soroban payment additionally requires the on-chain SAC
+  allowlist step (`set_allowed`) with the deployer key. See
+  `docs/contracts.md` → Platform wiring for the exact remaining work. The
+  deterministic contract-route _unit_ tests cover XDR construction and
+  `SUBMITTED`-persistence semantics, not a live on-chain execution.
 - **Inbound detection now exists for merchant-address payments, in two forms.**
   `HorizonInboundService` polls each ACTIVE merchant's Horizon account payment
   feed (~15s cadence, per-merchant cursor in Redis) and credits **classic

@@ -1,4 +1,9 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '@stellar-pay/database';
 import { createId } from '@stellar-pay/shared';
 import { buildPaymentUri } from '@stellar-pay/shared';
@@ -39,10 +44,28 @@ export class MerchantsService {
     return merchant;
   }
 
+  /**
+   * View the caller's own profile. SUSPENDED/REJECTED merchants are locked
+   * out entirely (an admin suspension therefore takes effect on the next
+   * request rather than only blocking new inbound credits); a PENDING
+   * merchant may still see and refine its profile while awaiting approval.
+   */
   async me(userId: string) {
     const merchant = await this.prisma.merchant.findUnique({ where: { userId } });
     if (!merchant) {
       throw new NotFoundException('No merchant profile for this account');
+    }
+    if (merchant.status === 'SUSPENDED' || merchant.status === 'REJECTED') {
+      throw new ForbiddenException('Merchant account is not active');
+    }
+    return merchant;
+  }
+
+  /** Fetch the caller's merchant and require it to be fully ACTIVE. */
+  private async activeMerchant(userId: string) {
+    const merchant = await this.me(userId);
+    if (merchant.status !== 'ACTIVE') {
+      throw new ForbiddenException('Merchant account is not yet active');
     }
     return merchant;
   }
@@ -63,7 +86,7 @@ export class MerchantsService {
   }
 
   async products(userId: string, page = 1, pageSize = 50) {
-    const merchant = await this.me(userId);
+    const merchant = await this.activeMerchant(userId);
     const [items, total] = await Promise.all([
       this.prisma.product.findMany({
         where: { merchantId: merchant.id },
@@ -80,7 +103,7 @@ export class MerchantsService {
   }
 
   async createProduct(userId: string, input: CreateProduct) {
-    const merchant = await this.me(userId);
+    const merchant = await this.activeMerchant(userId);
     return this.prisma.product.create({
       data: {
         merchantId: merchant.id,
@@ -95,13 +118,13 @@ export class MerchantsService {
   }
 
   async deleteProduct(userId: string, productId: string) {
-    const merchant = await this.me(userId);
+    const merchant = await this.activeMerchant(userId);
     await this.prisma.product.deleteMany({ where: { id: productId, merchantId: merchant.id } });
     return { ok: true };
   }
 
   async invoices(userId: string) {
-    const merchant = await this.me(userId);
+    const merchant = await this.activeMerchant(userId);
     return this.prisma.invoice.findMany({
       where: { merchantId: merchant.id },
       orderBy: { createdAt: 'desc' },
@@ -109,7 +132,7 @@ export class MerchantsService {
   }
 
   async paymentLinks(userId: string) {
-    const merchant = await this.me(userId);
+    const merchant = await this.activeMerchant(userId);
     return this.prisma.paymentLink.findMany({
       where: { merchantId: merchant.id },
       orderBy: { createdAt: 'desc' },
@@ -117,7 +140,7 @@ export class MerchantsService {
   }
 
   async settlements(userId: string) {
-    const merchant = await this.me(userId);
+    const merchant = await this.activeMerchant(userId);
     return this.prisma.settlement.findMany({
       where: { merchantId: merchant.id },
       orderBy: { createdAt: 'desc' },
@@ -125,7 +148,7 @@ export class MerchantsService {
   }
 
   async customers(userId: string) {
-    const merchant = await this.me(userId);
+    const merchant = await this.activeMerchant(userId);
     return this.prisma.customer.findMany({
       where: { merchantId: merchant.id },
       orderBy: { totalSpent: 'desc' },
@@ -142,7 +165,7 @@ export class MerchantsService {
       customerPublicKey?: string;
     },
   ) {
-    const merchant = await this.me(userId);
+    const merchant = await this.activeMerchant(userId);
     let amount = input.amount;
     let assetCode = input.assetCode ?? merchant.settlementAssetCode;
     if (!amount && input.productIds?.length) {

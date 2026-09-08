@@ -27,9 +27,10 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
   let mockWallet: Record<string, jest.Mock>;
   let mockNetwork: {
     buildPaymentTransaction: jest.Mock;
-    buildSorobanSendTransaction: jest.Mock;
+    prepareSorobanSendTransaction: jest.Mock;
     sorobanTokenAddress: jest.Mock;
     submitSignedTransaction: jest.Mock;
+    submitSorobanSendTransaction: jest.Mock;
     verifySignedPaymentMatchesIntent: jest.Mock;
   };
 
@@ -61,6 +62,8 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
         update: jest.fn().mockResolvedValue({ id: 'tx-contract', status: 'SUBMITTED' }),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
+      // No Settings rows = no gates by default.
+      setting: { findMany: jest.fn().mockResolvedValue([]) },
     };
     mockWallet = { assertWalletOwnership: jest.fn().mockResolvedValue(true) };
     mockNotifications = { paymentSent: jest.fn(), paymentFailed: jest.fn() };
@@ -73,9 +76,14 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
 
     mockNetwork = {
       buildPaymentTransaction: jest.fn().mockResolvedValue('classic-xdr'),
-      buildSorobanSendTransaction: jest.fn().mockResolvedValue('soroban-xdr'),
+      prepareSorobanSendTransaction: jest.fn().mockResolvedValue({
+        unsignedXdr: 'soroban-xdr',
+        minResourceFee: '100',
+        latestLedger: 100,
+      }),
       sorobanTokenAddress: jest.fn().mockReturnValue(TOKEN_ADDRESS),
       submitSignedTransaction: jest.fn(),
+      submitSorobanSendTransaction: jest.fn(),
       verifySignedPaymentMatchesIntent: jest.fn().mockReturnValue({ matches: true }),
     };
     mockedCreateNetwork.mockReturnValue(mockNetwork as never);
@@ -99,12 +107,12 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
   });
 
   describe('create — contract route', () => {
-    it('builds a Soroban send XDR with a sp: correlation memo and persists kind=contract_send', async () => {
+    it('simulates+assembles a Soroban send XDR with a sp: correlation memo and persists kind=contract_send', async () => {
       const result = await service.create('user-1', dto as never);
 
       expect(mockWallet.assertWalletOwnership).toHaveBeenCalledWith('user-1', 'GPAYER');
       expect(mockNetwork.sorobanTokenAddress).toHaveBeenCalledWith('XLM', null);
-      expect(mockNetwork.buildSorobanSendTransaction).toHaveBeenCalledWith(
+      expect(mockNetwork.prepareSorobanSendTransaction).toHaveBeenCalledWith(
         expect.objectContaining({
           from: 'GPAYER',
           to: 'GPAYEE',
@@ -112,7 +120,7 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
           amount: '10',
         }),
       );
-      const memoArg = mockNetwork.buildSorobanSendTransaction.mock.calls[0][0].memo;
+      const memoArg = mockNetwork.prepareSorobanSendTransaction.mock.calls[0][0].memo;
       expect(memoArg).toMatch(/^sp:/);
       expect(mockNetwork.buildPaymentTransaction).not.toHaveBeenCalled();
 
@@ -192,10 +200,20 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
       await service.create('user-1', usdcDto as never);
 
       expect(mockNetwork.buildPaymentTransaction).toHaveBeenCalled();
-      expect(mockNetwork.buildSorobanSendTransaction).not.toHaveBeenCalled();
+      expect(mockNetwork.prepareSorobanSendTransaction).not.toHaveBeenCalled();
       expect(mockPrisma.transaction.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ kind: 'payment' }),
       });
+    });
+
+    it('surfaces an un-allowlisted SAC as a clear 400-class error at create time', async () => {
+      mockNetwork.prepareSorobanSendTransaction.mockRejectedValueOnce(
+        new Error('Soroban simulation failed: contract reverted (TokenNotAllowed)'),
+      );
+      await expect(service.create('user-1', dto as never)).rejects.toThrow(
+        'Soroban simulation failed',
+      );
+      expect(mockPrisma.transaction.create).not.toHaveBeenCalled();
     });
   });
 
@@ -275,7 +293,7 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
         amount: '10',
         assetCode: 'XLM',
       });
-      mockNetwork.submitSignedTransaction.mockResolvedValue({
+      mockNetwork.submitSorobanSendTransaction.mockResolvedValue({
         status: 'SUCCEEDED',
         hash: '0xhash',
         fee: '100',
@@ -314,7 +332,7 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
         'Transaction already submitted',
       );
       // The loser never reaches the network.
-      expect(mockNetwork.submitSignedTransaction).not.toHaveBeenCalled();
+      expect(mockNetwork.submitSorobanSendTransaction).not.toHaveBeenCalled();
     });
 
     it('reverts the SUBMITTED claim to PENDING when the transport fails', async () => {
@@ -326,7 +344,7 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
         amount: '10',
         assetCode: 'XLM',
       });
-      mockNetwork.submitSignedTransaction.mockRejectedValue(new Error('ECONNRESET'));
+      mockNetwork.submitSorobanSendTransaction.mockRejectedValue(new Error('ECONNRESET'));
 
       await expect(service.submit('user-1', 'tx-contract', 'signed-xdr')).rejects.toThrow(
         'ECONNRESET',
@@ -351,7 +369,7 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
         status: 'PENDING',
         kind: 'contract_send',
       });
-      mockNetwork.submitSignedTransaction.mockResolvedValue({
+      mockNetwork.submitSorobanSendTransaction.mockResolvedValue({
         status: 'FAILED',
         hash: null,
         fee: '100',
@@ -384,10 +402,138 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
       expect(mockNetwork.buildPaymentTransaction).toHaveBeenCalledWith(
         expect.objectContaining({ from: 'GPAYER', to: 'GPAYEE', amount: '10' }),
       );
-      expect(mockNetwork.buildSorobanSendTransaction).not.toHaveBeenCalled();
+      expect(mockNetwork.prepareSorobanSendTransaction).not.toHaveBeenCalled();
       expect(mockPrisma.transaction.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ kind: 'payment', status: 'PENDING' }),
       });
+    });
+
+    it('builds a text-memo XDR when a memo is sent without memoType (submission parity)', async () => {
+      const classicService = new PaymentsService(
+        mockPrisma as any,
+        keyedConfig({ STELLAR_NETWORK: 'testnet' }),
+        mockWallet as any,
+        mockNotifications as any,
+        mockWebhooks as any,
+        mockRealtime as any,
+        mockRates as any,
+        mockIpfs as any,
+        mockReconciliation as any,
+        mockMetrics as any,
+      );
+      const memoDto = {
+        ...dto,
+        memo: 'e2e-test-payment',
+        memoType: undefined,
+      };
+
+      await classicService.create('user-1', memoDto as never);
+
+      // The unsigned XDR the wallet signs must carry the same memo the submit
+      // gate verifies — otherwise every memo'd send is rejected as tampered.
+      expect(mockNetwork.buildPaymentTransaction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          memo: 'e2e-test-payment',
+          memoType: 'text',
+        }),
+      );
+    });
+  });
+
+  describe('platform gates (Setting table)', () => {
+    it('blocks payment creation during maintenance mode', async () => {
+      mockPrisma.setting.findMany.mockResolvedValueOnce([{ key: 'maintenance_mode', value: true }]);
+      await expect(service.create('user-1', dto as never)).rejects.toThrow(
+        'temporarily paused for maintenance',
+      );
+      expect(mockNetwork.prepareSorobanSendTransaction).not.toHaveBeenCalled();
+    });
+
+    it('rejects amounts below the configured minimum', async () => {
+      mockPrisma.setting.findMany.mockResolvedValueOnce([
+        { key: 'min_payment_amount', value: '0.5' },
+      ]);
+      const tinyDto = {
+        ...dto,
+        destinations: [{ publicKey: 'GPAYEE', amount: '0.1' }],
+      };
+      await expect(service.create('user-1', tinyDto as never)).rejects.toThrow(
+        'Amount must be at least 0.5',
+      );
+    });
+
+    it('lets equal-or-larger amounts through the minimum gate', async () => {
+      mockPrisma.setting.findMany.mockResolvedValueOnce([
+        { key: 'min_payment_amount', value: '0.5' },
+      ]);
+      const bigDto = {
+        ...dto,
+        destinations: [{ publicKey: 'GPAYEE', amount: '0.5' }],
+      };
+      await expect(service.create('user-1', bigDto as never)).resolves.toBeDefined();
+    });
+  });
+
+  describe('approveOccurrence', () => {
+    const tx = {
+      id: 'tx-occ-1',
+      userId: 'user-1',
+      status: 'PENDING',
+      kind: 'recurring',
+      fromPublicKey: 'GPAYER',
+      toPublicKey: 'GPAYEE',
+      amount: '10',
+      assetCode: 'XLM',
+      assetIssuer: null,
+      memo: 'invoice-42',
+      memoType: 'text',
+      meta: { scheduledId: 'sched-1', run: 2 },
+    };
+
+    beforeEach(() => {
+      mockPrisma.transaction.findFirst.mockResolvedValue(tx);
+      mockNetwork.buildPaymentTransaction.mockResolvedValue('approval-xdr');
+    });
+
+    it('builds a signable XDR for the owner of a scheduler-created occurrence', async () => {
+      const result = await service.approveOccurrence('user-1', 'tx-occ-1');
+
+      expect(mockPrisma.transaction.findFirst).toHaveBeenCalledWith({
+        where: { id: 'tx-occ-1', userId: 'user-1' },
+      });
+      expect(mockNetwork.buildPaymentTransaction).toHaveBeenCalledWith({
+        from: 'GPAYER',
+        to: 'GPAYEE',
+        amount: '10',
+        assetCode: 'XLM',
+        assetIssuer: null,
+        memo: 'invoice-42',
+        memoType: 'text',
+      });
+      expect(result).toEqual(
+        expect.objectContaining({ id: 'tx-occ-1', unsignedXdr: 'approval-xdr' }),
+      );
+    });
+
+    it('rejects other users (owner-scoped, no oracle)', async () => {
+      mockPrisma.transaction.findFirst.mockResolvedValue(null);
+      await expect(service.approveOccurrence('attacker', 'tx-occ-1')).rejects.toThrow(
+        'Transaction not found',
+      );
+      expect(mockNetwork.buildPaymentTransaction).not.toHaveBeenCalled();
+    });
+
+    it('refuses non-occurrence kinds and non-PENDING rows', async () => {
+      mockPrisma.transaction.findFirst.mockResolvedValue({ ...tx, kind: 'payment' });
+      await expect(service.approveOccurrence('user-1', 'tx-occ-1')).rejects.toThrow(
+        'Not an approvable scheduled payment',
+      );
+
+      mockPrisma.transaction.findFirst.mockResolvedValue({ ...tx, status: 'SUBMITTED' });
+      await expect(service.approveOccurrence('user-1', 'tx-occ-1')).rejects.toThrow(
+        'Payment is not awaiting approval',
+      );
+      expect(mockNetwork.buildPaymentTransaction).not.toHaveBeenCalled();
     });
   });
 });

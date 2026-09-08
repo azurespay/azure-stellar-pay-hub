@@ -3,10 +3,12 @@ import { CurrentUser, type AuthenticatedUser } from '../common/decorators';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import {
   createMerchantSchema,
+  posPaymentSchema,
   productSchema,
   updateMerchantSchema,
   type CreateMerchant,
   type CreateProduct,
+  type PosPayment,
   type UpdateMerchant,
 } from '@stellar-pay/validation';
 import { MerchantsService } from './merchants.service';
@@ -77,13 +79,7 @@ export class MerchantsController {
   @Post('me/pos-checkout')
   posCheckout(
     @CurrentUser() user: AuthenticatedUser,
-    @Body()
-    body: {
-      productIds?: string[];
-      amount?: string;
-      assetCode?: string;
-      customerPublicKey?: string;
-    },
+    @Body(new ZodValidationPipe({ body: posPaymentSchema })) body: PosPayment,
   ) {
     return this.merchants.posCheckout(user.userId, body);
   }

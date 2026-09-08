@@ -139,15 +139,15 @@ off by default / not the live path · **SCAFFOLD** = placeholder behavior.
 | ---------------------------------------------------- | ---------------------------------------------------- |
 | Auth (Ed25519 challenge → JWT, RBAC)                 | DEV (tested)                                         |
 | Payments (classic Stellar send)                      | DEV (tested, testnet)                                |
-| Soroban `payment`-contract route                     | EXPERIMENTAL (off by default, SAC allowlist pending) |
-| Checkout / payment links / invoices                  | DEV (tested)                                         |
+| Soroban `payment`-contract route                     | EXPERIMENTAL (off by default, SAC allowlist pending) |     | Checkout / payment links / invoices | DEV (tested; public routes CSRF-safe + validated) |
 | Merchant registry, products, links, invoices (DB)    | DEV (partial)                                        |
 | Other Soroban contracts (escrow, multisig, etc.)     | DEV (contract-level)                                 |
-| Scheduled / recurring / subscription jobs            | DEV (confirmation-gated; no auto-signer)             |
+| Scheduled / recurring / subscription jobs            | DEV (approval + execution; no auto-signer)           |
 | Inbound detection (direct merchant-address payments) | DEV (testnet-verified)                               |
-| Realtime (Socket.IO)                                 | DEV (single-instance)                                |
+| Realtime (Socket.IO)                                 | DEV (Redis-adapter, multi-instance)                  |
 | Notifications & webhooks                             | DEV (partial)                                        |
-| Explorer & admin analytics                           | DEV (empty-state correct)                            |
+| Admin analytics                                      | DEV (real DB aggregates)                             |
+| Rate limiting                                        | DEV (Redis-backed, shared across instances)          |
 | Deployment                                           | TESTNET / DEMO                                       |
 
 Nothing is marked **PRODUCTION**: the platform runs on Stellar **testnet**
@@ -467,23 +467,25 @@ Test categories — see [`tests/README.md`](tests/README.md) for the full tier b
 - **Soroban contract tests (CI)**: per-entry-point tests in `contracts/*/src/test.rs`
 - **Smoke test (not CI)**: `tests/smoke.mjs` — boots the API and checks the health
   endpoint (an API health check only, **not** a payment E2E)
-- **Payment-lifecycle E2E (not CI, live testnet)**: `tests/e2e/auth-payment-flow.mjs`
+- **Payment-lifecycle E2E (live testnet, CI on main pushes)**: `tests/e2e/auth-payment-flow.mjs`
   — auth challenge → verify → fund (Friendbot) → payment create → **sign → submit →
   on-chain confirmation → persisted final state → realtime Socket.IO
-  `transaction.updated`** → logout → JWT invalidation
+  `transaction.updated`** → logout → JWT invalidation. Runs in the `testnet-e2e`
+  CI job on pushes to `main` (non-blocking — Friendbot/ledger flakiness should not
+  gate merges).
 - **Load tests**: `tests/load/payment-load.js` — k6/Artillery-style load generation
 
 ## CI/CD
 
-| Workflow              | File                                      | Triggers                                   |
-| --------------------- | ----------------------------------------- | ------------------------------------------ |
-| **CI**                | `.github/workflows/ci.yml`                | Every PR and push to `main`                |
-| **Deploy to Railway** | `.github/workflows/deploy-railway.yml`    | Push to `main` (API/Docker changes)        |
-| **Deploy to AKS**     | `.github/workflows/deploy.yml`            | Push to `main` (AKS — production-oriented) |
-| **Release Extension** | `.github/workflows/publish-extension.yml` | Push `extension-v*` tag                    |
-| **PR Auto-Labeler**   | `.github/workflows/pr-labeler.yml`        | PR opened/edited                           |
-| **Badge Updater**     | `.github/workflows/update-badges.yml`     | Push to `main` with Cargo.toml changes     |
-| **Dependabot**        | `.github/dependabot.yml`                  | Weekly (npm + Cargo)                       |
+| Workflow              | File                                      | Triggers                                                                  |
+| --------------------- | ----------------------------------------- | ------------------------------------------------------------------------- |
+| **CI**                | `.github/workflows/ci.yml`                | Every PR and push to `main` (incl. non-blocking live-testnet E2E on main) |
+| **Deploy to Railway** | `.github/workflows/deploy-railway.yml`    | Push to `main` (API/Docker changes)                                       |
+| **Deploy to AKS**     | `.github/workflows/deploy.yml`            | Push to `main` (AKS — production-oriented)                                |
+| **Release Extension** | `.github/workflows/publish-extension.yml` | Push `extension-v*` tag                                                   |
+| **PR Auto-Labeler**   | `.github/workflows/pr-labeler.yml`        | PR opened/edited                                                          |
+| **Badge Updater**     | `.github/workflows/update-badges.yml`     | Push to `main` with Cargo.toml changes                                    |
+| **Dependabot**        | `.github/dependabot.yml`                  | Weekly (npm + Cargo)                                                      |
 
 CI runs: lint → typecheck → format check → tests → contract build → contract tests → app builds → security audit (zizmor).
 

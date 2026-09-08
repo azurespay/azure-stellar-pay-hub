@@ -18,6 +18,10 @@ export class PaymentLinksController {
     if (!merchant) {
       throw new ForbiddenException('No merchant profile');
     }
+    // Payment links may only be managed by fully ACTIVE merchants.
+    if (merchant.status !== 'ACTIVE') {
+      throw new ForbiddenException('Merchant account is not active');
+    }
     return merchant.id;
   }
 

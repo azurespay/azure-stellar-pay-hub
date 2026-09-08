@@ -34,6 +34,7 @@ describe('PaymentsService', () => {
       },
       invoice: { findFirst: jest.fn(), update: jest.fn() },
       paymentLink: { findFirst: jest.fn(), update: jest.fn() },
+      setting: { findMany: jest.fn().mockResolvedValue([]) },
     };
     mockWallet = { assertWalletOwnership: jest.fn().mockResolvedValue(true) };
     mockNotifications = {

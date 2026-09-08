@@ -20,6 +20,7 @@
     "@nestjs/platform-socket.io": "^11.1.28",
     "@nestjs/throttler": "^6.5.0",
     "@nestjs/websockets": "^11.1.28",
+    "@socket.io/redis-adapter": "^8.3.0",
     "@stellar-pay/authentication": "workspace:*",
     "@stellar-pay/config": "workspace:*",
     "@stellar-pay/database": "workspace:*",

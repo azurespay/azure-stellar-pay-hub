@@ -41,11 +41,15 @@ export type CreateProduct = z.infer<typeof productSchema>;
 
 export const posPaymentSchema = z
   .object({
-    productIds: z.array(z.string().uuid()).min(1),
+    productIds: z.array(z.string().uuid()).optional(),
     customerPublicKey: publicKeySchema.optional(),
     amount: amountSchema.optional(),
     assetCode: assetCodeSchema.optional(),
   })
-  .strict();
+  .strict()
+  .refine((v) => v.productIds?.length || v.amount, {
+    message: 'Provide either productIds or an amount',
+    path: ['amount'],
+  });
 
 export type PosPayment = z.infer<typeof posPaymentSchema>;

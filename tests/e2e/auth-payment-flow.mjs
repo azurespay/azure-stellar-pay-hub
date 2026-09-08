@@ -18,15 +18,19 @@
  *
  * By default the payment goes through the **classic** Stellar path (final
  * state SUCCEEDED). Set E2E_CONTRACT=1 to route the same payment through the
- * Soroban `payment` contract instead: the flow then expects SUBMITTED after
- * submission and polls until the API's event indexer confirms the invocation
- * on-chain (final state CONFIRMED). Contract mode requires the deployed
- * contract's XLM SAC to be allowlisted on-chain (admin `set_allowed`) and, in
- * boot mode, a CONTRACT_STELLAR_PAY_PAYMENT env var.
+ * Soroban `payment` contract instead: the API simulates → assembles the
+ * invocation (footprint + soroban-auth entries), the wallet signs the auth
+ * entries + envelope, the API submits via Soroban RPC `sendTransaction`, and
+ * the flow polls until the event indexer confirms the invocation on-chain
+ * (final state CONFIRMED; a revert — e.g. an un-allowlisted SAC — settles as
+ * FAILED). Contract mode requires the deployed contract's XLM SAC to be
+ * allowlisted on-chain (admin `set_allowed`) for a *successful* payment and,
+ * in boot mode, a CONTRACT_STELLAR_PAY_PAYMENT env var.
  *
  * This is a *testnet E2E test*: it requires a live API (Postgres + Redis) and
- * live Stellar testnet access (Friendbot + Horizon). It is not part of CI,
- * which runs deterministic unit/contract tests only.
+ * live Stellar testnet access (Friendbot + Horizon). It runs in CI on pushes
+ * to main (non-blocking) in the `testnet-e2e` job; deterministic unit/
+ * contract/integration tests gate PRs.
  *
  * Usage:
  *   # Against a running API (API_URL must include the /api prefix):
@@ -87,6 +91,7 @@ async function bootApi() {
       API_PORT: '4100',
       NODE_ENV: 'development',
       JWT_SECRET: 'e2e-test-secret-at-least-16-chars',
+      WEBHOOK_SIGNING_SECRET: process.env.WEBHOOK_SIGNING_SECRET ?? 'e2e-webhook-secret-16-chars',
       DATABASE_URL:
         process.env.DATABASE_URL ??
         'postgresql://postgres:postgres@localhost:5432/stellar_pay?schema=public',
@@ -105,6 +110,9 @@ async function bootApi() {
         : {}),
     },
     shell: false,
+    // Own process group so a SIGTERM to the harness reliably tears down the
+    // booted pnpm → node child tree (pnpm alone does not forward signals).
+    detached: true,
   });
 
   // Wait for the API to boot (NestJS takes a few seconds with Prisma + Redis).
@@ -316,9 +324,28 @@ async function run() {
     console.log('\n9. Sign transaction XDR');
     let signedXdr = null;
     try {
-      const tx = TransactionBuilder.fromXDR(payment.unsignedXdr, Networks.TESTNET);
-      tx.sign(payerKp);
-      signedXdr = tx.toXDR();
+      if (CONTRACT_ROUTE) {
+        // Soroban: the server returns a simulation-assembled envelope carrying
+        // the footprint + unsigned `from.require_auth()` entries. Signing must
+        // fill in those auth entries (soroban-auth) and then the envelope — a
+        // bare `tx.sign()` would only sign the envelope and submission would
+        // fail host-auth.
+        const network = StellarNetwork.forTestnet();
+        const rpcUrl = process.env.SOROBAN_RPC_URL ?? 'https://soroban-testnet.stellar.org';
+        const networkWithRpc = new StellarNetwork({
+          horizonUrl: 'https://horizon-testnet.stellar.org',
+          networkPassphrase: Networks.TESTNET,
+          sorobanRpcUrl: rpcUrl,
+        });
+        signedXdr = await networkWithRpc.signSorobanSendTransaction(
+          payment.unsignedXdr,
+          payerKp,
+        );
+      } else {
+        const tx = TransactionBuilder.fromXDR(payment.unsignedXdr, Networks.TESTNET);
+        tx.sign(payerKp);
+        signedXdr = tx.toXDR();
+      }
       check('Transaction signed', !!signedXdr, `xdr=${signedXdr.slice(0, 20)}…`);
     } catch (err) {
       check('Transaction signed', false, err.message);
@@ -437,14 +464,24 @@ async function run() {
     summary();
     if (child) {
       console.log('Stopping API…');
-      child.kill('SIGTERM');
+      try {
+        process.kill(-child.pid, 'SIGTERM');
+      } catch {
+        child.kill('SIGTERM');
+      }
       await delay(1_000);
     }
   }
 }
 
-run().catch((err) => {
-  console.error('\nFatal error:', err.message);
-  process.exitCode = 1;
-  summary();
-});
+run()
+  .catch((err) => {
+    console.error('\nFatal error:', err.message);
+    process.exitCode = 1;
+    summary();
+  })
+  .finally(() => {
+    // Force-exit: never leave a booted API child (or any lingering socket)
+    // keeping the harness alive — CI jobs must terminate on their own.
+    setTimeout(() => process.exit(process.exitCode ?? 0), 500);
+  });

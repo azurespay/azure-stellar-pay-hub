@@ -17,5 +17,6 @@ export function createStellarNetwork(config: ConfigService): StellarNetwork {
   return new StellarNetwork({
     horizonUrl,
     networkPassphrase: passphrase,
+    sorobanRpcUrl: config.get<string>('SOROBAN_RPC_URL') ?? undefined,
   });
 }

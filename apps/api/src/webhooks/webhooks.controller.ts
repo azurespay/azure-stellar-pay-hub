@@ -18,6 +18,10 @@ export class WebhooksController {
     if (!merchant) {
       throw new ForbiddenException('No merchant profile linked to this account');
     }
+    // Webhooks may only be managed by fully ACTIVE merchants.
+    if (merchant.status !== 'ACTIVE') {
+      throw new ForbiddenException('Merchant account is not active');
+    }
     return merchant.id;
   }
 

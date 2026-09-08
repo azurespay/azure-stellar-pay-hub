@@ -1,19 +1,27 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { ArrowDownLeft, ArrowUpRight } from 'lucide-react';
-import { Badge, Card, CardContent, Skeleton } from '@stellar-pay/ui';
+import { useCallback, useEffect, useState } from 'react';
+import { ArrowDownLeft, ArrowUpRight, Loader2, Zap } from 'lucide-react';
+import { Badge, Button, Card, CardContent, Skeleton, useToast } from '@stellar-pay/ui';
 import { useWallet } from '@stellar-pay/wallet';
 import { api } from '@/lib/api';
 import { formatDateTime, shortKey, STATUS_STYLES } from '@/lib/format';
 import type { TransactionRecord } from '@stellar-pay/types';
 
+const APPROVABLE_KINDS = ['scheduled', 'recurring', 'subscription_renewal'];
+
+function isApprovable(tx: TransactionRecord): boolean {
+  return APPROVABLE_KINDS.includes(tx.kind) && tx.status === 'PENDING';
+}
+
 export default function HistoryPage() {
-  const { connected } = useWallet();
+  const { connected, publicKey, signTx } = useWallet();
+  const toast = useToast();
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     if (!connected) {
       setLoading(false);
       return;
@@ -25,12 +33,48 @@ export default function HistoryPage() {
       .finally(() => setLoading(false));
   }, [connected]);
 
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // A scheduler-created occurrence is PENDING without a signable XDR (the
+  // scheduler has no wallet). Approve → build → sign → submit via the API.
+  const approveAndPay = async (tx: TransactionRecord) => {
+    if (!publicKey || !connected) {
+      toast.error('Connect a wallet first');
+      return;
+    }
+    setApprovingId(tx.id);
+    try {
+      const intent = await api.request<{ id: string; unsignedXdr: string }>({
+        method: 'POST',
+        path: `/payments/${tx.id}/approve`,
+      });
+      const signedXdr = await signTx(intent.unsignedXdr);
+      const result = await api.request<{ status: string; hash?: string }>({
+        method: 'POST',
+        path: `/payments/${intent.id}/submit`,
+        body: { signedXdr },
+      });
+      toast.success(
+        result.status === 'SUCCEEDED' ? 'Payment sent' : `Payment ${result.status.toLowerCase()}`,
+        result.hash,
+      );
+      load();
+    } catch (err) {
+      toast.error('Approval failed', (err as Error).message);
+    } finally {
+      setApprovingId(null);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-4xl space-y-6 px-4 py-10">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Transaction history</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          All payments sent and received from your linked wallets.
+          All payments sent and received from your linked wallets. Scheduled payments awaiting your
+          signature appear here with an Approve action.
         </p>
       </div>
 
@@ -86,6 +130,21 @@ export default function HistoryPage() {
                       {tx.status}
                     </Badge>
                   </div>
+                  {isApprovable(tx) && (
+                    <Button
+                      variant="gradient"
+                      size="sm"
+                      onClick={() => void approveAndPay(tx)}
+                      disabled={approvingId === tx.id}
+                    >
+                      {approvingId === tx.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Zap className="h-4 w-4" />
+                      )}
+                      Approve &amp; pay
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>

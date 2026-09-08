@@ -157,6 +157,9 @@ function Zap({ className }: { className?: string }) {
 
 function formatCurrency(value: string | undefined): string {
   if (!value || value === '0') return '$0.00';
+  // Mixed-asset aggregates cannot be shown as a single currency — display the
+  // participating asset codes instead of a fabricated dollar figure.
+  if (value.includes('+')) return value;
   const num = Number(value);
   if (num >= 1_000_000) return `$${(num / 1_000_000).toFixed(1)}M`;
   if (num >= 1_000) return `$${(num / 1_000).toFixed(1)}K`;
@@ -347,6 +350,7 @@ export default function OverviewPage() {
             </div>
           </div>
           <div className="flex gap-6">
+            {' '}
             {loading ? (
               <Skeleton className="h-8 w-24" />
             ) : (
@@ -354,7 +358,11 @@ export default function OverviewPage() {
                 <div className="text-center">
                   <p className="text-xs text-muted-foreground">Total volume</p>
                   <p className="font-mono text-sm font-semibold">
-                    <AnimatedCounter value={metrics?.revenue ?? '0'} />
+                    {(metrics?.revenue ?? '').includes('+') ? (
+                      metrics?.revenue
+                    ) : (
+                      <AnimatedCounter value={metrics?.revenue ?? '0'} />
+                    )}
                   </p>
                 </div>
                 <div className="text-center">

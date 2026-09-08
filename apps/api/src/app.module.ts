@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { InfraModule } from './infra/infra.module';
+import { RedisService } from './infra/redis.service';
+import { RedisThrottlerStorage } from './infra/redis-throttler.storage';
 import { JwtAuthGuard } from './common/jwt-auth.guard';
 import { RolesGuard } from './common/roles.guard';
 import { CsrfGuard } from './common/csrf.guard';
@@ -28,7 +30,21 @@ import { MetricsModule } from './metrics/metrics.module';
 
 @Module({
   imports: [
-    ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 100 }]),
+    // Rate-limit state lives in Redis (not per-process memory) so the limits
+    // hold when the API runs more than one instance. E2E suites opt out with
+    // THROTTLER_BACKEND=memory so each booted test app gets a fresh in-memory
+    // budget — a shared Redis budget would leak counts between suites that run
+    // sequentially against the same Postgres/Redis test stack.
+    ThrottlerModule.forRootAsync({
+      imports: [InfraModule],
+      inject: [RedisService],
+      useFactory: (redis: RedisService) => ({
+        throttlers: [{ name: 'default', ttl: 60_000, limit: 100 }],
+        ...(process.env.THROTTLER_BACKEND === 'memory'
+          ? {}
+          : { storage: new RedisThrottlerStorage(redis.raw) }),
+      }),
+    }),
     InfraModule,
     AuthModule,
     WalletModule,

@@ -79,6 +79,17 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/web:${{ github.sha }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/web:latest
 
+      - name: Build & push Admin image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: infrastructure/docker/web.Dockerfile
+          build-args: APP=admin
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/admin:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/admin:latest
+
   deploy-aks:
     name: Deploy to AKS
     needs: docker
@@ -110,8 +121,11 @@ jobs:
       - name: Compute lowercase image prefix
         run: echo "IMAGE_PREFIX=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
 
+      # `prisma migrate deploy` (not `migrate dev`) is the production-safe
+      # command: it applies pending migrations without a shadow database and
+      # can never prompt for or perform a destructive reset.
       - name: Run database migrations
-        run: pnpm db:generate && pnpm db:migrate
+        run: pnpm db:generate && pnpm exec prisma migrate deploy --schema=packages/database/prisma/schema.prisma
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
@@ -119,10 +133,12 @@ jobs:
         env:
           API_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/api:${{ github.sha }}
           WEB_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/web:${{ github.sha }}
+          ADMIN_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/admin:${{ github.sha }}
         run: |
           cd infrastructure/kubernetes
           kustomize edit set image api=$API_IMAGE
           kustomize edit set image web=$WEB_IMAGE
+          kustomize edit set image admin=$ADMIN_IMAGE
 
       - name: Apply manifests
         run: kubectl apply -k infrastructure/kubernetes

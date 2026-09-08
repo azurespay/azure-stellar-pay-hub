@@ -23,7 +23,18 @@ export class ZodValidationPipe implements PipeTransform {
     if (!schema) {
       return value;
     }
-    const data = metadata.type === 'body' ? value : metadata.data;
+    // For query/param routes the pipe is attached without a property key
+    // (e.g. @Query(new ZodValidationPipe({ query }))), so `value` already is
+    // the full query/param object and `metadata.data` is undefined — including
+    // when the request carries no query string at all ({} / undefined). Use
+    // `value` in that case so a parameterless GET is validated against an
+    // empty object rather than rejected with "Required".
+    const data =
+      metadata.type === 'body'
+        ? value
+        : metadata.data !== undefined
+          ? metadata.data
+          : (value ?? {});
     const parsed = schema.safeParse(data);
     if (!parsed.success) {
       throw new BadRequestException({

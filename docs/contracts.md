@@ -91,16 +91,34 @@ classic Stellar `Operation.payment`. Status as of 2026-09:
   (`set_allowed`). The SAC address for an asset can be resolved with the SDK's
   `sorobanTokenAddress()` (XLM native → `Asset.native().contractId(network)`).
   This must be done on-chain with the deployer key before the route is enabled.
-- **On-chain confirmation via the event indexer.** A successful Horizon
-  submission is stored as `SUBMITTED` — never `SUCCEEDED`/`CONFIRMED` from
-  submission alone. The API scheduler runs `apps/api/src/indexer` every ~20s:
-  it polls Soroban RPC `getTransaction` for every `SUBMITTED` contract send and
-  moves the row to `CONFIRMED` only when the ledger reports `SUCCESS` (the
-  `send` invocation executed; it reverts otherwise). Payer realtime/notification
-  events fire on that transition, and the atomic `SUBMITTED → CONFIRMED`
-  update makes confirmation idempotent (a duplicate observation can only win
-  once). It also ingests contract `payment` events (`getEvents`, cursor
-  persisted in Redis) as best-effort groundwork for inbound detection.
+- **No live execution yet — verified blocker at this commit.** A full
+  contract-route payment has **not** completed on testnet. An attempt on
+  2026-09-08 (tier-5 E2E, `E2E_CONTRACT=1`) failed at submission: the API
+  returned 500 because `StellarNetwork.submitSignedTransaction` posts the
+  envelope to **Horizon's classic endpoint, which rejects Soroban
+  transactions** (Horizon HTTP 400). Two gaps must close before this route can
+  work end-to-end:
+  1. **Simulation-assembled XDR.** The SDK's `buildSorobanSendTransaction`
+     builds a raw `invokeHostFunction` with `auth: []` and no `sorobanData`
+     (footprint / resource preconditions). The contract's `send` calls
+     `from.require_auth()` and performs a SAC `transfer`, so a valid
+     transaction must be produced via a simulate → assemble (soroban-auth)
+     round-trip against Soroban RPC before signing — classic `Operation.payment`
+     XDR construction is not sufficient.
+  2. **Soroban RPC submission.** Submitting the assembled envelope must go
+     through Soroban RPC `sendTransaction` (then the indexer's
+     `getTransaction` poll below confirms it), not Horizon.
+- **On-chain confirmation via the event indexer (once submission exists).**
+  A successful RPC submission would be stored as `SUBMITTED` — never
+  `SUCCEEDED`/`CONFIRMED` from submission alone. The API scheduler runs
+  `apps/api/src/indexer` every ~20s: it polls Soroban RPC `getTransaction` for
+  every `SUBMITTED` contract send and moves the row to `CONFIRMED` only when
+  the ledger reports `SUCCESS` (the `send` invocation executed; it reverts
+  otherwise). Payer realtime/notification events fire on that transition, and
+  the atomic `SUBMITTED → CONFIRMED` update makes confirmation idempotent (a
+  duplicate observation can only win once). It also ingests contract `payment`
+  events (`getEvents`, cursor persisted in Redis) as best-effort groundwork
+  for inbound detection.
 - **Correlation.** The `memo` argument passed to `send` is `sp:<correlationId>`
   (stored in the transaction `meta`); the indexer maps the emitted `payment`
   event back to the database row via that memo without trusting the client.

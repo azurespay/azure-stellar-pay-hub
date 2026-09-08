@@ -8,4 +8,5 @@ export * from './merchant';
 export * from './invoice';
 export * from './payment-link';
 export * from './webhook';
+export * from './checkout';
 export * from './admin';

@@ -29,8 +29,21 @@ async function main() {
       stdio: 'inherit',
       env: { ...process.env, API_PORT: '4100' },
       shell: false,
+      // Own process group so teardown reaches the pnpm → node child tree.
+      detached: true,
     });
-    await delay(2500);
+    // Poll for readiness — Nest takes a few seconds to boot with Prisma +
+    // Redis, so a fixed sleep is unreliable.
+    const probeBase = 'http://localhost:4100/api';
+    for (let i = 0; i < 30; i += 1) {
+      await delay(1_000);
+      try {
+        const res = await fetch(`${probeBase}/health`);
+        if (res.ok) break;
+      } catch {
+        /* still booting */
+      }
+    }
   }
 
   const base = shouldBoot ? 'http://localhost:4100' : API_URL;
@@ -47,10 +60,17 @@ async function main() {
   }
 
   try {
-    const res = await fetch(`${apiBase}/payments/rates`);
-    check('GET /payments/rates (public)', res.status < 500, `status=${res.status}`);
+    const res = await fetch(`${apiBase}/assets`);
+    check('GET /assets (public)', res.ok, `status=${res.status}`);
   } catch (err) {
-    check('GET /payments/rates (public)', false, String(err?.message ?? err));
+    check('GET /assets (public)', false, String(err?.message ?? err));
+  }
+
+  try {
+    const res = await fetch(`${apiBase}/health/ready`);
+    check('GET /health/ready (deps)', res.ok, `status=${res.status}`);
+  } catch (err) {
+    check('GET /health/ready (deps)', false, String(err?.message ?? err));
   }
 
   const failed = results.filter((r) => !r.ok);
@@ -62,6 +82,17 @@ async function main() {
   }
 }
 
-main().finally(() => {
-  if (child) child.kill();
-});
+main()
+  .finally(() => {
+    if (child) {
+      try {
+        process.kill(-child.pid, 'SIGTERM');
+      } catch {
+        child.kill('SIGTERM');
+      }
+    }
+  })
+  .finally(() => {
+    // Force-exit: never leave a booted API child keeping the harness alive.
+    setTimeout(() => process.exit(process.exitCode ?? 0), 500);
+  });

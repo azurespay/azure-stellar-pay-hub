@@ -22,8 +22,16 @@ export interface ReceiptPayload {
 
 export interface IpfsPinResult {
   cid: string;
+  /** Gateway URL — only meaningful when `pinned` is true. */
   url: string;
   provider: string;
+  /** True only when a real pinning backend stored the content. */
+  pinned: boolean;
+}
+
+interface PinOutcome {
+  cid: string;
+  pinned: boolean;
 }
 
 /**
@@ -34,8 +42,10 @@ export interface IpfsPinResult {
  * - `pinata` — Pinata.cloud pinning service
  * - `web3`   — web3.storage (w3up) pinning service
  *
- * Falls back to generating a deterministic content-hash CID without pinning
- * when no provider is reachable, so receipts are always resolvable.
+ * When no provider is reachable, a deterministic content-hash CID is still
+ * computed (stable, verifiable identifier) but it is reported with
+ * `pinned: false` — the content is not actually on IPFS, so no gateway URL is
+ * fabricated and callers must not present it as a resolvable receipt.
  */
 @Injectable()
 export class IpfsService {
@@ -50,19 +60,21 @@ export class IpfsService {
 
   /**
    * Pin a JSON receipt to IPFS and return the CID + gateway URL.
+   * `pinned: false` means no pinning backend stored the content.
    */
   async pinReceipt(payload: ReceiptPayload): Promise<IpfsPinResult> {
     const json = JSON.stringify(payload);
-    const cid = await this.pin(json);
+    const { cid, pinned } = await this.pin(json);
     return {
       cid,
-      url: `${this.gateway.replace(/\/$/, '')}/${cid}`,
+      url: pinned ? `${this.gateway.replace(/\/$/, '')}/${cid}` : '',
       provider: this.provider,
+      pinned,
     };
   }
 
   /**
-   * Retrieve a pinned receipt by CID.
+   * Retrieve a pinned receipt by CID (only resolves content actually on IPFS).
    */
   async get(cid: string): Promise<ReceiptPayload | null> {
     try {
@@ -83,7 +95,7 @@ export class IpfsService {
 
   // ------------------------------------------------------------------ Pinning backends
 
-  private async pin(content: string): Promise<string> {
+  private async pin(content: string): Promise<PinOutcome> {
     switch (this.provider) {
       case 'local':
         return this.pinToLocal(content);
@@ -98,7 +110,7 @@ export class IpfsService {
 
   // -- Local IPFS node (Kubo RPC API) -----------------------------------------
 
-  private async pinToLocal(content: string): Promise<string> {
+  private async pinToLocal(content: string): Promise<PinOutcome> {
     const apiUrl = this.config.get<string>('IPFS_API_URL') ?? 'http://127.0.0.1:5001/api/v0';
 
     try {
@@ -118,10 +130,10 @@ export class IpfsService {
 
       const result = (await response.json()) as { Hash: string };
       this.logger.log(`Pinned to local IPFS: ${result.Hash}`);
-      return result.Hash;
+      return { cid: result.Hash, pinned: true };
     } catch (error) {
       this.logger.warn(
-        `Local IPFS unavailable, using deterministic CID — ${(error as Error).message}`,
+        `Local IPFS unavailable, computing deterministic CID — ${(error as Error).message}`,
       );
       return this.deterministicCid(content);
     }
@@ -129,7 +141,7 @@ export class IpfsService {
 
   // -- Pinata.cloud -----------------------------------------------------------
 
-  private async pinToPinata(content: string): Promise<string> {
+  private async pinToPinata(content: string): Promise<PinOutcome> {
     const jwt =
       this.config.get<string>('PINATA_JWT') ?? this.config.get<string>('IPFS_API_KEY') ?? '';
 
@@ -162,19 +174,21 @@ export class IpfsService {
 
       const result = (await response.json()) as { IpfsHash: string };
       this.logger.log(`Pinned to Pinata: ${result.IpfsHash}`);
-      return result.IpfsHash;
+      return { cid: result.IpfsHash, pinned: true };
     } catch (error) {
       if ((error as Error).message.includes('Pinata pin failed')) {
         throw error;
       }
-      this.logger.warn(`Pinata unavailable, using deterministic CID — ${(error as Error).message}`);
+      this.logger.warn(
+        `Pinata unavailable, computing deterministic CID — ${(error as Error).message}`,
+      );
       return this.deterministicCid(content);
     }
   }
 
   // -- web3.storage (w3up) ----------------------------------------------------
 
-  private async pinToWeb3Storage(content: string): Promise<string> {
+  private async pinToWeb3Storage(content: string): Promise<PinOutcome> {
     const token = this.config.get<string>('WEB3_STORAGE_TOKEN') ?? '';
 
     if (!token) {
@@ -207,13 +221,13 @@ export class IpfsService {
 
       const result = (await response.json()) as { cid: string };
       this.logger.log(`Pinned to web3.storage: ${result.cid}`);
-      return result.cid;
+      return { cid: result.cid, pinned: true };
     } catch (error) {
       if ((error as Error).message.includes('web3.storage upload failed')) {
         throw error;
       }
       this.logger.warn(
-        `web3.storage unavailable, using deterministic CID — ${(error as Error).message}`,
+        `web3.storage unavailable, computing deterministic CID — ${(error as Error).message}`,
       );
       return this.deterministicCid(content);
     }
@@ -222,21 +236,15 @@ export class IpfsService {
   // -- Deterministic fallback CID (content-hash, no actual pinning) -----------
 
   /**
-   * Generate a CIDv1 (raw, sha2-256) from content.
-   * This gives a stable, verifiable identifier even without an IPFS node.
-   * The CID is prefixed with `bafkreid` (base32-encoded multihash).
-   *
-   * Uses Node.js `crypto` for the SHA-256 digest — no external dependency.
+   * Generate a CIDv1 (raw, sha2-256) from content — a stable content address
+   * even without an IPFS node, reported with `pinned: false`.
    */
-  private deterministicCid(content: string): string {
+  private deterministicCid(content: string): PinOutcome {
     const hash = createHash('sha256').update(content).digest();
 
     // Build a CIDv1: <cidv1><raw><sha2-256><multihash>
     // 0x01 = CIDv1, 0x55 = raw codec, 0x12 = sha2-256, 0x20 = 32 bytes digest
-    const multihash = Buffer.concat([
-      Buffer.from([0x12, 0x20]), // sha2-256 + 32-byte length
-      hash,
-    ]);
+    const multihash = Buffer.concat([Buffer.from([0x12, 0x20]), hash]);
     const cidBytes = Buffer.concat([Buffer.from([0x01, 0x55]), multihash]);
 
     // Base32 (RFC 4648 lowercase, no padding) — standard IPFS CIDv1 encoding.
@@ -256,10 +264,9 @@ export class IpfsService {
       result += alphabet[(value << (5 - bits)) & 0x1f];
     }
 
-    // CIDv1 uses `b` prefix in base32
     const cid = `b${result}`;
-    this.logger.log(`Generated deterministic CID: ${cid}`);
-    return cid;
+    this.logger.log(`Generated deterministic CID (not pinned): ${cid}`);
+    return { cid, pinned: false };
   }
 
   // ------------------------------------------------------------------ Receipt helpers

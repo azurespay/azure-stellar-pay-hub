@@ -55,10 +55,25 @@ export class JwtAuthGuard implements CanActivate {
       }
     }
 
+    // The database is the authority for role and status, never the token: a
+    // suspended account is rejected on every request (suspension is not
+    // cosmetic), and an admin demotion/role change takes effect immediately
+    // instead of when the 7-30 day token naturally expires.
+    const dbUser = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { id: true, status: true, role: true },
+    });
+    if (!dbUser) {
+      throw new UnauthorizedException('Account no longer exists');
+    }
+    if (dbUser.status !== 'ACTIVE') {
+      throw new UnauthorizedException('Account is suspended or not yet activated');
+    }
+
     const user = {
       userId: payload.sub,
       publicKey: payload.publicKey,
-      role: payload.role,
+      role: dbUser.role,
       sessionId: payload.sessionId,
     };
     (request as unknown as { user: typeof user }).user = user;

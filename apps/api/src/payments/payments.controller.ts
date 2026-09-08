@@ -14,9 +14,11 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import {
   createPaymentSchema,
   paymentRequestSchema,
+  signedXdrSchema,
   transactionListQuerySchema,
   type CreatePayment,
   type PaymentRequestInput,
+  type SignedXdr,
   type TransactionListQuery,
 } from '@stellar-pay/validation';
 import { PaymentsService } from './payments.service';
@@ -62,12 +64,9 @@ export class PaymentsController {
   submit(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
-    @Body('signedXdr') signedXdr: string,
+    @Body(new ZodValidationPipe({ body: signedXdrSchema })) body: SignedXdr,
   ) {
-    if (!signedXdr) {
-      throw new Error('signedXdr is required');
-    }
-    return this.payments.submit(user.userId, id, signedXdr);
+    return this.payments.submit(user.userId, id, body.signedXdr);
   }
 
   @Get('history')
@@ -87,6 +86,12 @@ export class PaymentsController {
   @Delete('scheduled/:id')
   cancelScheduled(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.payments.cancelScheduled(user.userId, id);
+  }
+
+  /** Build a signable XDR for a scheduler-created scheduled/recurring occurrence. */
+  @Post(':id/approve')
+  approve(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.payments.approveOccurrence(user.userId, id);
   }
 
   @Get(':id/receipt')

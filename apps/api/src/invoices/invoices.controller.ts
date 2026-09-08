@@ -18,6 +18,11 @@ export class InvoicesController {
     if (!merchant) {
       throw new ForbiddenException('No merchant profile');
     }
+    // Invoices may only be managed by fully ACTIVE merchants (suspension and
+    // pre-approval states are enforced at the API boundary).
+    if (merchant.status !== 'ACTIVE') {
+      throw new ForbiddenException('Merchant account is not active');
+    }
     return merchant.id;
   }
 

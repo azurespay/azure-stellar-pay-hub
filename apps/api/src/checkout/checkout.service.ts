@@ -2,7 +2,7 @@ import { Injectable, BadRequestException, NotFoundException } from '@nestjs/comm
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '@stellar-pay/database';
 import { createStellarNetwork } from '../infra/stellar';
-import { isValidPublicKey } from '@stellar-pay/shared';
+import { isValidPublicKey, toStroops } from '@stellar-pay/shared';
 import { TransactionReconciliationService } from '../payments/transaction-reconciliation.service';
 
 @Injectable()
@@ -15,6 +15,31 @@ export class CheckoutService {
 
   private network() {
     return createStellarNetwork(this.config);
+  }
+
+  /** Platform gates (Setting table): maintenance mode + minimum amount. */
+  private async assertPaymentAllowed(amount: string): Promise<void> {
+    const rows = await this.prisma.setting.findMany({
+      where: { key: { in: ['maintenance_mode', 'min_payment_amount'] } },
+      select: { key: true, value: true },
+    });
+    const get = (key: string): unknown | undefined => rows.find((r) => r.key === key)?.value;
+    if (get('maintenance_mode') === true) {
+      throw new BadRequestException('Payments are temporarily paused for maintenance');
+    }
+    const min = get('min_payment_amount');
+    if (typeof min === 'string' && min) {
+      try {
+        if (BigInt(toStroops(amount)) < BigInt(toStroops(min))) {
+          throw new BadRequestException(`Amount must be at least ${min}`);
+        }
+      } catch (err) {
+        if (err instanceof BadRequestException) {
+          throw err;
+        }
+        // Unparseable stored minimum — do not block payments on bad config.
+      }
+    }
   }
 
   /** Public data for the hosted checkout page (payment links). */
@@ -96,6 +121,7 @@ export class CheckoutService {
     if (!effectiveAmount) {
       throw new BadRequestException('This payment link requires an amount');
     }
+    await this.assertPaymentAllowed(effectiveAmount);
 
     const xdr = await this.network().buildPaymentTransaction({
       from: payerPublicKey,
@@ -140,6 +166,7 @@ export class CheckoutService {
         `Invoice is ${invoice.status.toLowerCase()} and cannot be paid`,
       );
     }
+    await this.assertPaymentAllowed(invoice.amount);
     const xdr = await this.network().buildPaymentTransaction({
       from: payerPublicKey,
       to: invoice.destination,

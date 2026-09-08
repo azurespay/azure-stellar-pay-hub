@@ -116,6 +116,11 @@ export class IndexerService {
         });
         if (result?.status === 'SUCCESS') {
           await this.confirm(tx);
+        } else if (result?.status === 'FAILED') {
+          // The `send` invocation reverted on-chain (e.g. TokenNotAllowed, or
+          // a fee/signature failure at execution time). Persist a terminal
+          // FAILED so the row is never stuck SUBMITTED, and notify the payer.
+          await this.fail(tx, 'contract invocation reverted on-chain');
         }
       } catch (err) {
         this.logger.warn(
@@ -124,6 +129,37 @@ export class IndexerService {
         );
       }
     }
+  }
+
+  /**
+   * Atomically move a SUBMITTED contract payment to FAILED (on-chain revert)
+   * and, only on the winning transition, notify the payer. Mirrors `confirm`
+   * so duplicate observations can only win once.
+   */
+  private async fail(
+    tx: { id: string; userId: string | null; amount: string; assetCode: string },
+    reason: string,
+  ) {
+    const updated = await this.prisma.transaction.updateMany({
+      where: { id: tx.id, status: 'SUBMITTED' },
+      data: { status: 'FAILED', errorMessage: reason },
+    });
+    if (updated.count !== 1) {
+      return; // already terminal — idempotent
+    }
+    if (tx.userId) {
+      this.realtime.emitToUser(tx.userId, 'transaction.updated', {
+        id: tx.id,
+        status: 'FAILED',
+      });
+      await this.notifications.paymentFailed({
+        userId: tx.userId,
+        amount: tx.amount,
+        assetCode: tx.assetCode,
+        reason,
+      });
+    }
+    this.logger.log(`contract payment failed on-chain: ${tx.id}`);
   }
 
   /**

@@ -52,6 +52,7 @@ describe('CheckoutService', () => {
       },
       paymentLink: { findUnique: jest.fn() },
       invoice: { findUnique: jest.fn() },
+      setting: { findMany: jest.fn().mockResolvedValue([]) },
     };
     mockReconciliation = { onPaymentSucceeded: jest.fn(), advanceScheduledPayment: jest.fn() };
     submitMock = jest.fn();
@@ -180,6 +181,29 @@ describe('CheckoutService', () => {
       expect(mockPrisma.transaction.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ amount: '7.5' }),
       });
+    });
+
+    it('refuses to open new intents during maintenance mode', async () => {
+      mockPrisma.setting.findMany.mockResolvedValueOnce([{ key: 'maintenance_mode', value: true }]);
+      await expect(service.payPaymentLink('link1', PAYER)).rejects.toThrow(
+        'temporarily paused for maintenance',
+      );
+      expect(mockPrisma.transaction.create).not.toHaveBeenCalled();
+    });
+
+    it('enforces the platform minimum amount', async () => {
+      mockPrisma.paymentLink.findUnique.mockResolvedValue({
+        ...activeLink,
+        amount: null,
+        fixedAmount: false,
+      });
+      mockPrisma.setting.findMany.mockResolvedValueOnce([
+        { key: 'min_payment_amount', value: '5' },
+      ]);
+      await expect(service.payPaymentLink('link1', PAYER, '1')).rejects.toThrow(
+        'Amount must be at least 5',
+      );
+      expect(mockPrisma.transaction.create).not.toHaveBeenCalled();
     });
 
     it('refuses an expired link', async () => {

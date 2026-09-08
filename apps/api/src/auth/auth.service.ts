@@ -147,8 +147,8 @@ export class AuthService {
     const session = await this.prisma.session.findUnique({
       where: { id: payload.sessionId ?? '' },
     });
-    if (!session || session.status !== 'ACTIVE') {
-      throw new UnauthorizedException('Session revoked');
+    if (!session || session.status !== 'ACTIVE' || session.expiresAt < new Date()) {
+      throw new UnauthorizedException('Session revoked or expired');
     }
     const accessToken = signAccessToken(
       {

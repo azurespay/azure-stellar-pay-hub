@@ -145,6 +145,30 @@ describe('Security (e2e)', () => {
     await prisma.user.deleteMany({ where: { id: attacker.userId } }).catch(() => undefined);
   });
 
+  it('serves public checkout POSTs without CSRF token or bearer (hosted checkout usable)', async () => {
+    // Regression: the hosted-checkout flow (an unauthenticated payer on a
+    // merchant's site) was previously blocked by the double-submit-cookie
+    // CSRF guard, which rejected every mutating request lacking a Bearer
+    // token + matching cookie/header pair. Public checkout routes are now
+    // @CsrfBypass: the guard must let the request through to validation,
+    // which then rejects it with 400 (not 403) for an invalid payload.
+    await request(app.getHttpServer())
+      .post('/api/checkout/payment-link/does-not-exist/pay')
+      .send({ publicKey: 'G-INVALID', amount: '10' })
+      .expect(400);
+    // Invoice checkout and the signed-XDR submit route behave the same.
+    await request(app.getHttpServer())
+      .post('/api/checkout/invoice/INV-NOPE/pay')
+      .send({ publicKey: 'G-INVALID' })
+      .expect(400);
+    // The submit route passes the CSRF guard (bypass proven — not 403) and is
+    // then rejected because the intent id does not exist (404).
+    await request(app.getHttpServer())
+      .post('/api/checkout/transactions/00000000-0000-0000-0000-000000000000/submit')
+      .send({ signedXdr: 'AAAA' })
+      .expect(404);
+  });
+
   it('rate-limits the auth challenge endpoint (429 after the per-window budget)', async () => {
     // Two challenges above already count toward the 10/min IP budget; fire the
     // remainder of the window, then the next request must be throttled.

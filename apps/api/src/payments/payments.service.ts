@@ -3,7 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { Asset, BASE_FEE, Memo, Operation, TransactionBuilder } from '@stellar/stellar-sdk';
 import { PrismaService } from '@stellar-pay/database';
 import { createStellarNetwork } from '../infra/stellar';
-import { createId } from '@stellar-pay/shared';
+import { createId, toStroops } from '@stellar-pay/shared';
+import { SorobanSubmissionError } from '@stellar-pay/sdk';
 import type { CreatePayment, PaymentRequestInput } from '@stellar-pay/validation';
 import type { TransactionDirection } from '@stellar-pay/types';
 import { WalletService } from '../wallet/wallet.service';
@@ -47,6 +48,35 @@ export class PaymentsService {
   }
 
   /**
+   * Platform-wide gates driven by the `Setting` table (admin-editable):
+   * maintenance mode blocks new payment intents, and a configured minimum
+   * amount rejects dust payments. Absent rows mean "no gate".
+   */
+  private async assertPaymentAllowed(totalAmount?: string): Promise<void> {
+    const rows = await this.prisma.setting.findMany({
+      where: { key: { in: ['maintenance_mode', 'min_payment_amount'] } },
+      select: { key: true, value: true },
+    });
+    const get = (key: string): unknown | undefined => rows.find((r) => r.key === key)?.value;
+    if (get('maintenance_mode') === true) {
+      throw new BadRequestException('Payments are temporarily paused for maintenance');
+    }
+    const min = get('min_payment_amount');
+    if (typeof min === 'string' && min && totalAmount) {
+      try {
+        if (BigInt(toStroops(totalAmount)) < BigInt(toStroops(min))) {
+          throw new BadRequestException(`Amount must be at least ${min}`);
+        }
+      } catch (err) {
+        if (err instanceof BadRequestException) {
+          throw err;
+        }
+        // Unparseable stored minimum — do not block payments on bad config.
+      }
+    }
+  }
+
+  /**
    * Whether SEND payments for this asset should route through the Soroban
    * payment contract (`send`) instead of a classic Stellar Operation.payment.
    * Off by default; when enabled the on-chain token SAC must be allowlisted
@@ -78,6 +108,12 @@ export class PaymentsService {
    */
   async create(userId: string, dto: CreatePayment, idempotencyKey?: string) {
     await this.wallet.assertWalletOwnership(userId, dto.fromPublicKey);
+    // Enforce platform-wide gates (maintenance mode, minimum amount).
+    const gateAmount =
+      dto.type === 'SCHEDULED' || dto.type === 'RECURRING'
+        ? undefined
+        : dto.destinations.reduce((sum, d) => sum + Number(d.amount), 0).toString();
+    await this.assertPaymentAllowed(gateAmount);
     const asset =
       dto.assetCode === 'XLM' ? Asset.native() : new Asset(dto.assetCode, dto.assetIssuer ?? '');
 
@@ -133,15 +169,26 @@ export class PaymentsService {
       const contractId = this.config.get<string>('CONTRACT_STELLAR_PAY_PAYMENT')!;
       const tokenAddress = network.sorobanTokenAddress(dto.assetCode, dto.assetIssuer);
       const correlationId = createId();
-      unsignedXdr = await network.buildSorobanSendTransaction({
+      // Simulate → assemble at create time so the returned envelope carries
+      // the on-chain footprint (`sorobanData`) and the `from.require_auth()`
+      // authorization entries. An un-allowlisted SAC reverts here with a clear
+      // error instead of failing at submit. The wallet signs the assembled
+      // envelope, and the server submits it via Soroban RPC `sendTransaction`.
+      const prepared = await network.prepareSorobanSendTransaction({
         from: dto.fromPublicKey,
         to: destination.publicKey,
         tokenAddress,
         amount: destination.amount,
         memo: `sp:${correlationId}`,
       });
+      unsignedXdr = prepared.unsignedXdr;
       contractMeta = { route: 'contract', contractId, tokenAddress, correlationId };
     } else {
+      // A memo without an explicit type is a text memo. Normalize here so the
+      // unsigned XDR the wallet signs always contains the recorded memo — a
+      // mismatch between the built XDR (memo dropped) and the stored intent
+      // (memo enforced at submit) previously made memo'd sends unsubmitable.
+      const memoType = dto.memoType ?? (dto.memo ? 'text' : undefined);
       unsignedXdr = await this.network().buildPaymentTransaction({
         from: dto.fromPublicKey,
         to: destination.publicKey,
@@ -149,7 +196,7 @@ export class PaymentsService {
         assetCode: dto.assetCode,
         assetIssuer: dto.assetIssuer,
         memo: dto.memo,
-        memoType: dto.memoType,
+        memoType,
       });
     }
 
@@ -275,10 +322,24 @@ export class PaymentsService {
     // NOT payment failures: revert the claim so the client can retry, and let
     // the error propagate. A definitive FAILED result from the network is
     // handled below and persists as FAILED.
+    const isContractSend = tx.kind === 'contract_send';
     let result;
     try {
-      result = await this.network().submitSignedTransaction(signedXdr);
+      result = isContractSend
+        ? await this.network().submitSorobanSendTransaction(signedXdr)
+        : await this.network().submitSignedTransaction(signedXdr);
     } catch (err) {
+      if (err instanceof SorobanSubmissionError) {
+        // A rejected/unsupported Soroban submission is a definitive client
+        // error (bad envelope, un-allowlisted SAC, RPC rejected), not a
+        // transient transport blip. Revert the claim so the row is not stuck
+        // SUBMITTED and surface the real reason as a 400.
+        await this.prisma.transaction.updateMany({
+          where: { id: transactionId, status: 'SUBMITTED' },
+          data: { status: 'PENDING' },
+        });
+        throw new BadRequestException(err.message);
+      }
       await this.prisma.transaction.updateMany({
         where: { id: transactionId, status: 'SUBMITTED' },
         data: { status: 'PENDING' },
@@ -286,10 +347,9 @@ export class PaymentsService {
       throw err;
     }
 
-    // Contract-route payments only reach SUBMITTED on a successful Horizon
+    // Contract-route payments only reach SUBMITTED on a successful RPC
     // submission — settlement CONFIRMED requires the on-chain event indexer.
     // Classic payments keep their existing immediate SUCCEEDED semantics.
-    const isContractSend = tx.kind === 'contract_send';
     const persistedStatus =
       isContractSend && result.status === 'SUCCEEDED' ? 'SUBMITTED' : result.status;
 
@@ -462,17 +522,62 @@ export class PaymentsService {
     return tx;
   }
 
+  /**
+   * Build the unsigned XDR for a scheduler-created occurrence so the owner can
+   * approve it: the scheduler stores PENDING rows (meta.scheduledId) but has
+   * no wallet, so the signable payload is produced on demand and then flows
+   * through the normal `submit` path (which verifies the signed XDR against
+   * the recorded intent before anything reaches the network).
+   */
+  async approveOccurrence(userId: string, transactionId: string) {
+    const tx = await this.prisma.transaction.findFirst({ where: { id: transactionId, userId } });
+    if (!tx) {
+      throw new NotFoundException('Transaction not found');
+    }
+    const meta = (tx.meta ?? {}) as { scheduledId?: string };
+    const occurrenceKinds = ['scheduled', 'recurring', 'subscription_renewal'];
+    if (!occurrenceKinds.includes(tx.kind) || !meta.scheduledId) {
+      throw new BadRequestException('Not an approvable scheduled payment');
+    }
+    if (tx.status !== 'PENDING') {
+      throw new BadRequestException('Payment is not awaiting approval');
+    }
+    if (!tx.fromPublicKey || !tx.toPublicKey || !tx.amount || !tx.assetCode) {
+      throw new BadRequestException('Payment record is missing required fields');
+    }
+    const unsignedXdr = await this.network().buildPaymentTransaction({
+      from: tx.fromPublicKey,
+      to: tx.toPublicKey,
+      amount: tx.amount,
+      assetCode: tx.assetCode,
+      assetIssuer: tx.assetIssuer,
+      memo: tx.memo ?? undefined,
+      memoType: tx.memoType === 'text' ? 'text' : undefined,
+    });
+    return {
+      id: tx.id,
+      kind: tx.kind,
+      amount: tx.amount,
+      assetCode: tx.assetCode,
+      toPublicKey: tx.toPublicKey,
+      unsignedXdr,
+      message: 'Sign the transaction with your wallet, then submit it',
+    };
+  }
+
   async receipt(userId: string, id: string) {
     const tx = await this.get(userId, id);
     const gateway = this.config.get<string>('IPFS_GATEWAY') ?? 'https://ipfs.io/ipfs/';
 
-    // If we have a real CID, serve it.
+    // If a real pin is stored, serve it.
     if (tx.receiptIpfsCid) {
-      const url = `${gateway.replace(/\/$/, '')}/${tx.receiptIpfsCid}`;
-      return { ipfsCid: tx.receiptIpfsCid, url };
+      return {
+        ipfsCid: tx.receiptIpfsCid,
+        url: `${gateway.replace(/\/$/, '')}/${tx.receiptIpfsCid}`,
+        pinned: true,
+      };
     }
 
-    // Try to fetch the receipt from IPFS by generating its deterministic CID.
     const payload = this.ipfs.buildReceiptPayload({
       id: tx.id,
       hash: tx.hash,
@@ -486,18 +591,25 @@ export class PaymentsService {
       sourceNetwork: tx.sourceNetwork,
       createdAt: tx.createdAt,
     });
-    const pinned = await this.ipfs.pinReceipt(payload).catch(() => null);
 
-    if (pinned) {
-      // Persist the CID so next lookup is instant.
+    // Lazily pin (a pinning service may have come online since settlement).
+    const pinned = await this.ipfs.pinReceipt(payload).catch(() => null);
+    if (pinned?.pinned) {
       await this.prisma.transaction
         .update({ where: { id: tx.id }, data: { receiptIpfsCid: pinned.cid } })
         .catch(() => undefined);
-      return { ipfsCid: pinned.cid, url: pinned.url };
+      return { ipfsCid: pinned.cid, url: pinned.url, pinned: true };
     }
 
-    // IPFS unavailable — return null to indicate no receipt available.
-    return { ipfsCid: null, url: null };
+    // No pinning backend is available: return the receipt payload inline with
+    // its deterministic content address rather than fabricating a resolvable
+    // IPFS URL (an un-pinned CID is not retrievable from any gateway).
+    return {
+      ipfsCid: pinned?.cid ?? null,
+      url: null,
+      pinned: false,
+      receipt: payload,
+    };
   }
 
   async scheduled(userId: string) {
@@ -532,7 +644,8 @@ export class PaymentsService {
 
   /**
    * Fire-and-forget: pin a receipt to IPFS after a successful transaction.
-   * Updates the database record with the pinned CID on success.
+   * Only a genuinely pinned CID is persisted — a deterministic content hash
+   * is not a resolvable receipt and must not be stored as one.
    */
   private async pinReceipt(tx: {
     id: string;
@@ -549,6 +662,9 @@ export class PaymentsService {
   }): Promise<void> {
     const payload = this.ipfs.buildReceiptPayload(tx);
     const result = await this.ipfs.pinReceipt(payload);
+    if (!result.pinned) {
+      return;
+    }
 
     await this.prisma.transaction.update({
       where: { id: tx.id },
