@@ -46,12 +46,12 @@
     "@types/node": "^24.0.0",
     "eslint": "^9.39.5",
     "eslint-config-prettier": "^10.1.8",
-    "nx": "^23.1.1",
+    "nx": "^23.2.0",
     "prettier": "^3.9.6",
     "socket.io-client": "^4.8.3",
-    "tsx": "^4.23.8",
+    "tsx": "^4.23.13",
     "typescript": "~5.9.3",
-    "typescript-eslint": "^8.66.0"
+    "typescript-eslint": "^8.69.0"
   },
   "dependencies": {
     "soroban-client": "^1.0.1"
