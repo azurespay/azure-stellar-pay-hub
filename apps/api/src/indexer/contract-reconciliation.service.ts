@@ -201,7 +201,7 @@ export class ContractReconciliationService {
 
   private async onInvoiceCanceled(
     event: { id: bigint; merchant: string },
-    txHash: string | null,
+    _txHash: string | null,
   ): Promise<void> {
     await this.prisma.invoice.updateMany({
       where: { onChainId: Number(event.id), status: 'ISSUED' },
@@ -350,7 +350,7 @@ export class ContractReconciliationService {
 
   private async onSubscriptionCanceled(
     event: { id: bigint; by: string },
-    txHash: string | null,
+    _txHash: string | null,
   ): Promise<void> {
     const updated = await this.prisma.subscription.updateMany({
       where: { contractSubscriptionId: Number(event.id), status: { in: ['PENDING', 'ACTIVE'] } },
@@ -417,7 +417,7 @@ export class ContractReconciliationService {
 
   private async onWithdrawalApproved(
     event: { id: bigint; member: string },
-    txHash: string | null,
+    _txHash: string | null,
   ): Promise<void> {
     const row = await this.prisma.treasuryWithdrawal.findUnique({
       where: { contractWithdrawalId: Number(event.id) },

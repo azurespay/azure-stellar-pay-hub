@@ -218,12 +218,7 @@ export class EscrowsService {
       );
     }
 
-    let result;
-    try {
-      result = await this.contracts.submitCall(signedXdr);
-    } catch (err) {
-      throw err;
-    }
+    const result = await this.contracts.submitCall(signedXdr);
     if (result.status === 'FAILED') {
       throw new BadRequestException(`${action} reverted on-chain: ${result.errorMessage}`);
     }

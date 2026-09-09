@@ -1,4 +1,3 @@
-import { BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SorobanSubmissionError } from '@stellar-pay/sdk';
 import { PaymentsService } from './payments.service';

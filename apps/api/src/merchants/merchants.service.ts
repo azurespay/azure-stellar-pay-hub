@@ -207,12 +207,7 @@ export class MerchantsService {
     if (merchant.onChainMerchantId) {
       throw new BadRequestException('Merchant is already registered on-chain');
     }
-    let result;
-    try {
-      result = await this.contracts.submitCall(signedXdr);
-    } catch (err) {
-      throw err;
-    }
+    const result = await this.contracts.submitCall(signedXdr);
     if (result.status === 'FAILED') {
       throw new BadRequestException(`Merchant registration reverted on-chain: ${result.errorMessage}`);
     }
@@ -267,12 +262,7 @@ export class MerchantsService {
 
   /** Submit the wallet-signed `record_sale` envelope. */
   async submitSale(signedXdr: string) {
-    let result;
-    try {
-      result = await this.contracts.submitCall(signedXdr);
-    } catch (err) {
-      throw err;
-    }
+    const result = await this.contracts.submitCall(signedXdr);
     if (result.status === 'FAILED') {
       throw new BadRequestException(`Sale reverted on-chain: ${result.errorMessage}`);
     }
@@ -334,12 +324,7 @@ export class MerchantsService {
     if (settlement.status !== 'PROCESSING') {
       throw new BadRequestException('Settlement is not awaiting submission');
     }
-    let result;
-    try {
-      result = await this.contracts.submitCall(signedXdr);
-    } catch (err) {
-      throw err;
-    }
+    const result = await this.contracts.submitCall(signedXdr);
     if (result.status === 'FAILED') {
       await this.prisma.settlement.update({
         where: { id: settlementId },

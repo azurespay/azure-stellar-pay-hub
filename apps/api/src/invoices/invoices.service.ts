@@ -172,12 +172,7 @@ export class InvoicesService {
     if (invoice.onChainId) {
       throw new BadRequestException('Invoice is already issued on-chain');
     }
-    let result;
-    try {
-      result = await this.contracts.submitCall(signedXdr);
-    } catch (err) {
-      throw err;
-    }
+    const result = await this.contracts.submitCall(signedXdr);
     if (result.status === 'FAILED') {
       throw new BadRequestException(`Invoice issue reverted on-chain: ${result.errorMessage}`);
     }
@@ -223,12 +218,7 @@ export class InvoicesService {
   /** Submit the wallet-signed on-chain `cancel` envelope. */
   async submitCancelOnChain(merchantId: string, invoiceId: string, signedXdr: string) {
     const invoice = await this.findInvoice(merchantId, invoiceId);
-    let result;
-    try {
-      result = await this.contracts.submitCall(signedXdr);
-    } catch (err) {
-      throw err;
-    }
+    const result = await this.contracts.submitCall(signedXdr);
     if (result.status === 'FAILED') {
       throw new BadRequestException(`Invoice cancel reverted on-chain: ${result.errorMessage}`);
     }
@@ -284,12 +274,7 @@ export class InvoicesService {
     if (!invoice) {
       throw new NotFoundException('Invoice not found');
     }
-    let result;
-    try {
-      result = await this.contracts.submitCall(signedXdr);
-    } catch (err) {
-      throw err;
-    }
+    const result = await this.contracts.submitCall(signedXdr);
     if (result.status === 'FAILED') {
       throw new BadRequestException(`Invoice payment reverted on-chain: ${result.errorMessage}`);
     }

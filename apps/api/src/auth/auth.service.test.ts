@@ -1,4 +1,3 @@
-import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 
 describe('AuthService — unit-level validation', () => {

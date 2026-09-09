@@ -98,12 +98,7 @@ export class SubscriptionsService {
     if (claim.count !== 1) {
       throw new BadRequestException('Plan already submitted');
     }
-    let result;
-    try {
-      result = await this.contracts.submitCall(signedXdr);
-    } catch (err) {
-      throw err;
-    }
+    const result = await this.contracts.submitCall(signedXdr);
     if (result.status === 'FAILED') {
       await this.prisma.subscriptionPlan.update({
         where: { id },
@@ -159,12 +154,7 @@ export class SubscriptionsService {
         `Subscription is not awaiting signature (status: ${subscription.status})`,
       );
     }
-    let result;
-    try {
-      result = await this.contracts.submitCall(signedXdr);
-    } catch (err) {
-      throw err;
-    }
+    const result = await this.contracts.submitCall(signedXdr);
     if (result.status === 'FAILED') {
       await this.prisma.subscription.update({
         where: { id },
@@ -249,12 +239,7 @@ export class SubscriptionsService {
     if ((subscription as unknown as Record<string, string | null>)[hashField]) {
       throw new BadRequestException(`${action} already in flight`);
     }
-    let result;
-    try {
-      result = await this.contracts.submitCall(signedXdr);
-    } catch (err) {
-      throw err;
-    }
+    const result = await this.contracts.submitCall(signedXdr);
     if (result.status === 'FAILED') {
       throw new BadRequestException(`${action} reverted on-chain: ${result.errorMessage}`);
     }

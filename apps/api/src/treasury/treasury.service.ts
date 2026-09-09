@@ -155,12 +155,7 @@ export class TreasuryService {
     if (withdrawal.contractWithdrawalId) {
       throw new BadRequestException('Withdrawal already proposed on-chain');
     }
-    let result;
-    try {
-      result = await this.contracts.submitCall(signedXdr);
-    } catch (err) {
-      throw err;
-    }
+    const result = await this.contracts.submitCall(signedXdr);
     if (result.status === 'FAILED') {
       await this.prisma.treasuryWithdrawal.update({
         where: { id },
@@ -231,12 +226,7 @@ export class TreasuryService {
     if ((withdrawal as unknown as Record<string, string | null>)[hashField]) {
       throw new BadRequestException(`${action} already in flight`);
     }
-    let result;
-    try {
-      result = await this.contracts.submitCall(signedXdr);
-    } catch (err) {
-      throw err;
-    }
+    const result = await this.contracts.submitCall(signedXdr);
     if (result.status === 'FAILED') {
       throw new BadRequestException(`${action} reverted on-chain: ${result.errorMessage}`);
     }
