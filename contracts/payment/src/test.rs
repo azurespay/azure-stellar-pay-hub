@@ -144,3 +144,44 @@ fn test_emits_payment_event() {
     let last = events.last().unwrap();
     assert_eq!(last.0, _contract_id, "last event should be from our contract");
 }
+
+#[test]
+fn test_non_admin_cannot_set_allowed() {
+    let env = Env::default();
+    let (_admin, alice, _bob, _carol, _token, token_id, _contract_id, client) = setup(&env);
+
+    // Alice is not the admin — set_allowed must fail.
+    let result = client.try_set_allowed(&alice, &token_id, &true);
+    assert_eq!(result, Err(Ok(PaymentError::Unauthorized)));
+}
+
+#[test]
+fn test_non_admin_cannot_pause() {
+    let env = Env::default();
+    let (_admin, alice, _bob, _carol, _token, _token_id, _contract_id, client) = setup(&env);
+
+    // Alice is not the admin — pause must fail.
+    let result = client.try_pause(&alice);
+    assert_eq!(result, Err(Ok(PaymentError::Unauthorized)));
+}
+
+#[test]
+fn test_non_admin_cannot_unpause() {
+    let env = Env::default();
+    let (admin, alice, _bob, _carol, _token, _token_id, _contract_id, client) = setup(&env);
+    client.pause(&admin);
+
+    // Alice is not the admin — unpause must fail.
+    let result = client.try_unpause(&alice);
+    assert_eq!(result, Err(Ok(PaymentError::Unauthorized)));
+}
+
+#[test]
+fn test_cannot_initialize_twice() {
+    let env = Env::default();
+    let (_admin, _alice, _bob, _carol, _token, _token_id, _contract_id, client) = setup(&env);
+
+    let new_admin = Address::generate(&env);
+    let result = client.try_initialize(&new_admin);
+    assert_eq!(result, Err(Ok(PaymentError::AlreadyInitialized)));
+}

@@ -303,10 +303,15 @@ export class IndexerService {
       return;
     }
     // XLM native only for now — other SAC assets need code/decimals resolution.
+    // LIMITATION: Inbound detection only supports XLM (native) payments via
+    // the Soroban contract route. USDC and other Stellar-issued assets are
+    // logged but not credited to the merchant's balance. This is a known gap
+    // tracked in docs/architecture.md — multi-asset inbound requires asset
+    // code/issuer resolution from the SAC contract address.
     if (parsed.token !== this.nativeSacAddress()) {
       this.logger.log(
         { eventId: event.id, token: parsed.token },
-        'payment event for unsupported token — not inbound-credited',
+        'payment event for unsupported token — not inbound-credited (XLM only)',
       );
       return;
     }

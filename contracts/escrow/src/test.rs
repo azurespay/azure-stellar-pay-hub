@@ -167,3 +167,39 @@ fn test_unknown_escrow_errors() {
     let result = client.try_release(&999, &bob);
     assert_eq!(result, Err(Ok(EscrowError::EscrowNotFound)));
 }
+
+#[test]
+fn test_cannot_initialize_twice() {
+    let env = Env::default();
+    let (_admin, _alice, _bob, _token, _token_id, _contract_id, client) = setup(&env);
+
+    let new_admin = Address::generate(&env);
+    let result = client.try_initialize(&new_admin);
+    assert_eq!(result, Err(Ok(EscrowError::AlreadyInitialized)));
+}
+
+#[test]
+fn test_unrelated_party_cannot_refund() {
+    let env = Env::default();
+    let (_admin, alice, bob, _token, token_id, _contract_id, client) = setup(&env);
+    let stranger = Address::generate(&env);
+    env.ledger().set_timestamp(100);
+
+    let id = client.create(&alice, &bob, &None, &token_id, &500, &1000, &None);
+    env.ledger().set_timestamp(999);
+
+    // Stranger is not a party — refund must fail.
+    let result = client.try_refund(&id, &stranger);
+    assert_eq!(result, Err(Ok(EscrowError::Unauthorized)));
+}
+
+#[test]
+fn test_cannot_release_escrow_not_yet_created() {
+    let env = Env::default();
+    let (_admin, _alice, bob, _token, _token_id, _contract_id, client) = setup(&env);
+    env.ledger().set_timestamp(1001);
+
+    // Try to release a non-existent escrow.
+    let result = client.try_release(&999, &bob);
+    assert_eq!(result, Err(Ok(EscrowError::EscrowNotFound)));
+}
