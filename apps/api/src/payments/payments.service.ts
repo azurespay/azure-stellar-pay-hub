@@ -172,15 +172,29 @@ export class PaymentsService {
       // Simulate → assemble at create time so the returned envelope carries
       // the on-chain footprint (`sorobanData`) and the `from.require_auth()`
       // authorization entries. An un-allowlisted SAC reverts here with a clear
-      // error instead of failing at submit. The wallet signs the assembled
-      // envelope, and the server submits it via Soroban RPC `sendTransaction`.
-      const prepared = await network.prepareSorobanSendTransaction({
-        from: dto.fromPublicKey,
-        to: destination.publicKey,
-        tokenAddress,
-        amount: destination.amount,
-        memo: `sp:${correlationId}`,
-      });
+      // 400-class error instead of failing at submit. The wallet signs the
+      // assembled envelope, and the server submits it via Soroban RPC
+      // `sendTransaction`. The invocation targets the DEPLOYED PAYMENT
+      // CONTRACT (`contractId`); the token SAC is passed as an argument.
+      let prepared;
+      try {
+        prepared = await network.prepareSorobanSendTransaction({
+          from: dto.fromPublicKey,
+          to: destination.publicKey,
+          contractId,
+          tokenAddress,
+          amount: destination.amount,
+          memo: `sp:${correlationId}`,
+        });
+      } catch (err) {
+        // A failed simulation is a definitive client/configuration error (e.g.
+        // the token SAC is not allowlisted on the deployed contract) — surface
+        // the on-chain reason as a 400, never a 500.
+        if (err instanceof SorobanSubmissionError) {
+          throw new BadRequestException(err.message);
+        }
+        throw err;
+      }
       unsignedXdr = prepared.unsignedXdr;
       contractMeta = { route: 'contract', contractId, tokenAddress, correlationId };
     } else {

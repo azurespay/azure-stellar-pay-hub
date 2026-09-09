@@ -19,9 +19,7 @@
   "permissions": ["storage", "notifications", "alarms"],
   "host_permissions": [
     "http://localhost:4000/*",
-    "ws://localhost:4000/*",
-    "https://*.stellar-pay.example/*",
-    "wss://*.stellar-pay.example/*",
+    "https://stellar-pay-api.up.railway.app/*",
     "https://horizon-testnet.stellar.org/*",
     "https://horizon.stellar.org/*"
   ],

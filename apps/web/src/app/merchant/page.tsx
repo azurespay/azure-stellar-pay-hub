@@ -24,6 +24,7 @@ import {
 } from '@stellar-pay/ui';
 import { api } from '@/lib/api';
 import { shortKey } from '@/lib/format';
+import { useRealtime } from '@/lib/ws';
 import type { Invoice, Merchant, PaymentLink, Product, Settlement } from '@stellar-pay/types';
 import { OnboardingForm } from './onboarding';
 
@@ -59,6 +60,15 @@ export default function MerchantPage() {
   useEffect(() => {
     void loadAll();
   }, []);
+
+  // Live updates: a checkout/inbound payment for this merchant triggers a
+  // `payment.received` realtime event — refresh invoices/links so the
+  // dashboard reflects new collections without a manual reload.
+  useRealtime((event) => {
+    if (event === 'payment.received') {
+      void loadAll();
+    }
+  });
 
   if (!loaded) {
     return (

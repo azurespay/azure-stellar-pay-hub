@@ -14,9 +14,9 @@ All contracts live in `contracts/` and are written in Rust with
 | Contract        | Purpose                                                         |
 | --------------- | --------------------------------------------------------------- |
 | `payment`       | Direct XLM/asset transfers with memo and receipt events         |
-| `escrow`        | Conditional escrow with depositor/beneficiary/arbiter           |
-| `multisig`      | Threshold-signature transactions and treasury control           |
-| `treasury`      | Custody of funds with member spending limits and voting         |
+| `escrow`        | Conditional escrow with initiator/counterparty/arbiter          |
+| `multisig`      | Threshold proposals that execute real cross-contract calls      |
+| `treasury`      | Allowlisted vault with governance propose→approve→execute       |
 | `subscriptions` | Recurring billing with plan management and cancellation         |
 | `invoices`      | On-chain invoice registry with paid/expired states              |
 | `merchant`      | Merchant registry + settlement distribution to multiple wallets |
@@ -28,16 +28,15 @@ Having a contract in this repo does **not** mean the platform invokes it.
 Distinguish _implemented_ (code + `test.rs`), _deployed_ (address on testnet),
 and _used by the platform_ (the API actually calls it):
 
-| Contract        | Implemented | Unit tested (Rust) | Deployed (testnet) |           Platform uses it            |
-| --------------- | :---------: | :----------------: | :----------------: | :-----------------------------------: |
-| `payment`       |     ✅      |  ✅ (host tests)   |         ✅         | ⚠️ experimental route, off by default |
-| `escrow`        |     ✅      |  ✅ (host tests)   |         ✅         |          ❌ not invoked yet           |
-| `multisig`      |     ✅      |  ✅ (host tests)   |         ✅         |          ❌ not invoked yet           |
-| `treasury`      |     ✅      |  ✅ (host tests)   |         ✅         |          ❌ not invoked yet           |
-| `subscriptions` |     ✅      |  ✅ (host tests)   |         ✅         |          ❌ not invoked yet           |
-| `invoices`      |     ✅      |  ✅ (host tests)   |         ✅         |          ❌ not invoked yet           |
-| `merchant`      |     ✅      |  ✅ (host tests)   |         ✅         |          ❌ not invoked yet           |
-| `rewards`       |     ✅      |  ✅ (host tests)   |         ✅         |          ❌ not invoked yet           |
+| Contract | Implemented | Unit tested (Rust) | Deployed (testnet) | Platform uses it |
+| --------------- | :---------: | :----------------: | :----------------: | :-----------------------------------: || `payment` | ✅ | ✅ (host tests) | ✅ | ⚠️ experimental route, off by default (SDK invoke fixed + tested) |
+| `escrow` | ✅ | ✅ (host tests) | ✅ | ❌ not invoked yet |
+| `multisig` | ✅ | ✅ (host tests) | ✅ | ❌ not invoked yet |
+| `treasury` | ✅ | ✅ (host tests) | ✅ | ❌ not invoked yet |
+| `subscriptions` | ✅ | ✅ (host tests) | ✅ | ❌ not invoked yet |
+| `invoices` | ✅ | ✅ (host tests) | ✅ | ❌ not invoked yet |
+| `merchant` | ✅ | ✅ (host tests) | ✅ | ❌ not invoked yet |
+| `rewards` | ✅ | ✅ (host tests) | ✅ | ❌ not invoked yet |
 
 All eight testnet addresses are recorded in `.deployed-contracts.env`; they were
 deployed on 2026-08-10 and **verified live on-chain** via Soroban RPC
@@ -68,13 +67,30 @@ Artifacts: `contracts/target/wasm32v1-none/release/*.wasm`
 ## Deploy (testnet)
 
 ```bash
+# Build contracts (requires rust + wasm32v1-none target)
+pnpm contracts:build
+
+# Deploy all 8 contracts (writes .deployed-contracts.env; stable per-contract
+# salts so re-runs are idempotent)
+export STELLAR_SECRET_KEY=S...
+pnpm deploy:contracts
+
+# Initialize each contract + set the token allowlists + verify on-chain
+pnpm contracts:init
+```
+
+Or the all-in-one: `bash scripts/deploy-testnet.sh` (build → deploy → init).
+
+Manual equivalent for a single contract:
+
+```bash
 soroban contract deploy \
   --wasm contracts/target/wasm32v1-none/release/stellar_pay_payment.wasm \
   --source ADMIN \
   --network testnet
-```
 
-Then instantiate with the admin address: `soroban contract invoke --id <ID> -- initialize --admin G…`
+soroban contract invoke --id <ID> -- initialize --admin G…
+```
 
 ## Platform wiring (payment contract — experimental)
 
@@ -91,23 +107,16 @@ classic Stellar `Operation.payment`. Status as of 2026-09:
   (`set_allowed`). The SAC address for an asset can be resolved with the SDK's
   `sorobanTokenAddress()` (XLM native → `Asset.native().contractId(network)`).
   This must be done on-chain with the deployer key before the route is enabled.
-- **No live execution yet — verified blocker at this commit.** A full
-  contract-route payment has **not** completed on testnet. An attempt on
-  2026-09-08 (tier-5 E2E, `E2E_CONTRACT=1`) failed at submission: the API
-  returned 500 because `StellarNetwork.submitSignedTransaction` posts the
-  envelope to **Horizon's classic endpoint, which rejects Soroban
-  transactions** (Horizon HTTP 400). Two gaps must close before this route can
-  work end-to-end:
-  1. **Simulation-assembled XDR.** The SDK's `buildSorobanSendTransaction`
-     builds a raw `invokeHostFunction` with `auth: []` and no `sorobanData`
-     (footprint / resource preconditions). The contract's `send` calls
-     `from.require_auth()` and performs a SAC `transfer`, so a valid
-     transaction must be produced via a simulate → assemble (soroban-auth)
-     round-trip against Soroban RPC before signing — classic `Operation.payment`
-     XDR construction is not sufficient.
-  2. **Soroban RPC submission.** Submitting the assembled envelope must go
-     through Soroban RPC `sendTransaction` (then the indexer's
-     `getTransaction` poll below confirms it), not Horizon.
+- **The SDK route is fixed (2026-09) and unit-tested.** `prepareSorobanSendTransaction`
+  runs the simulate → assemble (soroban-auth) round-trip so the envelope carries
+  the resource footprint (`sorobanData`) and the `from.require_auth()`
+  authorization entries; `submitSorobanSendTransaction` submits via Soroban RPC
+  `sendTransaction`, and `signSorobanSendTransaction` fills the address
+  credentials (with `validUntil`). The invocation targets the **deployed payment
+  contract** (`contractId`), not the token SAC — a regression guarded by unit
+  tests that assert the invoked contract address. Create-time simulation
+  failures (e.g. a token not allowlisted) map to a 4xx with the on-chain
+  diagnostic instead of a 500.
 - **On-chain confirmation via the event indexer (once submission exists).**
   A successful RPC submission would be stored as `SUBMITTED` — never
   `SUCCEEDED`/`CONFIRMED` from submission alone. The API scheduler runs
@@ -135,13 +144,29 @@ classic Stellar `Operation.payment`. Status as of 2026-09:
   in `docs/architecture.md`) with the classic-Horizon listener: a `ChainEvent`
   unique-event ledger prevents double processing, and a memo equal to an open
   invoice number (asset + amount match) marks the invoice PAID.
-- **Blocked on one ops prerequisite.** End-to-end contract-route payment on
-  testnet still requires the admin to `set_allowed` the XLM SAC on the deployed
-  contract (deployer key); until then a `send` reverts with `TokenNotAllowed`.
+- **Ops prerequisite automated.** End-to-end contract-route payment on testnet
+  requires the admin to `set_allowed` the token SACs on the deployed contracts
+  (deployer key); until then a `send` reverts with `TokenNotAllowed`. This is
+  now automated: `pnpm contracts:init` (`scripts/init-contracts.mjs`) calls
+  `initialize(...)` on every contract that needs it, sets the XLM SAC (and any
+  `ALLOWLIST_TOKENS`) allowlist on `payment` + `treasury`, and verifies the
+  on-chain storage afterwards. Run it after `deploy-testnet.sh` /
+  `deploy-contracts.mjs`. Until it has been run against the 2026-08-10
+  deployment, the deployed contracts remain inert (verified: zero events,
+  uninitialized storage).
 
 ## Security considerations
 
-- Multi-sig proposals require `threshold` of `N` signers before execution.
-- Escrow funds are only released by explicit `release`/`refund` calls with proper auth.
+- Multi-sig proposals require `threshold` of `N` signers before execution; once
+  quorum is reached `execute` performs the proposal's actual cross-contract
+  invocation (`try_invoke_contract` with XDR-serialized `Val` args) and only
+  marks the proposal executed when the target call succeeds — a failing call
+  reverts the whole transaction so signers can fix and re-vote.
+- Treasury withdrawals are allowlisted per token and, when governance is
+  enabled, require a propose → approve → execute flow with a member threshold
+  (plus an optional per-token max-withdrawal cap).
+- Escrow funds are only released by explicit `release`/`refund` calls with proper
+  auth; an optional arbiter can settle disputes, and time-locked releases fire
+  only after `release_time`.
 - All token operations go through the SAC `token` interface (`transfer`, `balance_of`)
   to support XLM and any Stellar asset.

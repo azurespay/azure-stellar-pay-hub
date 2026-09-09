@@ -337,10 +337,7 @@ async function run() {
           networkPassphrase: Networks.TESTNET,
           sorobanRpcUrl: rpcUrl,
         });
-        signedXdr = await networkWithRpc.signSorobanSendTransaction(
-          payment.unsignedXdr,
-          payerKp,
-        );
+        signedXdr = await networkWithRpc.signSorobanSendTransaction(payment.unsignedXdr, payerKp);
       } else {
         const tx = TransactionBuilder.fromXDR(payment.unsignedXdr, Networks.TESTNET);
         tx.sign(payerKp);

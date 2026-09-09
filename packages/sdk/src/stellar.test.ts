@@ -10,6 +10,7 @@ describe('StellarNetwork Soroban helpers', () => {
   });
   const payer = Keypair.random();
   const payee = Keypair.random();
+  const CONTRACT_ID = 'CC5UUVJCU3WRXDPDE3MEP65BN7XASQDV6O5IWVQRT53D5UKJ63UVHLCA';
 
   beforeEach(() => {
     jest
@@ -57,6 +58,7 @@ describe('StellarNetwork Soroban helpers', () => {
     const xdrStr = await network.buildSorobanSendTransaction({
       from: payer.publicKey(),
       to: payee.publicKey(),
+      contractId: CONTRACT_ID,
       tokenAddress: token,
       amount,
       memo,
@@ -66,19 +68,25 @@ describe('StellarNetwork Soroban helpers', () => {
     expect(invoke.opSwitch).toBe('invokeHostFunction');
     expect(invoke.hostFunctionSwitch).toBe('hostFunctionTypeInvokeContract');
     expect(invoke.functionName).toBe('send');
-    expect(invoke.contractBytes.equals(StrKey.decodeContract(token))).toBe(true);
+    // REGRESSION GUARD: the invocation target must be the deployed payment
+    // contract, never the token SAC (the SAC has no `send` entry point).
+    // v14 Hash is a Buffer subclass — compare bytes directly.
+    expect(Buffer.from(invoke.contractBytes as never)).toEqual(StrKey.decodeContract(CONTRACT_ID));
+    expect(Buffer.from(invoke.contractBytes as never)).not.toEqual(StrKey.decodeContract(token));
     expect(invoke.args.length).toBe(5);
 
     // args[0]=from, args[1]=to, args[2]=token (accounts vs contract address).
     expect(invoke.args[0].address().switch().name).toBe('scAddressTypeAccount');
-    expect(
-      invoke.args[0]
-        .address()
-        .accountId()
-        .ed25519()
-        .equals(StrKey.decodeEd25519PublicKey(payer.publicKey())),
-    ).toBe(true);
+    expect(Buffer.from(invoke.args[0].address().accountId().ed25519() as never)).toEqual(
+      StrKey.decodeEd25519PublicKey(payer.publicKey()),
+    );
+    // The token SAC must be passed as the THIRD argument of the payment
+    // contract's send(from, to, token, amount, memo) — and it must be the
+    // XLM SAC, not the payment contract itself.
     expect(invoke.args[2].address().switch().name).toBe('scAddressTypeContract');
+    expect(Buffer.from(invoke.args[2].address().contractId() as never)).toEqual(
+      StrKey.decodeContract(token),
+    );
 
     // args[3] = amount in stroops as i128.
     expect(invoke.args[3].switch().name).toBe('scvI128');
@@ -121,6 +129,7 @@ describe('StellarNetwork Soroban helpers', () => {
     const xdrStr = await network.buildSorobanSendTransaction({
       from: payer.publicKey(),
       to: payee.publicKey(),
+      contractId: CONTRACT_ID,
       tokenAddress: token,
       amount: '1',
     });
@@ -134,6 +143,7 @@ describe('StellarNetwork Soroban helpers', () => {
     const xdrStr = await network.buildSorobanSendTransaction({
       from: payer.publicKey(),
       to: payee.publicKey(),
+      contractId: CONTRACT_ID,
       tokenAddress: token,
       amount: '1',
     });
@@ -159,11 +169,11 @@ describe('StellarNetwork Soroban prepare/sign/submit (contract route)', () => {
     // The js-xdr runtime accepts a switch value; the checked-in .d.ts is
     // stale for this union arm, so construct via the runtime form and cast.
     const txData = new xdr.SorobanTransactionData({
-      ext: new (xdr.ExtensionPoint as unknown as new (sw: number) => xdr.ExtensionPoint)(0),
+      ext: new xdr.SorobanTransactionDataExt(0),
       resources: new xdr.SorobanResources({
         footprint: new xdr.LedgerFootprint({ readOnly: [], readWrite: [] }),
         instructions: 100000,
-        readBytes: 1000,
+        diskReadBytes: 1000,
         writeBytes: 1000,
       }),
       resourceFee: xdr.Int64.fromString('100'),
@@ -192,7 +202,12 @@ describe('StellarNetwork Soroban prepare/sign/submit (contract route)', () => {
       id: 'sim-unit',
       latestLedger: overrides.latestLedger ?? 500,
       transactionData: txData.toXDR('base64'),
-      results: [{ auth: overrides.auth ?? [voidEntry.toXDR('base64')], xdr: xdr.ScVal.scvVoid().toXDR('base64') }],
+      results: [
+        {
+          auth: overrides.auth ?? [voidEntry.toXDR('base64')],
+          xdr: xdr.ScVal.scvVoid().toXDR('base64'),
+        },
+      ],
       events: [],
       minResourceFee: '100',
     };
@@ -232,6 +247,7 @@ describe('StellarNetwork Soroban prepare/sign/submit (contract route)', () => {
     const prepared = await network.prepareSorobanSendTransaction({
       from: payer.publicKey(),
       to: payee.publicKey(),
+      contractId: CONTRACT_ID,
       tokenAddress: network.sorobanTokenAddress('XLM'),
       amount: '10',
       memo: 'sp:unit-1',
@@ -268,6 +284,7 @@ describe('StellarNetwork Soroban prepare/sign/submit (contract route)', () => {
       network.prepareSorobanSendTransaction({
         from: payer.publicKey(),
         to: payee.publicKey(),
+        contractId: CONTRACT_ID,
         tokenAddress: network.sorobanTokenAddress('XLM'),
         amount: '1',
       }),
@@ -279,6 +296,7 @@ describe('StellarNetwork Soroban prepare/sign/submit (contract route)', () => {
     const prepared = await network.prepareSorobanSendTransaction({
       from: payer.publicKey(),
       to: payee.publicKey(),
+      contractId: CONTRACT_ID,
       tokenAddress: network.sorobanTokenAddress('XLM'),
       amount: '10',
       memo: 'sp:unit-1',
@@ -312,6 +330,7 @@ describe('StellarNetwork Soroban prepare/sign/submit (contract route)', () => {
     const prepared = await network.prepareSorobanSendTransaction({
       from: payer.publicKey(),
       to: payee.publicKey(),
+      contractId: CONTRACT_ID,
       tokenAddress: network.sorobanTokenAddress('XLM'),
       amount: '10',
     });
@@ -334,6 +353,7 @@ describe('StellarNetwork Soroban prepare/sign/submit (contract route)', () => {
     const prepared = await network.prepareSorobanSendTransaction({
       from: payer.publicKey(),
       to: payee.publicKey(),
+      contractId: CONTRACT_ID,
       tokenAddress: network.sorobanTokenAddress('XLM'),
       amount: '10',
     });
@@ -354,13 +374,17 @@ describe('StellarNetwork Soroban prepare/sign/submit (contract route)', () => {
     const prepared = await network.prepareSorobanSendTransaction({
       from: payer.publicKey(),
       to: payee.publicKey(),
+      contractId: CONTRACT_ID,
       tokenAddress: network.sorobanTokenAddress('XLM'),
       amount: '10',
     });
     const signed = await network.signSorobanSendTransaction(prepared.unsignedXdr, payer);
 
     mockRpc({
-      send: { status: 'ERROR', errorResult: { result: () => ({ switch: () => ({ name: 'txFailed' }) }) } },
+      send: {
+        status: 'ERROR',
+        errorResult: { result: () => ({ switch: () => ({ name: 'txFailed' }) }) },
+      },
     });
     await expect(network.submitSorobanSendTransaction(signed)).rejects.toThrow(
       SorobanSubmissionError,
@@ -380,6 +404,7 @@ describe('StellarNetwork Soroban prepare/sign/submit (contract route)', () => {
       noRpc.prepareSorobanSendTransaction({
         from: payer.publicKey(),
         to: payee.publicKey(),
+        contractId: CONTRACT_ID,
         tokenAddress: network.sorobanTokenAddress('XLM'),
         amount: '1',
       }),

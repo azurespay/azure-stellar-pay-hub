@@ -11,7 +11,10 @@ function accountScVal(publicKey: string): xdr.ScVal {
 
 function contractScVal(contractId: string): xdr.ScVal {
   return xdr.ScVal.scvAddress(
-    xdr.ScAddress.scAddressTypeContract(StrKey.decodeContract(contractId)),
+    xdr.ScAddress.scAddressTypeContract(
+      // v14 typings type the arm as Hash while decodeContract returns Buffer.
+      StrKey.decodeContract(contractId) as unknown as xdr.Hash,
+    ),
   );
 }
 

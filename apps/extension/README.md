@@ -49,17 +49,15 @@ Replace the placeholder icon files in `icons/` with actual PNGs:
 
 ```
 popup.ts         ←→  background.ts     ←→  StellarPay API
-(UI)                  (WebSocket)           (NestJS)
+(UI)                  (Socket.IO)           (NestJS /realtime)
 
 lib/api.ts            lib/notifications.ts
-(HTTP client)         (WS + Chrome notifications)
+(HTTP client)         (Socket.IO client + Chrome notifications)
 ```
 
 The popup communicates with the background service worker via `chrome.runtime.sendMessage`.
-The background worker maintains a persistent WebSocket connection for real-time events and
-displays Chrome desktop notifications for incoming payments.
-
-> **Verification note:** the extension's notification path is **not yet verified** against the
-> current API Socket.IO gateway (which serves the `/realtime` namespace with `auth: { token }`
-> handshakes). Quick-send and balance features are unaffected. See `README.md` → Known
-> limitations for the current status.
+The background worker maintains a persistent **Socket.IO** connection (`socket.io-client`,
+websocket transport) to the API's `/realtime` gateway — authenticating with the JWT in the
+`auth: { token }` handshake and joining the user's private room — and displays Chrome
+desktop notifications for incoming payments, transaction status changes, and in-app
+notifications. Reconnects with exponential backoff (1s → 30s).

@@ -132,6 +132,16 @@ done
 
 log "Contract addresses saved to $DEPLOY_LOG"
 
+# ── 6b. Initialize + allowlist contracts ─────────────────────────────────────
+
+log "Initializing contracts and setting token allowlists..."
+if node "$ROOT/scripts/init-contracts.mjs" 2>&1 | tail -30; then
+  log "Contracts initialized and allowlisted"
+else
+  warn "Contract initialization reported failures — see output above."
+  warn "You can re-run it later with: pnpm contracts:init"
+fi
+
 # ── 7. Create .env.testnet with contract addresses ───────────────────────────
 
 cp .env.example .env.testnet

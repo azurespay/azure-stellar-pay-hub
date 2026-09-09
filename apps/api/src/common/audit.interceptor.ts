@@ -28,28 +28,44 @@ export class AuditInterceptor implements NestInterceptor {
       return next.handle();
     }
 
+    // Journal both completions and failures: a mutation that threw (e.g. a
+    // rejected payment) is exactly what an audit trail should capture. The
+    // write is fire-and-forget — it never blocks or alters the response.
     return next.handle().pipe(
       tap({
-        next: () => {
-          const path = request.route?.path ?? request.path ?? 'unknown';
-          this.prisma.auditLog
-            .create({
-              data: {
-                userId: request.user?.userId,
-                actorPublicKey: request.user?.publicKey,
-                action: `${method} ${path}`,
-                resource: path.split('/')[1] ?? 'api',
-                resourceId: undefined,
-                ipAddress: request.ip,
-                userAgent: request.headers?.['user-agent'],
-                metadata: { body: request.body } as never,
-              },
-            })
-            .catch((err: Error) => {
-              this.logger.error(`Failed to write audit log: ${err.message}`, err.stack);
-            });
-        },
+        next: () => this.writeAudit(request, method),
+        error: () => this.writeAudit(request, method),
       }),
     );
+  }
+
+  private writeAudit(
+    request: {
+      route?: { path?: string };
+      path?: string;
+      user?: { userId?: string; publicKey?: string };
+      ip?: string;
+      headers?: Record<string, string | undefined>;
+      body?: Record<string, unknown>;
+    },
+    method: string,
+  ): void {
+    const path = request.route?.path ?? request.path ?? 'unknown';
+    this.prisma.auditLog
+      .create({
+        data: {
+          userId: request.user?.userId,
+          actorPublicKey: request.user?.publicKey,
+          action: `${method} ${path}`,
+          resource: path.split('/')[1] ?? 'api',
+          resourceId: undefined,
+          ipAddress: request.ip,
+          userAgent: request.headers?.['user-agent'],
+          metadata: { body: request.body } as never,
+        },
+      })
+      .catch((err: Error) => {
+        this.logger.error(`Failed to write audit log: ${err.message}`, err.stack);
+      });
   }
 }

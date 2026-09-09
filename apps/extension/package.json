@@ -9,6 +9,9 @@
     "pack": "node package-extension.mjs",
     "pack:ci": "node package-extension.mjs --ci"
   },
+  "dependencies": {
+    "socket.io-client": "^4.8.3"
+  },
   "devDependencies": {
     "esbuild": "^0.25.0"
   }

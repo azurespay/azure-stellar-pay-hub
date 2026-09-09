@@ -1,8 +1,37 @@
 #![cfg(test)]
 
-use super::{MultisigContract, MultisigContractClient, MultisigError};
+use super::{MultisigContract, MultisigContractClient, MultisigError, ProposalCall};
 use soroban_sdk::testutils::Address as AddressUtils;
-use soroban_sdk::{Address, Env, String, Vec, vec};
+use soroban_sdk::{contract, contractimpl, contracttype, xdr::ToXdr, Address, Bytes, Env, String, Symbol, Vec, vec};
+
+/// A minimal target contract used to prove that `execute` really performs the
+/// stored cross-contract invocation (not just bookkeeping).
+#[contracttype]
+enum TargetKey { Counter }
+
+#[contract]
+pub struct TargetContract;
+
+#[contractimpl]
+impl TargetContract {
+    pub fn bump(env: Env, x: u64) -> u64 {
+        let cur: u64 = env.storage().instance().get(&TargetKey::Counter).unwrap_or(0);
+        let next = cur + x;
+        env.storage().instance().set(&TargetKey::Counter, &next);
+        next
+    }
+
+    pub fn counter(env: Env) -> u64 {
+        env.storage().instance().get(&TargetKey::Counter).unwrap_or(0)
+    }
+
+    pub fn fail(_env: Env) -> u64 {
+        panic!("target call failed on purpose")
+    }
+}
+
+// The #[contractimpl] macro generates TargetContractClient for the local target.
+type TargetClient<'e> = TargetContractClient<'e>;
 
 fn setup<'e>(env: &'e Env) -> (Vec<Address>, MultisigContractClient<'e>) {
     env.mock_all_auths();
@@ -16,8 +45,23 @@ fn setup<'e>(env: &'e Env) -> (Vec<Address>, MultisigContractClient<'e>) {
     (signers, client)
 }
 
-fn payload(env: &Env, bytes: &[u8]) -> soroban_sdk::Bytes {
-    soroban_sdk::Bytes::from_slice(env, bytes)
+fn target_setup<'e>(env: &'e Env) -> (Vec<Address>, MultisigContractClient<'e>, TargetClient<'e>, Address) {
+    let (signers, client) = setup(env);
+    let target_id = env.register_contract(None, TargetContract);
+    let target = TargetClient::new(env, &target_id);
+    (signers, client, target, target_id)
+}
+
+fn call(env: &Env, target: &Address, function: &str, args: Vec<Bytes>) -> ProposalCall {
+    ProposalCall {
+        target: target.clone(),
+        function: Symbol::new(env, function),
+        args,
+    }
+}
+
+fn no_args(env: &Env, target: &Address) -> ProposalCall {
+    call(env, target, "nop", vec![env])
 }
 
 #[test]
@@ -35,8 +79,9 @@ fn test_submit_and_approve_to_quorum() {
     let (signers, client) = setup(&env);
     let alice = signers.get(0).unwrap();
     let bob = signers.get(1).unwrap();
+    let target = Address::generate(&env);
 
-    let id = client.submit(&alice, &String::from_str(&env, "withdraw"), &payload(&env, &[1, 2, 3]));
+    let id = client.submit(&alice, &String::from_str(&env, "withdraw"), &no_args(&env, &target));
     assert_eq!(id, 1);
 
     // Single approval is below the quorum.
@@ -44,15 +89,56 @@ fn test_submit_and_approve_to_quorum() {
     let result = client.try_execute(&alice, &id);
     assert_eq!(result, Err(Ok(MultisigError::QuorumNotReached)));
 
-    // Second approval reaches quorum and execution succeeds.
+    // Second approval reaches quorum, but the target is not a registered
+    // contract — execution must fail cleanly (not mark the proposal executed).
+    client.approve(&bob, &id);
+    let result = client.try_execute(&bob, &id);
+    assert_eq!(result, Err(Ok(MultisigError::ExecutionFailed)));
+    let proposal = client.get_proposal(&id).unwrap();
+    assert!(!proposal.executed);
+}
+
+#[test]
+fn test_execute_performs_cross_contract_call() {
+    let env = Env::default();
+    let (signers, client, target, target_id) = target_setup(&env);
+    let alice = signers.get(0).unwrap();
+    let bob = signers.get(1).unwrap();
+
+    // The proposal invokes target.bump(7) once quorum is reached.
+    let args = vec![&env, 7u64.to_xdr(&env)];
+    let id = client.submit(&alice, &String::from_str(&env, "bump by 7"), &call(&env, &target_id, "bump", args));
+
+    // Below quorum: nothing executed.
+    client.approve(&alice, &id);
+    assert_eq!(target.counter(), 0);
+
+    // Quorum reached: execution really invokes the target contract.
     client.approve(&bob, &id);
     client.execute(&bob, &id);
-    let proposal = client.get_proposal(&id).unwrap();
-    assert!(proposal.executed);
+    assert_eq!(target.counter(), 7);
 
     // Cannot execute twice.
     let result = client.try_execute(&bob, &id);
     assert_eq!(result, Err(Ok(MultisigError::AlreadyExecuted)));
+}
+
+#[test]
+fn test_execute_keeps_proposal_unexecuted_when_target_call_fails() {
+    let env = Env::default();
+    let (signers, client, _target, target_id) = target_setup(&env);
+    let alice = signers.get(0).unwrap();
+    let bob = signers.get(1).unwrap();
+
+    let id = client.submit(&alice, &String::from_str(&env, "failing call"), &no_args(&env, &target_id));
+    client.approve(&alice, &id);
+    client.approve(&bob, &id);
+
+    // The target function panics — the proposal must not be marked executed.
+    let result = client.try_execute(&bob, &id);
+    assert_eq!(result, Err(Ok(MultisigError::ExecutionFailed)));
+    let proposal = client.get_proposal(&id).unwrap();
+    assert!(!proposal.executed);
 }
 
 #[test]
@@ -61,8 +147,9 @@ fn test_reject_prevents_quorum() {
     let (signers, client) = setup(&env);
     let alice = signers.get(0).unwrap();
     let bob = signers.get(1).unwrap();
+    let target = Address::generate(&env);
 
-    let id = client.submit(&alice, &String::from_str(&env, "withdraw"), &payload(&env, &[1]));
+    let id = client.submit(&alice, &String::from_str(&env, "withdraw"), &no_args(&env, &target));
     client.approve(&alice, &id);
     client.reject(&bob, &id);
 
@@ -76,8 +163,9 @@ fn test_cannot_vote_twice() {
     let env = Env::default();
     let (signers, client) = setup(&env);
     let alice = signers.get(0).unwrap();
+    let target = Address::generate(&env);
 
-    let id = client.submit(&alice, &String::from_str(&env, "x"), &payload(&env, &[0]));
+    let id = client.submit(&alice, &String::from_str(&env, "x"), &no_args(&env, &target));
     client.approve(&alice, &id);
     let result = client.try_approve(&alice, &id);
     assert_eq!(result, Err(Ok(MultisigError::AlreadyVoted)));
@@ -88,8 +176,9 @@ fn test_non_signer_cannot_submit() {
     let env = Env::default();
     let (_signers, client) = setup(&env);
     let outsider = Address::generate(&env);
+    let target = Address::generate(&env);
 
-    let result = client.try_submit(&outsider, &String::from_str(&env, "x"), &payload(&env, &[0]));
+    let result = client.try_submit(&outsider, &String::from_str(&env, "x"), &no_args(&env, &target));
     assert_eq!(result, Err(Ok(MultisigError::NotASigner)));
 }
 

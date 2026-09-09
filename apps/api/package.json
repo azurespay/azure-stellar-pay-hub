@@ -30,7 +30,7 @@
     "@stellar-pay/shared": "workspace:*",
     "@stellar-pay/types": "workspace:*",
     "@stellar-pay/validation": "workspace:*",
-    "@stellar/stellar-sdk": "^13.3.0",
+    "@stellar/stellar-sdk": "^14.6.1",
     "helmet": "^8.3.0",
     "ioredis": "^5.11.1",
     "reflect-metadata": "^0.2.2",

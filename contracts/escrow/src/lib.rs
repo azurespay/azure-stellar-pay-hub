@@ -18,6 +18,7 @@ pub enum DataKey { Admin, NextId, Escrows }
 #[derive(Clone, Debug)]
 pub struct Escrow {
     pub id: u64, pub initiator: Address, pub counterparty: Address,
+    pub arbiter: Option<Address>,
     pub token: Address, pub amount: i128, pub release_time: u64,
     pub expiry: u64, pub released: bool, pub refunded: bool,
 }
@@ -46,14 +47,14 @@ impl EscrowContract {
         Ok(())
     }
 
-    pub fn create(env: Env, initiator: Address, counterparty: Address, token: Address, amount: i128, release_time: u64, expiry: Option<u64>) -> Result<u64, EscrowError> {
+    pub fn create(env: Env, initiator: Address, counterparty: Address, arbiter: Option<Address>, token: Address, amount: i128, release_time: u64, expiry: Option<u64>) -> Result<u64, EscrowError> {
         if amount <= 0 { return Err(EscrowError::InvalidAmount); }
         if expiry.map_or(false, |e| e <= release_time) { return Err(EscrowError::InvalidAmount); }
         initiator.require_auth();
         let mut escrows: Map<u64, Escrow> = env.storage().instance().get(&DataKey::Escrows).unwrap_or_else(|| Map::new(&env));
         let mut next_id: u64 = env.storage().instance().get(&DataKey::NextId).unwrap_or(1);
         token::Client::new(&env, &token).transfer(&initiator, &env.current_contract_address(), &amount);
-        let escrow = Escrow { id: next_id, initiator: initiator.clone(), counterparty: counterparty.clone(), token: token.clone(), amount, release_time, expiry: expiry.unwrap_or(u64::MAX), released: false, refunded: false };
+        let escrow = Escrow { id: next_id, initiator: initiator.clone(), counterparty: counterparty.clone(), arbiter: arbiter.clone(), token: token.clone(), amount, release_time, expiry: expiry.unwrap_or(u64::MAX), released: false, refunded: false };
         escrows.set(next_id, escrow.clone()); next_id += 1;
         env.storage().instance().set(&DataKey::Escrows, &escrows);
         env.storage().instance().set(&DataKey::NextId, &next_id);
@@ -67,7 +68,11 @@ impl EscrowContract {
         let mut escrow = escrows.get(id).ok_or(EscrowError::EscrowNotFound)?;
         if escrow.released { return Err(EscrowError::AlreadyReleased); }
         if escrow.refunded { return Err(EscrowError::AlreadyRefunded); }
-        if caller != escrow.counterparty && caller != escrow.initiator { return Err(EscrowError::Unauthorized); }
+        // The initiator, counterparty, or an appointed arbiter may release.
+        let is_arbiter = escrow.arbiter.as_ref().map_or(false, |a| a == &caller);
+        if caller != escrow.counterparty && caller != escrow.initiator && !is_arbiter {
+            return Err(EscrowError::Unauthorized);
+        }
         caller.require_auth();
         if env.ledger().timestamp() < escrow.release_time { return Err(EscrowError::TooEarly); }
         let to = escrow.counterparty.clone();

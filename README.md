@@ -124,9 +124,6 @@ infrastructure (currently on **Stellar testnet** with demo data — mainnet not 
 - Freighter wallet integration for transaction signing
 - See [`apps/extension/`](apps/extension/) for install instructions
 
-> Status note — the extension's realtime notification path is **not verified** against the
-> current `/realtime` Socket.IO gateway (see [Known limitations](#known-limitations)).
-
 ## Feature maturity (summary)
 
 Not every capability in the tables above is equally built out. Statuses are
@@ -135,20 +132,20 @@ see the detailed evidence table in [`docs/architecture.md`](docs/architecture.md
 Legend: **DEV** = implemented & tested on this stack · **EXPERIMENTAL** =
 off by default / not the live path · **SCAFFOLD** = placeholder behavior.
 
-| Area                                                 | Status                                               |
-| ---------------------------------------------------- | ---------------------------------------------------- |
-| Auth (Ed25519 challenge → JWT, RBAC)                 | DEV (tested)                                         |
-| Payments (classic Stellar send)                      | DEV (tested, testnet)                                |
-| Soroban `payment`-contract route                     | EXPERIMENTAL (off by default, SAC allowlist pending) |     | Checkout / payment links / invoices | DEV (tested; public routes CSRF-safe + validated) |
-| Merchant registry, products, links, invoices (DB)    | DEV (partial)                                        |
-| Other Soroban contracts (escrow, multisig, etc.)     | DEV (contract-level)                                 |
-| Scheduled / recurring / subscription jobs            | DEV (approval + execution; no auto-signer)           |
-| Inbound detection (direct merchant-address payments) | DEV (testnet-verified)                               |
-| Realtime (Socket.IO)                                 | DEV (Redis-adapter, multi-instance)                  |
-| Notifications & webhooks                             | DEV (partial)                                        |
-| Admin analytics                                      | DEV (real DB aggregates)                             |
-| Rate limiting                                        | DEV (Redis-backed, shared across instances)          |
-| Deployment                                           | TESTNET / DEMO                                       |
+| Area                                                 | Status                                                                   |
+| ---------------------------------------------------- | ------------------------------------------------------------------------ |
+| Auth (Ed25519 challenge → JWT, RBAC)                 | DEV (tested)                                                             |
+| Payments (classic Stellar send)                      | DEV (tested, testnet)                                                    |
+| Soroban `payment`-contract route                     | DEV (tested, testnet; contract-route E2E verified end-to-end 2026-09-09) |     | Checkout / payment links / invoices | DEV (tested; public routes CSRF-safe + validated) |
+| Merchant registry, products, links, invoices (DB)    | DEV (partial)                                                            |
+| Other Soroban contracts (escrow, multisig, etc.)     | DEV (contract-level)                                                     |
+| Scheduled / recurring / subscription jobs            | DEV (approval + execution; no auto-signer)                               |
+| Inbound detection (direct merchant-address payments) | DEV (testnet-verified)                                                   |
+| Realtime (Socket.IO)                                 | DEV (Redis-adapter, multi-instance)                                      |
+| Notifications & webhooks                             | DEV (partial)                                                            |
+| Admin analytics                                      | DEV (real DB aggregates)                                                 |
+| Rate limiting                                        | DEV (Redis-backed, shared across instances)                              |
+| Deployment                                           | TESTNET / DEMO                                                           |
 
 Nothing is marked **PRODUCTION**: the platform runs on Stellar **testnet**
 with demo data and is not deployed to mainnet.
@@ -262,20 +259,20 @@ and real-time transaction table with hash, amount, addresses, timestamps, and st
 
 ## Tech Stack
 
-| Layer               | Technology                                               |
-| ------------------- | -------------------------------------------------------- |
-| **Runtime**         | Node.js 22, Rust (stable, wasm32 target)                 |
-| **Monorepo**        | Nx + pnpm workspaces                                     |
-| **API**             | NestJS (Express), Socket.IO for realtime events          |
-| **Web apps**        | Next.js 16 (App Router), React 19, Tailwind CSS          |
-| **Database**        | PostgreSQL 16, Prisma ORM                                |
-| **Cache / Locks**   | Redis 7 (no pub/sub yet — realtime fan-out is in-memory) |
-| **Blockchain**      | Stellar Horizon API, Soroban RPC                         |
-| **Smart contracts** | Soroban SDK 21.7.1 (Rust)                                |
-| **Validation**      | Zod (runtime type safety)                                |
-| **Auth**            | Ed25519 signatures, JWT (access + refresh tokens), RBAC  |
-| **Testing**         | Jest (JS/TS), Rust test harness (contracts)              |
-| **CI/CD**           | GitHub Actions, Docker, Kubernetes, Terraform (Azure)    |
+| Layer               | Technology                                                       |
+| ------------------- | ---------------------------------------------------------------- |
+| **Runtime**         | Node.js 22, Rust (stable, wasm32 target)                         |
+| **Monorepo**        | Nx + pnpm workspaces                                             |
+| **API**             | NestJS (Express), Socket.IO for realtime events                  |
+| **Web apps**        | Next.js 16 (App Router), React 19, Tailwind CSS                  |
+| **Database**        | PostgreSQL 16, Prisma ORM                                        |
+| **Cache / Locks**   | Redis 7 (cache, rate limits, sessions, locks, Socket.IO adapter) |
+| **Blockchain**      | Stellar Horizon API, Soroban RPC                                 |
+| **Smart contracts** | Soroban SDK 21.7.1 (Rust)                                        |
+| **Validation**      | Zod (runtime type safety)                                        |
+| **Auth**            | Ed25519 signatures, JWT (access + refresh tokens), RBAC          |
+| **Testing**         | Jest (JS/TS), Rust test harness (contracts)                      |
+| **CI/CD**           | GitHub Actions, Docker, Kubernetes, Terraform (Azure)            |
 
 ## Repository Structure
 
@@ -373,31 +370,33 @@ pnpm dev
 
 ## Scripts Reference
 
-| Command                | Purpose                                      |
-| ---------------------- | -------------------------------------------- |
-| `pnpm dev`             | Run all 5 apps in parallel (watch mode)      |
-| `pnpm build`           | Build all apps and packages                  |
-| `pnpm build:apps`      | Build only the apps                          |
-| `pnpm build:packages`  | Build only the shared packages               |
-| `pnpm lint`            | ESLint across the entire workspace           |
-| `pnpm typecheck`       | `tsc --noEmit` on every TypeScript project   |
-| `pnpm test`            | Run all unit and integration tests           |
-| `pnpm test:e2e`        | Run the local-stack smoke test               |
-| `pnpm test:e2e:flow`   | Payment-lifecycle E2E (live Stellar testnet) |
-| `pnpm format`          | Auto-format with Prettier                    |
-| `pnpm format:check`    | Check formatting without changing files      |
-| `pnpm db:generate`     | Generate Prisma client from schema           |
-| `pnpm db:migrate`      | Run Prisma migrations                        |
-| `pnpm db:push`         | Push schema directly to database             |
-| `pnpm db:seed`         | Seed the database with demo data             |
-| `pnpm db:studio`       | Open Prisma Studio (database GUI)            |
-| `pnpm contracts:build` | Compile Soroban contracts to WASM            |
-| `pnpm contracts:test`  | Run all Rust contract unit tests             |
-| `pnpm docker:up`       | Start Postgres + Redis containers            |
-| `pnpm docker:down`     | Stop and remove containers                   |
-| `pnpm generate:env`    | Scaffold `.env` files from templates         |
-| `pnpm setup`           | Full first-time bootstrap                    |
-| `pnpm deploy:testnet`  | Deploy contracts + API to Stellar testnet    |
+| Command                 | Purpose                                                                      |
+| ----------------------- | ---------------------------------------------------------------------------- |
+| `pnpm dev`              | Run all 5 apps in parallel (watch mode)                                      |
+| `pnpm build`            | Build all apps and packages                                                  |
+| `pnpm build:apps`       | Build only the apps                                                          |
+| `pnpm build:packages`   | Build only the shared packages                                               |
+| `pnpm lint`             | ESLint across the entire workspace                                           |
+| `pnpm typecheck`        | `tsc --noEmit` on every TypeScript project                                   |
+| `pnpm test`             | Run all unit and integration tests                                           |
+| `pnpm test:e2e`         | Run the local-stack smoke test                                               |
+| `pnpm test:e2e:flow`    | Payment-lifecycle E2E (live Stellar testnet)                                 |
+| `pnpm format`           | Auto-format with Prettier                                                    |
+| `pnpm format:check`     | Check formatting without changing files                                      |
+| `pnpm db:generate`      | Generate Prisma client from schema                                           |
+| `pnpm db:migrate`       | Run Prisma migrations                                                        |
+| `pnpm db:push`          | Push schema directly to database                                             |
+| `pnpm db:seed`          | Seed the database with demo data                                             |
+| `pnpm db:studio`        | Open Prisma Studio (database GUI)                                            |
+| `pnpm contracts:build`  | Compile Soroban contracts to WASM                                            |
+| `pnpm contracts:test`   | Run all Rust contract unit tests                                             |
+| `pnpm docker:up`        | Start Postgres + Redis containers                                            |
+| `pnpm docker:down`      | Stop and remove containers                                                   |
+| `pnpm generate:env`     | Scaffold `.env` files from templates                                         |
+| `pnpm setup`            | Full first-time bootstrap                                                    |
+| `pnpm deploy:testnet`   | Deploy contracts + API to Stellar testnet                                    |
+| `pnpm deploy:contracts` | Deploy the 8 Soroban contracts to testnet (writes `.deployed-contracts.env`) |
+| `pnpm contracts:init`   | Initialize + allowlist the deployed contracts on-chain                       |
 
 ## API Overview
 
@@ -538,20 +537,21 @@ Accurate as of 2026-09; see [`docs/architecture.md`](docs/architecture.md),
 
 - **Mainnet is not deployed** — the platform, hosted apps, and contracts run on Stellar
   testnet with demo data only.
-- **The Soroban contract route is experimental and off by default**; enabling it also
-  requires an on-chain SAC allowlist step (`set_allowed` by the deployer key) that has not
-  been run, so no contract-route payment has completed end-to-end on testnet yet.
+- **The Soroban contract route is experimental and off by default.** The SDK now
+  correctly invokes the deployed `payment` contract (simulate → assemble → Soroban RPC
+  submission) and create-time failures map to 4xx; enabling the route requires the on-chain
+  SAC allowlist step, which is automated by `pnpm contracts:init` (`scripts/init-contracts.mjs`).
 - **Scheduled / recurring / subscription jobs advance only on on-chain confirmation** — the
   scheduler creates one PENDING occurrence per due run (deduped), and the plan's
   `totalRuns`/`nextRunAt` move only when that occurrence's transaction is confirmed;
   each occurrence still needs a user-approved signed submission (no auto-signer yet).
-- **Realtime fan-out is per-process (in-memory rooms)** — no Redis Socket.IO adapter yet,
-  so multi-instance scale-out would need it. Redis is used for cache/rate-limit/session/locks.
-- **Audit logging** records mutating API requests best-effort via a global interceptor;
-  it is not an independent audit trail (no response bodies, no dedicated unit tests).
+- **Realtime fan-out uses the Redis Socket.IO adapter** (multi-instance safe). Redis is also
+  used for cache/rate-limit/session/locks.
+- **Audit logging** records mutating API requests via a global interceptor with unit-test
+  coverage; it is best-effort (guard/pipe rejections and non-HTTP work are not journaled).
 - **Independent security audit has not been performed** (see [`SECURITY.md`](SECURITY.md)).
-- The Chrome extension's realtime notification path is not verified against the current
-  `/realtime` gateway; quick-send/balance features are unaffected.
+- The Chrome extension's realtime notification client now speaks Socket.IO with the same
+  auth-token handshake as the web apps (see `apps/extension/`).
 
 ## Documentation
 

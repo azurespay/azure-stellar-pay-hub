@@ -34,7 +34,7 @@ fn test_create_holds_funds() {
     let env = Env::default();
     let (_admin, alice, bob, token, token_id, contract_id, client) = setup(&env);
 
-    let id = client.create(&alice, &bob, &token_id, &500, &1000, &None);
+    let id = client.create(&alice, &bob, &None, &token_id, &500, &1000, &None);
     assert_eq!(id, 1);
     assert_eq!(token.balance(&alice), 9500);
     assert_eq!(token.balance(&contract_id), 500);
@@ -50,7 +50,7 @@ fn test_cannot_release_before_time() {
     let (_admin, alice, bob, _token, token_id, _contract_id, client) = setup(&env);
     env.ledger().set_timestamp(100);
 
-    let id = client.create(&alice, &bob, &token_id, &500, &1000, &None);
+    let id = client.create(&alice, &bob, &None, &token_id, &500, &1000, &None);
 
     env.ledger().set_timestamp(999);
     let result = client.try_release(&id, &bob);
@@ -63,7 +63,7 @@ fn test_release_after_time() {
     let (_admin, alice, bob, token, token_id, contract_id, client) = setup(&env);
     env.ledger().set_timestamp(100);
 
-    let id = client.create(&alice, &bob, &token_id, &500, &1000, &None);
+    let id = client.create(&alice, &bob, &None, &token_id, &500, &1000, &None);
     env.ledger().set_timestamp(1001);
 
     client.release(&id, &bob);
@@ -81,7 +81,7 @@ fn test_refund_before_release() {
     let (_admin, alice, bob, token, token_id, contract_id, client) = setup(&env);
     env.ledger().set_timestamp(100);
 
-    let id = client.create(&alice, &bob, &token_id, &500, &1000, &None);
+    let id = client.create(&alice, &bob, &None, &token_id, &500, &1000, &None);
     env.ledger().set_timestamp(999);
 
     client.refund(&id, &alice);
@@ -95,7 +95,7 @@ fn test_refund_not_allowed_mid_window() {
     let (_admin, alice, bob, _token, token_id, _contract_id, client) = setup(&env);
     env.ledger().set_timestamp(100);
 
-    let id = client.create(&alice, &bob, &token_id, &500, &1000, &Some(2000));
+    let id = client.create(&alice, &bob, &None, &token_id, &500, &1000, &Some(2000));
     env.ledger().set_timestamp(1500); // between release_time and expiry
 
     let result = client.try_refund(&id, &alice);
@@ -108,11 +108,55 @@ fn test_refund_after_expiry() {
     let (_admin, alice, bob, token, token_id, _contract_id, client) = setup(&env);
     env.ledger().set_timestamp(100);
 
-    let id = client.create(&alice, &bob, &token_id, &500, &1000, &Some(2000));
+    let id = client.create(&alice, &bob, &None, &token_id, &500, &1000, &Some(2000));
     env.ledger().set_timestamp(2001);
 
     client.refund(&id, &alice);
     assert_eq!(token.balance(&alice), 10000);
+}
+
+#[test]
+fn test_arbiter_can_release() {
+    let env = Env::default();
+    let (_admin, alice, bob, token, token_id, contract_id, client) = setup(&env);
+    let arbiter = Address::generate(&env);
+    env.ledger().set_timestamp(100);
+
+    let id = client.create(&alice, &bob, &Some(arbiter.clone()), &token_id, &500, &1000, &None);
+    env.ledger().set_timestamp(1001);
+
+    // The arbiter can release to the counterparty after release_time.
+    client.release(&id, &arbiter);
+    assert_eq!(token.balance(&bob), 10500);
+    assert_eq!(token.balance(&contract_id), 0);
+}
+
+#[test]
+fn test_unrelated_party_cannot_release() {
+    let env = Env::default();
+    let (_admin, alice, bob, _token, token_id, _contract_id, client) = setup(&env);
+    let stranger = Address::generate(&env);
+    env.ledger().set_timestamp(100);
+
+    let id = client.create(&alice, &bob, &None, &token_id, &500, &1000, &None);
+    env.ledger().set_timestamp(1001);
+
+    let result = client.try_release(&id, &stranger);
+    assert_eq!(result, Err(Ok(EscrowError::Unauthorized)));
+}
+
+#[test]
+fn test_arbiter_cannot_release_before_time() {
+    let env = Env::default();
+    let (_admin, alice, bob, _token, token_id, _contract_id, client) = setup(&env);
+    let arbiter = Address::generate(&env);
+    env.ledger().set_timestamp(100);
+
+    let id = client.create(&alice, &bob, &Some(arbiter.clone()), &token_id, &500, &1000, &None);
+    env.ledger().set_timestamp(999);
+
+    let result = client.try_release(&id, &arbiter);
+    assert_eq!(result, Err(Ok(EscrowError::TooEarly)));
 }
 
 #[test]

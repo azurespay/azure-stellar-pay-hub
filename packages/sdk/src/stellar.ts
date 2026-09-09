@@ -62,6 +62,14 @@ export interface SorobanSendInput {
   from: string;
   /** Recipient account (G…). */
   to: string;
+  /**
+   * The deployed payment contract (C…) whose `send(from, to, token, amount,
+   * memo)` entry point is invoked. This must be the contract id from
+   * `CONTRACT_STELLAR_PAY_PAYMENT`, NOT the token SAC — invoking `send` on the
+   * token contract fails with "symbol not found" (regression guarded by unit
+   * tests that assert the invoked contract address).
+   */
+  contractId: string;
   /** Token contract address (C…) — use `sorobanTokenAddress()` for SAC assets. */
   tokenAddress: string;
   /** Amount in decimal asset units (e.g. "10" for 10 XLM). */
@@ -193,10 +201,14 @@ export class StellarNetwork {
     const source = await this.server.loadAccount(input.from);
     const amountStroops = BigInt(toStroops(input.amount));
 
+    // The invocation target is the DEPLOYED PAYMENT CONTRACT (`contractId`),
+    // with the token SAC passed as the third argument. Invoking `send` on the
+    // token contract itself is a bug: the SAC has no `send` entry point.
     const hostFunction = xdr.HostFunction.hostFunctionTypeInvokeContract(
       new xdr.InvokeContractArgs({
         contractAddress: xdr.ScAddress.scAddressTypeContract(
-          StrKey.decodeContract(input.tokenAddress),
+          // v14 typings type the arm as Hash while decodeContract returns Buffer.
+          StrKey.decodeContract(input.contractId) as unknown as xdr.Hash,
         ),
         functionName: 'send',
         args: [
@@ -228,9 +240,10 @@ export class StellarNetwork {
 
   /**
    * Build an unsigned Soroban transaction that invokes the payment contract's
-   * `send(from, to, token, amount, memo)` entry point. The payer must sign the
-   * returned XDR (the contract calls `from.require_auth()`), then submit via
-   * `submitSignedTransaction`.
+   * `send(from, to, token, amount, memo)` entry point (the contract id is
+   * `input.contractId`; the token SAC is passed as an argument). The payer
+   * must sign the returned XDR (the contract calls `from.require_auth()`),
+   * then submit via `submitSorobanSendTransaction`.
    *
    * Note: this is the *raw* pre-simulation XDR. For an executable contract
    * payment the server must instead use `prepareSorobanSendTransaction` (which
@@ -294,7 +307,10 @@ export class StellarNetwork {
     keypair: Keypair,
     opts?: { validUntilLedgerSeq?: number },
   ): Promise<string> {
-    const tx = TransactionBuilder.fromXDR(unsignedXdr, this.config.networkPassphrase) as Transaction;
+    const tx = TransactionBuilder.fromXDR(
+      unsignedXdr,
+      this.config.networkPassphrase,
+    ) as Transaction;
     const op = tx.operations[0] as Operation.InvokeHostFunction;
     if (!op || op.type !== 'invokeHostFunction') {
       throw new SorobanSubmissionError('assembled XDR does not contain an invokeHostFunction op');
@@ -429,8 +445,7 @@ export class StellarNetwork {
         const failed = (res as unknown as { txFailed(): { results(): unknown[] } }).txFailed();
         const opResults = failed.results() ?? [];
         const first = opResults[0] as
-          | { tr(): { invokeHostFunctionResult(): { switch(): { name: string } } } }
-          | undefined;
+          { tr(): { invokeHostFunctionResult(): { switch(): { name: string } } } } | undefined;
         if (first?.tr) {
           const inv = first.tr().invokeHostFunctionResult();
           if (inv) {
@@ -610,7 +625,10 @@ export class StellarNetwork {
   private accountScVal(address: string): xdr.ScVal {
     if (address.startsWith('C')) {
       return xdr.ScVal.scvAddress(
-        xdr.ScAddress.scAddressTypeContract(StrKey.decodeContract(address)),
+        xdr.ScAddress.scAddressTypeContract(
+          // v14 typings type the arm as Hash while decodeContract returns Buffer.
+          StrKey.decodeContract(address) as unknown as xdr.Hash,
+        ),
       );
     }
     return xdr.ScVal.scvAddress(

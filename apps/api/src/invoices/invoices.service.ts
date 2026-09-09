@@ -1,16 +1,32 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@stellar-pay/database';
 import { addAmounts } from '@stellar-pay/shared';
+import { randomBytes } from 'crypto';
 import type { CreateInvoice } from '@stellar-pay/validation';
 
 @Injectable()
 export class InvoicesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private nextNumber(): string {
+  /**
+   * Crypto-strong invoice number. Invoice numbers double as the on-chain
+   * payment memo for checkout reconciliation, so they must not be guessable:
+   * `Math.random()` is predictable, and its base36 slice collapses to a small
+   * space with real collision odds. `randomBytes(4)` → 8 hex chars (16^8 ≈
+   * 4.3B values) with retry on the (astronomically unlikely) unique-constraint
+   * collision.
+   */
+  private async nextNumber(): Promise<string> {
     const year = new Date().getFullYear();
-    const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
-    return `INV-${year}-${suffix}`;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const number = `INV-${year}-${randomBytes(4).toString('hex').toUpperCase()}`;
+      const existing = await this.prisma.invoice.findUnique({ where: { number } });
+      if (!existing) {
+        return number;
+      }
+    }
+    // Practically unreachable; fall back to a longer draw rather than throw.
+    return `INV-${year}-${randomBytes(6).toString('hex').toUpperCase()}`;
   }
 
   /** Create an invoice; amount is computed from items unless overridden. */
@@ -36,7 +52,7 @@ export class InvoicesService {
 
     return this.prisma.invoice.create({
       data: {
-        number: this.nextNumber(),
+        number: await this.nextNumber(),
         merchantId,
         customerId,
         customerPublicKey: input.customerPublicKey,

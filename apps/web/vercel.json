@@ -18,6 +18,6 @@
   ],
   "env": {
     "NEXT_PUBLIC_STELLAR_NETWORK": "testnet",
-    "NEXT_PUBLIC_API_URL": "https://api.stellar-pay.example"
+    "NEXT_PUBLIC_API_URL": "https://stellar-pay-api.up.railway.app"
   }
 }

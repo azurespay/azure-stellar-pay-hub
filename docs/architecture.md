@@ -82,10 +82,10 @@ JWT → every protected route           → RBAC via roles guard
   controller and completes — capturing the actor (user id / public key), action
   (`METHOD route`), resource, IP, and user-agent, plus request-body metadata. Writes are
   fire-and-forget: a failure is logged and never blocks the response. The admin listing
-  endpoint (`GET /admin/audit-logs`) reads these rows. Limitations: rejected requests
-  (guard/pipe failures before the controller) and non-HTTP/scheduler work are not
-  journaled; response bodies are not captured; there are no dedicated interceptor unit
-  tests yet.
+  endpoint (`GET /admin/audit-logs`) reads these rows. Dedicated interceptor unit tests cover
+  the write path (actor/action capture, fire-and-forget failure handling).
+  Limitations: rejected requests (guard/pipe failures before the controller) and
+  non-HTTP/scheduler work are not journaled; response bodies are not captured.
 - Soroban contracts enforce multi-sig thresholds and escrow rules on-chain.
 
 ## Current state & limitations (accurate as of 2026-09)
@@ -96,20 +96,24 @@ JWT → every protected route           → RBAC via roles guard
   `PAYMENT_ROUTE=contract`: `SEND` payments for allowlisted assets invoke the
   `payment` contract's `send` entry point (built in `@stellar-pay/sdk`). The
   **event indexer** (`apps/api/src/indexer`, run by the scheduler every ~20s)
-  polls Soroban RPC `getTransaction` and would move a submitted row to
+  polls Soroban RPC `getTransaction` and moves a submitted row to
   `CONFIRMED` only when the ledger reports `SUCCESS` — the atomic `SUBMITTED →
 CONFIRMED` update makes confirmation idempotent, and payer
-  realtime/notification events fire on that transition. **This route is not
-  end-to-end executable at this commit**: the SDK builds the Soroban invoke
-  XDR _without_ a simulation pass (no resource footprint / `sorobanData` /
-  signed authorization tree — the contract's `send` calls
-  `from.require_auth()` and a SAC `transfer`), and `submitSignedTransaction`
-  sends envelopes to Horizon's classic endpoint, which rejects Soroban
-  transactions. A valid Soroban payment additionally requires the on-chain SAC
-  allowlist step (`set_allowed`) with the deployer key. See
-  `docs/contracts.md` → Platform wiring for the exact remaining work. The
-  deterministic contract-route _unit_ tests cover XDR construction and
-  `SUBMITTED`-persistence semantics, not a live on-chain execution.
+  realtime/notification events fire on that transition.
+  **The SDK route is fixed and unit-tested**: `prepareSorobanSendTransaction`
+  runs the simulate → assemble round-trip (resource footprint / `sorobanData`
+  and the `from.require_auth()` soroban-auth entries), the invocation targets
+  the deployed **payment contract** (not the token SAC — a regression guarded
+  by unit tests), and `submitSorobanSendTransaction` submits via Soroban RPC
+  `sendTransaction` (Horizon's classic endpoint rejects Soroban envelopes, and
+  the SDK fails fast with the real reason instead). Create-time simulation
+  failures (e.g. a token not allowlisted on-chain) surface as 4xx with the
+  on-chain diagnostic rather than 500. The remaining prerequisite is the
+  on-chain SAC allowlist step (`set_allowed` with the deployer key), which is
+  now automated by `pnpm contracts:init` (`scripts/init-contracts.mjs`). See
+  `docs/contracts.md` → Platform wiring. The deterministic contract-route
+  _unit_ tests cover XDR construction, correct invocation target, error
+  mapping, and `SUBMITTED`-persistence semantics.
 - **Inbound detection now exists for merchant-address payments, in two forms.**
   `HorizonInboundService` polls each ACTIVE merchant's Horizon account payment
   feed (~15s cadence, per-merchant cursor in Redis) and credits **classic
@@ -167,10 +171,12 @@ CONFIRMED` update makes confirmation idempotent, and payer
   "Payment not completed") from a real network failure or an insufficient
   balance, and success is only shown after the server confirms on-chain
   settlement.
-- **Socket.IO fan-out is per-process (in-memory rooms).** Horizontal scaling of
-  the API requires a Redis Socket.IO adapter, which is not wired yet. Redis is
-  currently used for caching, rate-limit state, session state, and scheduler
-  locks (no pub/sub).
+- **Socket.IO fan-out uses the Redis Socket.IO adapter.** The realtime gateway
+  (`apps/api/src/realtime`) registers a Redis adapter, so events fan out across
+  API instances (multi-instance safe); Redis also serves caching, rate-limit
+  state, session state, and scheduler locks. Note: the docs previously claimed
+  an in-memory-only gateway — the code moved to the Redis adapter and this
+  document reflects that.
 - **Deployment state.** The architecture and infrastructure (Docker, K8s,
   Terraform, monitoring) are production-oriented, but the live platform runs on
   **Stellar testnet with demo data**. Mainnet is not deployed. Deployment targets
@@ -182,22 +188,22 @@ Status is assigned from evidence in this repository (code, tests, deployment
 records), not from intent. Nothing is marked **PRODUCTION** while the platform
 runs on testnet with demo data.
 
-| Feature                                                   | Status                            | Evidence                                                                                                                                                                                                                                                                                                                                                      |
-| --------------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Auth (Ed25519 challenge → JWT, sessions, RBAC)            | **DEV (tested)**                  | Unit tests + API e2e spec; exercised by the lifecycle E2E                                                                                                                                                                                                                                                                                                     |
-| Payments (classic Stellar send)                           | **DEV (tested, testnet)**         | Unit tests; lifecycle E2E submits real testnet XLM                                                                                                                                                                                                                                                                                                            |
-| Soroban contract payment route (`PAYMENT_ROUTE=contract`) | **EXPERIMENTAL (off by default)** | SDK invoke builder + indexer unit tests (11); submit persists `SUBMITTED`; indexer → `CONFIRMED` from on-chain `getTransaction` `SUCCESS`; **no testnet contract-route E2E yet** (SAC allowlist ops pending)                                                                                                                                                  |
-| Checkout — invoice/payment-link pay + reconciliation      | **DEV (tested)**                  | Reconciliation unit tests (invoice PAID, link stats, webhooks, merchant notify)                                                                                                                                                                                                                                                                               |
-| Merchant registry, products, payment links, invoices (DB) | **DEV (partial)**                 | Service code + Zod schemas; webhook/notification integration varies                                                                                                                                                                                                                                                                                           |
-| Soroban contracts (8)                                     | **DEV (contract-level)**          | Rust unit tests; deployed + **verified live on testnet**; only the `payment` contract is reachable via the experimental off-by-default route                                                                                                                                                                                                                  |
-| Scheduled / recurring / subscription jobs                 | **DEV (confirmation-gated)**      | Scheduler creates one PENDING occurrence per due run (in-flight dedupe); the plan advances (`totalRuns`/`nextRunAt`/`COMPLETED`) only when the occurrence's transaction is confirmed on-chain (classic `SUCCEEDED` via submit, or contract `CONFIRMED` via the indexer) — unit tested; each occurrence still awaits user-approved submission (no auto-signer) |
-| Settlement jobs                                           | **SCAFFOLD**                      | `processPendingSettlements` marks PENDING → PROCESSING only; no chain execution yet                                                                                                                                                                                                                                                                           |
-| Inbound detection — direct payments to merchant addresses | **DEV (testnet-verified)**        | Horizon per-merchant feed poller + Soroban `payment`-event parser; `ChainEvent` unique-event dedupe; live testnet probe credited a real direct XLM payment exactly once; merchant notify + `payment.received` webhook + Socket.IO                                                                                                                             |
-| Realtime (Socket.IO)                                      | **DEV (single-instance)**         | Unit coverage via flows; in-memory rooms, no Redis adapter yet                                                                                                                                                                                                                                                                                                |
-| Notifications & webhooks                                  | **DEV (partial)**                 | Dispatched from API-mediated successes; retries via scheduler                                                                                                                                                                                                                                                                                                 |
-| IPFS receipts                                             | **DEV (provider-dependent)**      | Local/Pinata/web3.storage pinning; deterministic un-pinned CID fallback is not resolvable without a pin                                                                                                                                                                                                                                                       |
-| Explorer & admin analytics                                | **DEV (empty-state correct)**     | Live DB queries; success rate is `null` (not 100%) when there is no data                                                                                                                                                                                                                                                                                      |
-| Deployment                                                | **TESTNET / DEMO**                | Railway + Vercel on testnet; AKS/Terraform experimental; mainnet not deployed (`docs/deployment.md`)                                                                                                                                                                                                                                                          |
+| Feature                                                   | Status                        | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| --------------------------------------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Auth (Ed25519 challenge → JWT, sessions, RBAC)            | **DEV (tested)**              | Unit tests + API e2e spec; exercised by the lifecycle E2E                                                                                                                                                                                                                                                                                                                                                                                                |
+| Payments (classic Stellar send)                           | **DEV (tested, testnet)**     | Unit tests; lifecycle E2E submits real testnet XLM                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Soroban contract payment route (`PAYMENT_ROUTE=contract`) | **DEV (tested, testnet)**     | SDK simulate→assemble invoke + Soroban-RPC submission, unit tests (29) incl. correct contract target + 4xx error mapping; `pnpm contracts:init` initializes + allowlists + verifies on-chain storage; **contract-route E2E executed live 2026-09-09**: `send` invoked on the deployed payment contract, on-chain `payment` event detected by the indexer, reconciled to `CONFIRMED` in Postgres, realtime `transaction.updated` delivered (22/22 checks) |
+| Checkout — invoice/payment-link pay + reconciliation      | **DEV (tested)**              | Reconciliation unit tests (invoice PAID, link stats, webhooks, merchant notify)                                                                                                                                                                                                                                                                                                                                                                          |
+| Merchant registry, products, payment links, invoices (DB) | **DEV (partial)**             | Service code + Zod schemas; webhook/notification integration varies                                                                                                                                                                                                                                                                                                                                                                                      |
+| Soroban contracts (8)                                     | **DEV (contract-level)**      | Rust unit tests; deployed + **verified live on testnet**; only the `payment` contract is reachable via the experimental off-by-default route                                                                                                                                                                                                                                                                                                             |
+| Scheduled / recurring / subscription jobs                 | **DEV (confirmation-gated)**  | Scheduler creates one PENDING occurrence per due run (in-flight dedupe); the plan advances (`totalRuns`/`nextRunAt`/`COMPLETED`) only when the occurrence's transaction is confirmed on-chain (classic `SUCCEEDED` via submit, or contract `CONFIRMED` via the indexer) — unit tested; each occurrence still awaits user-approved submission (no auto-signer)                                                                                            |
+| Settlement jobs                                           | **SCAFFOLD**                  | `processPendingSettlements` marks PENDING → PROCESSING only; no chain execution yet                                                                                                                                                                                                                                                                                                                                                                      |
+| Inbound detection — direct payments to merchant addresses | **DEV (testnet-verified)**    | Horizon per-merchant feed poller + Soroban `payment`-event parser; `ChainEvent` unique-event dedupe; live testnet probe credited a real direct XLM payment exactly once; merchant notify + `payment.received` webhook + Socket.IO                                                                                                                                                                                                                        |
+| Realtime (Socket.IO)                                      | **DEV (multi-instance)**      | Unit coverage via flows; Redis Socket.IO adapter wired in the gateway                                                                                                                                                                                                                                                                                                                                                                                    |
+| Notifications & webhooks                                  | **DEV (partial)**             | Dispatched from API-mediated successes; retries via scheduler                                                                                                                                                                                                                                                                                                                                                                                            |
+| IPFS receipts                                             | **DEV (provider-dependent)**  | Local/Pinata/web3.storage pinning; deterministic un-pinned CID fallback is not resolvable without a pin                                                                                                                                                                                                                                                                                                                                                  |
+| Explorer & admin analytics                                | **DEV (empty-state correct)** | Live DB queries; success rate is `null` (not 100%) when there is no data                                                                                                                                                                                                                                                                                                                                                                                 |
+| Deployment                                                | **TESTNET / DEMO**            | Railway + Vercel on testnet; AKS/Terraform experimental; mainnet not deployed (`docs/deployment.md`)                                                                                                                                                                                                                                                                                                                                                     |
 
 Legend: **PRODUCTION** (mainnet, ops-ready) · **DEV** (implemented & tested on
 this stack) · **SCAFFOLD** (placeholder behavior) · **NOT IMPLEMENTED**.

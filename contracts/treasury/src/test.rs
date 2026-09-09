@@ -202,3 +202,134 @@ fn test_set_max_withdrawal_unauthorized() {
     let result = client.try_set_max_withdrawal(&attacker, &token_id, &500);
     assert_eq!(result, Err(Ok(TreasuryError::Unauthorized)));
 }
+
+// ------------------------------------------------------------ Governance
+
+type GovernanceSetup<'e> = (
+    Address,
+    Address,
+    Address,
+    token::Client<'e>,
+    Address,
+    Address,
+    TreasuryContractClient<'e>,
+);
+
+fn governance_setup<'e>(env: &'e Env, threshold: u32) -> GovernanceSetup<'e> {
+    let (admin, depositor, token, token_id, contract_id, client) = setup(env);
+    let alice = Address::generate(env);
+    let bob = Address::generate(env);
+    let members = soroban_sdk::vec![env, alice.clone(), bob.clone()];
+    client.set_governance(&admin, &members, &threshold);
+    client.deposit(&depositor, &token_id, &1000);
+    (admin, alice, bob, token, token_id, contract_id, client)
+}
+
+#[test]
+fn test_governance_requires_quorum_to_execute() {
+    let env = Env::default();
+    let (_admin, alice, bob, token, token_id, _contract_id, client) = governance_setup(&env, 2);
+    let recipient = Address::generate(&env);
+
+    let id = client.propose_withdraw(&alice, &token_id, &recipient, &400);
+    assert_eq!(id, 1);
+
+    // One approval below quorum — nothing executes.
+    client.approve_withdraw(&alice, &id);
+    let result = client.try_execute_withdraw(&bob, &id);
+    assert_eq!(result, Err(Ok(TreasuryError::QuorumNotReached)));
+    assert_eq!(token.balance(&recipient), 0);
+
+    // Second approval reaches quorum — execution transfers the funds.
+    client.approve_withdraw(&bob, &id);
+    client.execute_withdraw(&bob, &id);
+    assert_eq!(token.balance(&recipient), 400);
+    assert_eq!(client.balance(&token_id), 600);
+
+    // Cannot execute twice.
+    let result = client.try_execute_withdraw(&bob, &id);
+    assert_eq!(result, Err(Ok(TreasuryError::AlreadyExecuted)));
+}
+
+#[test]
+fn test_governance_single_member_threshold() {
+    let env = Env::default();
+    let (_admin, alice, _bob, token, token_id, _contract_id, client) = governance_setup(&env, 1);
+    let recipient = Address::generate(&env);
+
+    let id = client.propose_withdraw(&alice, &token_id, &recipient, &300);
+    client.approve_withdraw(&alice, &id);
+    client.execute_withdraw(&alice, &id);
+    assert_eq!(token.balance(&recipient), 300);
+}
+
+#[test]
+fn test_governance_rejects_non_member() {
+    let env = Env::default();
+    let (admin, _alice, _bob, _token, token_id, _contract_id, client) = governance_setup(&env, 1);
+    let outsider = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    let result = client.try_propose_withdraw(&outsider, &token_id, &recipient, &100);
+    assert_eq!(result, Err(Ok(TreasuryError::NotAMember)));
+
+    // The admin is not automatically a member — approving as admin fails.
+    let result = client.try_approve_withdraw(&admin, &1);
+    assert_eq!(result, Err(Ok(TreasuryError::NotAMember)));
+}
+
+#[test]
+fn test_governance_enforces_cap() {
+    let env = Env::default();
+    let (admin, alice, bob, _token, token_id, _contract_id, client) = governance_setup(&env, 2);
+    client.set_max_withdrawal(&admin, &token_id, &200);
+    let recipient = Address::generate(&env);
+
+    let id = client.propose_withdraw(&alice, &token_id, &recipient, &201);
+    client.approve_withdraw(&alice, &id);
+    client.approve_withdraw(&bob, &id);
+    let result = client.try_execute_withdraw(&bob, &id);
+    assert_eq!(result, Err(Ok(TreasuryError::WithdrawalCapped)));
+    assert!(!client.get_withdrawal(&id).unwrap().executed);
+}
+
+#[test]
+fn test_governance_rejects_unlisted_token() {
+    let env = Env::default();
+    let (_admin, alice, bob, _token, _token_id, _contract_id, client) = governance_setup(&env, 2);
+    // A second, never-allowlisted token.
+    let admin = Address::generate(&env);
+    let (_unlisted, unlisted_id) = create_token(&env, &admin);
+    let recipient = Address::generate(&env);
+
+    let id = client.propose_withdraw(&alice, &unlisted_id, &recipient, &10);
+    client.approve_withdraw(&alice, &id);
+    client.approve_withdraw(&bob, &id);
+    let result = client.try_execute_withdraw(&bob, &id);
+    assert_eq!(result, Err(Ok(TreasuryError::TokenNotAllowed)));
+}
+
+#[test]
+fn test_governance_cannot_vote_twice() {
+    let env = Env::default();
+    let (_admin, alice, _bob, _token, token_id, _contract_id, client) = governance_setup(&env, 2);
+    let recipient = Address::generate(&env);
+
+    let id = client.propose_withdraw(&alice, &token_id, &recipient, &100);
+    client.approve_withdraw(&alice, &id);
+    let result = client.try_approve_withdraw(&alice, &id);
+    assert_eq!(result, Err(Ok(TreasuryError::AlreadyVoted)));
+}
+
+#[test]
+fn test_governance_invalid_threshold_rejected() {
+    let env = Env::default();
+    let (admin, _depositor, _token, _token_id, _contract_id, client) = setup(&env);
+    let a = Address::generate(&env);
+    let members = soroban_sdk::vec![&env, a];
+
+    let result = client.try_set_governance(&admin, &members, &0);
+    assert_eq!(result, Err(Ok(TreasuryError::InvalidGovernance)));
+    let result = client.try_set_governance(&admin, &members, &5);
+    assert_eq!(result, Err(Ok(TreasuryError::InvalidGovernance)));
+}

@@ -5,6 +5,7 @@ describe('TransactionReconciliationService', () => {
   let mockPrisma: Record<string, any>;
   let mockNotifications: Record<string, jest.Mock>;
   let mockWebhooks: Record<string, jest.Mock>;
+  let mockRealtime: { emitToUser: jest.Mock };
 
   const baseTx = {
     id: 'tx-1',
@@ -31,10 +32,15 @@ describe('TransactionReconciliationService', () => {
     };
     mockNotifications = { invoicePaid: jest.fn(), notify: jest.fn() };
     mockWebhooks = { dispatch: jest.fn() };
+    mockRealtime = { emitToUser: jest.fn() };
+    mockPrisma.merchant = {
+      findUnique: jest.fn().mockResolvedValue({ userId: 'merchant-user-1' }),
+    };
     service = new TransactionReconciliationService(
       mockPrisma as any,
       mockNotifications as any,
       mockWebhooks as any,
+      mockRealtime as any,
     );
   });
 
@@ -88,6 +94,18 @@ describe('TransactionReconciliationService', () => {
         },
         { merchantId: 'merchant-1' },
       );
+      // Live realtime fan-out to the merchant's dashboard room.
+      expect(mockRealtime.emitToUser).toHaveBeenCalledWith(
+        'merchant-user-1',
+        'payment.received',
+        expect.objectContaining({
+          transactionId: 'tx-1',
+          status: 'CONFIRMED',
+          amount: '14.5',
+          assetCode: 'USDC',
+          source: 'checkout',
+        }),
+      );
     });
 
     it('does not modify an invoice that is already PAID or CANCELED', async () => {
@@ -107,6 +125,7 @@ describe('TransactionReconciliationService', () => {
       expect(mockNotifications.invoicePaid).not.toHaveBeenCalled();
       // No owner-scoped fan-out either: nothing may be broadcast platform-wide.
       expect(mockWebhooks.dispatch).not.toHaveBeenCalled();
+      expect(mockRealtime.emitToUser).not.toHaveBeenCalled();
     });
 
     it('falls back to the customer-public-key heuristic when no invoice number is recorded', async () => {

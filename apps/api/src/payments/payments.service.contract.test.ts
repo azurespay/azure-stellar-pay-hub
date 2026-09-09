@@ -1,4 +1,6 @@
+import { BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { SorobanSubmissionError } from '@stellar-pay/sdk';
 import { PaymentsService } from './payments.service';
 import { createStellarNetwork } from '../infra/stellar';
 
@@ -116,6 +118,9 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
         expect.objectContaining({
           from: 'GPAYER',
           to: 'GPAYEE',
+          // The invocation must target the DEPLOYED PAYMENT CONTRACT, not the
+          // token SAC (regression: `send` on the SAC fails "symbol not found").
+          contractId: CONTRACT_ID,
           tokenAddress: TOKEN_ADDRESS,
           amount: '10',
         }),
@@ -207,12 +212,16 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
     });
 
     it('surfaces an un-allowlisted SAC as a clear 400-class error at create time', async () => {
+      const reason = 'Soroban simulation failed: contract reverted (TokenNotAllowed)';
       mockNetwork.prepareSorobanSendTransaction.mockRejectedValueOnce(
-        new Error('Soroban simulation failed: contract reverted (TokenNotAllowed)'),
+        new SorobanSubmissionError(reason),
       );
-      await expect(service.create('user-1', dto as never)).rejects.toThrow(
-        'Soroban simulation failed',
-      );
+
+      await expect(service.create('user-1', dto as never)).rejects.toMatchObject({
+        // BadRequestException → HTTP 400, never a 500 for a configuration/
+        // on-chain revert at intent-creation time.
+        response: expect.objectContaining({ statusCode: 400 }),
+      });
       expect(mockPrisma.transaction.create).not.toHaveBeenCalled();
     });
   });

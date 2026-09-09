@@ -39,10 +39,11 @@ The script will:
 4. Create and seed the database
 5. Build all 8 Soroban contracts
 6. Deploy each contract to testnet
-7. Save contract addresses to `.deployed-contracts.env`
-8. Create `.env.testnet` with all configuration
-9. Build the API and frontend apps
-10. Provide instructions to start the API
+7. **Initialize + allowlist each contract on-chain** (admin, XLM SAC allowlist, verification)
+8. Save contract addresses to `.deployed-contracts.env`
+9. Create `.env.testnet` with all configuration
+10. Build the API and frontend apps
+11. Provide instructions to start the API
 
 After the script completes:
 
@@ -110,12 +111,33 @@ stellar contract deploy \
 # Save the returned addresses — you'll need them for the API
 ```
 
-### 6. Initialize Contracts (if needed)
+### 6. Initialize + Allowlist Contracts
 
-Some contracts require initialization after deployment:
+Deployed contracts are **inert until initialized**: `initialize(...)` must be
+called on the contracts that need it (payment, escrow, merchant, treasury,
+rewards, multisig), and the payment/treasury token allowlists must be set before
+`send`/`withdraw` will accept a token. All of this is automated:
 
 ```bash
-# Example: initialize multisig with signers and threshold
+export STELLAR_SECRET_KEY=S...   # the deployer (admin) key
+pnpm contracts:init
+```
+
+`scripts/init-contracts.mjs` calls `initialize` on every contract that requires
+it, `set_allowed(admin, <SAC>, true)` for XLM (plus any `ALLOWLIST_TOKENS`
+passed as space-separated SAC addresses), and verifies the on-chain storage
+(`Admin` / `Paused` / `Allowed`) afterwards. Re-running is idempotent
+(already-initialized contracts are skipped).
+
+Custom multisig setup:
+
+```bash
+MULTISIG_SIGNERS="G... G..." MULTISIG_THRESHOLD=2 pnpm contracts:init
+```
+
+Manual equivalent for a single contract:
+
+```bash
 stellar contract invoke \
   --id <MULTISIG_ADDRESS> \
   --source-account S... \
@@ -169,21 +191,25 @@ curl -X POST http://localhost:4000/api/payments \
 
 | Contract      | Address                                                                                                                        |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Payment       | [`CC5UU...VHLCA`](https://stellar.expert/explorer/testnet/contract/CC5UUVJCU3WRXDPDE3MEP65BN7XASQDV6O5IWVQRT53D5UKJ63UVHLCA)   |
-| Escrow        | [`CA2KM...M23GOY`](https://stellar.expert/explorer/testnet/contract/CA2KMJRW3VDB65U5CLN7VF7AKDQXZ7OYIVUEDBA673UAECUYR6M23GOY)  |
-| Multisig      | [`CAPHT...J6TGUH`](https://stellar.expert/explorer/testnet/contract/CAPHTEX57F3P5DHX67TV7CDHEHEC5COHQ7TDBSYYNN4MN6PCF6J6TGUH)  |
-| Treasury      | [`CB3FI...KY2TH`](https://stellar.expert/explorer/testnet/contract/CB3FI5CKQAO2INOWFIMFLZXCXDUK3EMJNA5B5WEPRMGSP75NTX3KY2TH)   |
-| Subscriptions | [`CDU4A...7QK46K`](https://stellar.expert/explorer/testnet/contract/CDU4ANSQWZMVPZDNSE2FWCXSOBIVJWGODC3CLCZGIILKUIMW3M7QK46K)  |
-| Invoices      | [`CCQFA...2QBGR5`](https://stellar.expert/explorer/testnet/contract/CCQFABKSRSVAZGAXHQIR5FPPMFPNS5BHTKYRLAVKMMJE76546Q2QBGR5)  |
-| Merchant      | [`CBT3H...Q3SX3I7`](https://stellar.expert/explorer/testnet/contract/CBT3HOK5WJ6UTO6S3I5ZE3JHB5IPIJBWCFXZZGO26T6T7OXPWQ3SX3I7) |
-| Rewards       | [`CBE3J...B37Z4IU`](https://stellar.expert/explorer/testnet/contract/CBE3JCWEH4D6INRELW62CPVK4ZHFUZRPGLKCTGAH2B4IALINFB37Z4IU) |
+| Payment       | [`CBDOG...K7IN4Q`](https://stellar.expert/explorer/testnet/contract/CBDOGRJIOX46MEHIYRGU7BFKLT2OOPT7QIN7ZU53DH5WK7FF5QK7IN4Q)  |
+| Escrow        | [`CDWVU...3AMUEY`](https://stellar.expert/explorer/testnet/contract/CDWVUTCME6JSATWKKWIFVBEO4NAZSJCCX2ECNRQN3L33W65EFT3AMUEY)  |
+| Multisig      | [`CBHD5...A33BI`](https://stellar.expert/explorer/testnet/contract/CBHD5GZP6T4WB6LR2D776EKW73OP6JZGE25ERM36WPICGBSLJ6QA33BI)   |
+| Treasury      | [`CCKWX...4UWRMKZ`](https://stellar.expert/explorer/testnet/contract/CCKWXDASGA7W3KWMEOEXYWMV5RVDLV2WGEJOHO3SYHKMXHZ3X4UWRMKZ) |
+| Subscriptions | [`CCMQF...XOLBNI`](https://stellar.expert/explorer/testnet/contract/CCMQF6EB5DT6HKWGOB5BTRMD6Q66D5MVBQQN5HOK3565WHATXINOLBNI)  |
+| Invoices      | [`CB3XB...TVDHZ`](https://stellar.expert/explorer/testnet/contract/CB3XBXQUY4LHSFPWJ4XZL6T7A2ITNMBWMCTT2QOS6LB7PF7RPJBTVDHZ)   |
+| Merchant      | [`CDNQT...GDQUEU`](https://stellar.expert/explorer/testnet/contract/CDNQTYF4XSOPNY6ID6MHUROAC2BNIQTYWHJYVGXWMU5WFA5AOQGDQUEU)  |
+| Rewards       | [`CCVMQ...7SZYNC`](https://stellar.expert/explorer/testnet/contract/CCVMQIUDEJNOSFYU55DNNU3UHJJJDYJU66TPVJAYEXHWXNW2EY7SZYNC)  |
 
 Full addresses are in [`.deployed-contracts.env`](../.deployed-contracts.env).
 
-> **Verification (2026-09-07):** all eight contract addresses above were verified
-> live on Stellar testnet via the Soroban RPC `getLedgerEntries` method — each
-> returned a contract-instance ledger entry (deployed around ledger 4,067,8xx on
-> 2026-08-10 from `GCYOTZ…RMQ5S5`, per Horizon `invoke_host_function` history).
+> **Verification (2026-09-09):** all eight contract addresses above were deployed
+> and **initialized + allowlisted on-chain** via `pnpm contracts:init` — Admin,
+> Signers/Threshold, `Allowed(XLM)` and `Paused` were each read back from the
+> contracts' instance storage and verified. A contract-route payment (`E2E_CONTRACT=1`)
+> was executed end-to-end: the API invoked the payment contract's `send`, the
+> contract emitted its `payment` event, the indexer reconciled it to `CONFIRMED`,
+> and the realtime channel delivered the status update. The deployer account is
+> `GASXJVT43O2TZHOXR6KYZYJY3MSWG722XPYMB57KH5Q4MNXDRDCVKV4Y`.
 
 ## Funding Test Accounts
 

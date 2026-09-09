@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@stellar-pay/database';
 import { NotificationsService } from '../notifications/notifications.service';
 import { WebhooksService } from '../webhooks/webhooks.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 import type { NotificationType, WebhookEventType } from '@stellar-pay/types';
 
 /** Minimal structural view of a persisted Transaction row after submission. */
@@ -41,6 +42,7 @@ export class TransactionReconciliationService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly webhooks: WebhooksService,
+    private readonly realtime: RealtimeGateway,
   ) {}
 
   async onPaymentSucceeded(tx: ReconcilableTransaction): Promise<void> {
@@ -67,7 +69,33 @@ export class TransactionReconciliationService {
         },
         { merchantId: ownerMerchantId },
       );
+      // Live merchant-dashboard update — same `payment.received` event the
+      // inbound-detection path emits, so checkout invoice/link payments appear
+      // in real time on the merchant's Socket.IO room.
+      await this.pushRealtimeToMerchant(ownerMerchantId, tx);
     }
+  }
+
+  /** Emit `payment.received` to the merchant user's realtime room. */
+  private async pushRealtimeToMerchant(
+    merchantId: string,
+    tx: ReconcilableTransaction,
+  ): Promise<void> {
+    const merchant = await this.prisma.merchant.findUnique({
+      where: { id: merchantId },
+      select: { userId: true },
+    });
+    if (!merchant?.userId) {
+      return;
+    }
+    this.realtime.emitToUser(merchant.userId, 'payment.received', {
+      transactionId: tx.id,
+      status: 'CONFIRMED',
+      amount: tx.amount,
+      assetCode: tx.assetCode,
+      toPublicKey: tx.toPublicKey,
+      source: 'checkout',
+    });
   }
 
   /** @returns the owning merchant id when the invoice was newly marked PAID. */

@@ -16,7 +16,7 @@
     }
   ],
   "env": {
-    "NEXT_PUBLIC_API_URL": "https://api.stellar-pay.example/api",
+    "NEXT_PUBLIC_API_URL": "https://stellar-pay-api.up.railway.app/api",
     "NEXT_PUBLIC_HORIZON_URL": "https://horizon-testnet.stellar.org",
     "NEXT_PUBLIC_STELLAR_NETWORK": "testnet"
   }

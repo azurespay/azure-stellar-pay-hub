@@ -148,7 +148,24 @@ jobs:
           kubectl -n stellar-pay rollout status deployment/api --timeout=300s
           kubectl -n stellar-pay rollout status deployment/web --timeout=300s
 
-      - name: Smoke test
+      - name: Smoke test (in-cluster health check)
         run: |
-          sleep 10
-          curl -sf https://api.stellar-pay.example/api/health || echo "Health check not reachable (expected for example domains)"
+          # Verify the deployed API serves /api/health from inside the cluster
+          # (no external DNS needed — the ingress hosts are per-environment).
+          kubectl -n stellar-pay rollout status deployment/api --timeout=120s
+          echo "Port-forwarding to api service..."
+          kubectl -n stellar-pay port-forward svc/api 4000:80 &
+          PF_PID=$!
+          trap 'kill $PF_PID 2>/dev/null || true' EXIT
+          sleep 8
+          for i in $(seq 1 12); do
+            if curl -sf http://localhost:4000/api/health > /tmp/health.json 2>/dev/null; then
+              echo "✅ API health check passed (attempt $i):"
+              cat /tmp/health.json
+              exit 0
+            fi
+            echo "  attempt $i/12 — not ready yet, waiting 5s..."
+            sleep 5
+          done
+          echo "❌ API health check failed after 12 attempts"
+          exit 1
