@@ -19,9 +19,17 @@ name: Deploy to Railway
 #
 # ── GitHub Environment secrets & vars ──────────────────────────────────────
 # In repo Settings > Environments > railway, add:
-#   Secrets:  RAILWAY_TOKEN       (project-scoped token from Railway)
+#   Secrets:  RAILWAY_TOKEN       (PROJECT-scoped token from Railway, created
+#                                  at railway.com/project/<ID>/settings — an
+#                                  account/API token will fail with "Project
+#                                  Token not found")
 #   Vars:     RAILWAY_API_URL     (e.g. https://stellar-pay-api.up.railway.app)
-#             RAILWAY_PROJECT_ID  (from railway.com/project/<ID>)
+#             RAILWAY_PROJECT_ID  (from railway.com/project/<ID>; optional when
+#                                  RAILWAY_TOKEN is project-scoped, since the
+#                                  CLI derives the project from the token)
+#
+# When the secret/vars above are absent or still hold placeholder text, the
+# deploy step skips with a warning instead of failing the pipeline.
 # ────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -53,7 +61,25 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Check Railway credentials
+        id: creds
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
+        run: |
+          if [ -z "$RAILWAY_TOKEN" ]; then
+            echo "::warning title=Railway deploy skipped::RAILWAY_TOKEN secret is not set in the 'railway' environment. Add a project-scoped token at railway.com/project/<ID>/settings to enable deploys."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          elif [ -n "$RAILWAY_PROJECT_ID" ] && \
+               echo "$RAILWAY_PROJECT_ID" | grep -q "project/<ID>"; then
+            echo "::warning title=Railway deploy skipped::RAILWAY_PROJECT_ID variable still holds the placeholder text. Set it to the real project ID from railway.com/project/<ID> (or remove it — a project-scoped token carries the project)."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Deploy via Railway CLI
+        if: steps.creds.outputs.skip != 'true'
         run: |
           npx -y @railway/cli@3 up --detach
         env:
@@ -61,6 +87,7 @@ jobs:
           RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
 
       - name: Smoke test
+        if: steps.creds.outputs.skip != 'true'
         env:
           RAILWAY_URL: ${{ vars.RAILWAY_API_URL }}
         run: |

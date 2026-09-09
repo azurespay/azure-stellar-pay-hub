@@ -22,14 +22,22 @@ RUN pnpm --filter @stellar-pay/types build && \
     pnpm --filter @stellar-pay/ui build
 RUN pnpm --filter @stellar-pay/${APP} build
 RUN pnpm --filter @stellar-pay/${APP} --prod --legacy deploy /out/node_modules
+# Some apps ship a public/ dir and some don't; stage it so the runtime COPY
+# below never fails on a missing source path.
+RUN mkdir -p /out/public && if [ -d apps/${APP}/public ]; then cp -r apps/${APP}/public/. /out/public/; fi
 
 # --- Runtime stage ----------------------------------------------------------
 FROM node:22-alpine AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 ARG APP=web
+ENV APP=${APP}
+# The standalone build preserves the monorepo layout: the server entrypoint
+# lives at apps/<APP>/server.js (inside the standalone output) with the traced
+# node_modules at the standalone root. Copy the whole tree, then the static
+# assets and public dir back into the same relative paths the server expects.
 COPY --from=build /app/apps/${APP}/.next/standalone /app
 COPY --from=build /app/apps/${APP}/.next/static /app/apps/${APP}/.next/static
-COPY --from=build /app/apps/${APP}/public /app/apps/${APP}/public
+COPY --from=build /out/public /app/apps/${APP}/public
 EXPOSE 3000
-CMD ["node", "server.js"]
+CMD ["sh", "-c", "node apps/${APP}/server.js"]

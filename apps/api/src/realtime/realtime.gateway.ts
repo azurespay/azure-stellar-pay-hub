@@ -48,16 +48,29 @@ export class RealtimeGateway
     try {
       const pubClient = new Redis(redisUrl, {
         maxRetriesPerRequest: null,
-        enableReadyCheck: true,
+        // The ready check runs INFO, which ioredis forbids on a connection
+        // that is in subscriber mode. With the check enabled on the subscriber
+        // (duplicate() inherits these options), any reconnect re-runs INFO and
+        // throws "Connection in subscriber mode, only subscriber commands may
+        // be used" — a crash that took down the tier-3 e2e in CI. Subscribers
+        // don't need a ready check, so disable it for both clients and attach
+        // the adapter once both have connected.
+        enableReadyCheck: false,
       });
-      const subClient = pubClient.duplicate();
+      const subClient = pubClient.duplicate({ enableReadyCheck: false });
       this.adapterClients.push(pubClient, subClient);
       // Runtime errors are handled by ioredis auto-reconnect; log but never
       // tear down an already-attached adapter on a transient blip.
-      pubClient.on('error', (err) =>
-        this.logger.warn({ err: err.message }, 'socket.io redis adapter error'),
-      );
-      pubClient.once('ready', () => {
+      const onError = (err: Error) =>
+        this.logger.warn({ err: err.message }, 'socket.io redis adapter error');
+      pubClient.on('error', onError);
+      subClient.on('error', onError);
+      let pubReady = false;
+      let subReady = false;
+      const attachAdapter = () => {
+        if (!pubReady || !subReady || this.adapterAttached) {
+          return;
+        }
         try {
           // For a namespaced gateway Nest injects the Namespace, whose
           // `.adapter` is the current adapter object — the setter lives on the
@@ -70,6 +83,14 @@ export class RealtimeGateway
         } catch (err) {
           this.logger.warn(`Failed to attach Socket.IO Redis adapter — ${(err as Error).message}`);
         }
+      };
+      pubClient.once('ready', () => {
+        pubReady = true;
+        attachAdapter();
+      });
+      subClient.once('ready', () => {
+        subReady = true;
+        attachAdapter();
       });
     } catch (err) {
       this.logger.warn(`Failed to attach Socket.IO Redis adapter — ${(err as Error).message}`);

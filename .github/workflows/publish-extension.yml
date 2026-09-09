@@ -42,7 +42,13 @@ jobs:
           VERSION=$(node -p "JSON.parse(require('fs').readFileSync('apps/extension/manifest.json','utf8')).version")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
+      # Only tag pushes (extension-v*) publish a GitHub Release. Branch pushes
+      # run the install/build/package steps above as a CI validation of the
+      # extension; creating a release from a branch push would name it after
+      # the branch (e.g. "main") and collide with the existing tag of the same
+      # name.
       - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/extension-v')
         env:
           GH_TOKEN: ${{ github.token }}
           TAG_NAME: ${{ github.ref_name }}
@@ -54,6 +60,7 @@ jobs:
             --generate-notes
 
       - name: Summary
+        if: startsWith(github.ref, 'refs/tags/extension-v')
         env:
           VERSION: ${{ steps.version.outputs.version }}
           TAG_NAME: ${{ github.ref_name }}
