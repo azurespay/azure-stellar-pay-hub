@@ -3,12 +3,19 @@ import { CurrentUser, type AuthenticatedUser } from '../common/decorators';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import {
   createMerchantSchema,
+  merchantRegisterOnChainSchema,
+  merchantSettleSchema,
   posPaymentSchema,
   productSchema,
+  recordMerchantSaleSchema,
+  contractSubmitSchema,
   updateMerchantSchema,
   type CreateMerchant,
   type CreateProduct,
+  type MerchantRegisterOnChain,
+  type MerchantSettle,
   type PosPayment,
+  type RecordMerchantSale,
   type UpdateMerchant,
 } from '@stellar-pay/validation';
 import { MerchantsService } from './merchants.service';
@@ -82,5 +89,58 @@ export class MerchantsController {
     @Body(new ZodValidationPipe({ body: posPaymentSchema })) body: PosPayment,
   ) {
     return this.merchants.posCheckout(user.userId, body);
+  }
+
+  // ── On-chain merchant contract ─────────────────────────────────────────
+
+  @Post(':id/onchain/sale')
+  recordSale(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe({ body: recordMerchantSaleSchema })) body: RecordMerchantSale,
+  ) {
+    return this.merchants.recordSale(user.userId, id, body);
+  }
+
+  @Post(':id/onchain/sale/submit')
+  submitSale(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body(new ZodValidationPipe({ body: contractSubmitSchema })) body: { signedXdr: string },
+  ) {
+    return this.merchants.submitSale(body.signedXdr);
+  }
+
+  @Post('me/onchain/register')
+  registerOnChain(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body(new ZodValidationPipe({ body: merchantRegisterOnChainSchema }))
+    body: MerchantRegisterOnChain,
+  ) {
+    return this.merchants.registerOnChain(user.userId, body);
+  }
+
+  @Post('me/onchain/register/submit')
+  submitRegisterOnChain(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body(new ZodValidationPipe({ body: contractSubmitSchema })) body: { signedXdr: string },
+  ) {
+    return this.merchants.submitRegisterOnChain(user.userId, body.signedXdr);
+  }
+
+  @Post('me/onchain/settle')
+  settleOnChain(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body(new ZodValidationPipe({ body: merchantSettleSchema })) body: MerchantSettle,
+  ) {
+    return this.merchants.settleOnChain(user.userId, body);
+  }
+
+  @Post('me/onchain/settle/:settlementId/submit')
+  submitSettle(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('settlementId') settlementId: string,
+    @Body(new ZodValidationPipe({ body: contractSubmitSchema })) body: { signedXdr: string },
+  ) {
+    return this.merchants.submitSettle(user.userId, settlementId, body.signedXdr);
   }
 }

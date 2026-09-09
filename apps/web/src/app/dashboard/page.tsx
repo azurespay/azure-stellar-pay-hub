@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowDownLeft, ArrowUpRight, QrCode, Receipt, Sparkles, Wallet } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, QrCode, Receipt, ShieldCheck, Sparkles, Wallet } from 'lucide-react';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Skeleton } from '@stellar-pay/ui';
 import { useWallet } from '@stellar-pay/wallet';
 import { api } from '@/lib/api';
@@ -148,6 +148,11 @@ export default function DashboardPage() {
             <Button asChild variant="outline" className="w-full justify-start">
               <Link href="/merchant">
                 <Receipt className="h-4 w-4" /> Merchant tools
+              </Link>
+            </Button>
+            <Button asChild variant="outline" className="w-full justify-start">
+              <Link href="/contracts">
+                <ShieldCheck className="h-4 w-4" /> On-chain contracts
               </Link>
             </Button>
             <Button asChild variant="outline" className="w-full justify-start">

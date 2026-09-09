@@ -31,6 +31,7 @@ describe('IndexerService', () => {
   let mockInbound: Record<string, jest.Mock>;
   let mockMetrics: { inc: jest.Mock; set: jest.Mock };
   let mockReconciliation: Record<string, jest.Mock>;
+  let mockContractReconciliation: Record<string, jest.Mock>;
   let fetchMock: jest.Mock;
 
   const submittedTx = {
@@ -64,6 +65,7 @@ describe('IndexerService', () => {
     mockInbound = { handle: jest.fn().mockResolvedValue({ created: false }) };
     mockMetrics = { inc: jest.fn(), set: jest.fn() };
     mockReconciliation = { advanceScheduledPayment: jest.fn().mockResolvedValue(undefined) };
+    mockContractReconciliation = { reconcile: jest.fn().mockResolvedValue(undefined) };
 
     fetchMock = jest.fn();
     global.fetch = fetchMock as unknown as typeof fetch;
@@ -80,6 +82,7 @@ describe('IndexerService', () => {
       mockInbound as any,
       mockMetrics as any,
       mockReconciliation as any,
+      mockContractReconciliation as any,
     );
   });
 
@@ -98,6 +101,7 @@ describe('IndexerService', () => {
         mockInbound as any,
         mockMetrics as any,
         mockReconciliation as any,
+        mockContractReconciliation as any,
       );
       await idle.syncOnce();
       await idle.syncOnce();

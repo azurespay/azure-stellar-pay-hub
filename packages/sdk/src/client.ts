@@ -444,6 +444,230 @@ export class ApiClient {
       this.request<{ ok: true }>({ method: 'POST', path: '/admin/roles', body }),
   };
 
+  // --------------------------------------------------------- On-chain escrows
+
+  escrows = {
+    list: () => this.request<Array<Record<string, unknown>>>({ path: '/escrows' }),
+
+    get: (id: string) => this.request<Record<string, unknown>>({ path: `/escrows/${id}` }),
+
+    create: (body: {
+      initiatorPublicKey: string;
+      counterpartyPublicKey: string;
+      arbiterPublicKey?: string;
+      assetCode?: string;
+      assetIssuer?: string | null;
+      amount: string;
+      releaseTime: string;
+      expiry?: string;
+    }) =>
+      this.request<{ id: string; unsignedXdr: string; message: string }>({
+        method: 'POST',
+        path: '/escrows',
+        body,
+      }),
+
+    submit: (id: string, signedXdr: string) =>
+      this.request<Record<string, unknown>>({
+        method: 'POST',
+        path: `/escrows/${id}/submit`,
+        body: { signedXdr },
+      }),
+
+    release: (id: string, callerPublicKey: string) =>
+      this.request<{ id: string; unsignedXdr: string; message: string }>({
+        method: 'POST',
+        path: `/escrows/${id}/release`,
+        body: { callerPublicKey },
+      }),
+
+    refund: (id: string, callerPublicKey: string) =>
+      this.request<{ id: string; unsignedXdr: string; message: string }>({
+        method: 'POST',
+        path: `/escrows/${id}/refund`,
+        body: { callerPublicKey },
+      }),
+
+    confirmRelease: (id: string, signedXdr: string) =>
+      this.request<Record<string, unknown>>({
+        method: 'POST',
+        path: `/escrows/${id}/release/confirm`,
+        body: { signedXdr },
+      }),
+
+    confirmRefund: (id: string, signedXdr: string) =>
+      this.request<Record<string, unknown>>({
+        method: 'POST',
+        path: `/escrows/${id}/refund/confirm`,
+        body: { signedXdr },
+      }),
+  };
+
+  // ------------------------------------------------------- On-chain contracts
+
+  subscriptionPlans = {
+    list: () =>
+      this.request<Array<Record<string, unknown>>>({ path: '/subscription-plans' }),
+
+    create: (body: {
+      name: string;
+      description?: string;
+      assetCode?: string;
+      assetIssuer?: string | null;
+      amount: string;
+      intervalSeconds: number;
+    }) =>
+      this.request<{ id: string; unsignedXdr: string; message: string }>({
+        method: 'POST',
+        path: '/subscription-plans',
+        body,
+      }),
+
+    submit: (id: string, signedXdr: string) =>
+      this.request<Record<string, unknown>>({
+        method: 'POST',
+        path: `/subscription-plans/${id}/submit`,
+        body: { signedXdr },
+      }),
+
+    subscribe: (planId: string, subscriberPublicKey: string) =>
+      this.request<{ id: string; unsignedXdr: string; message: string }>({
+        method: 'POST',
+        path: `/subscription-plans/${planId}/subscribe`,
+        body: { subscriberPublicKey },
+      }),
+  };
+
+  subscriptions = {
+    list: () => this.request<Array<Record<string, unknown>>>({ path: '/subscriptions' }),
+
+    submit: (id: string, signedXdr: string) =>
+      this.request<Record<string, unknown>>({
+        method: 'POST',
+        path: `/subscriptions/${id}/submit`,
+        body: { signedXdr },
+      }),
+
+    renew: (id: string, callerPublicKey: string) =>
+      this.request<{ id: string; unsignedXdr: string; message: string }>({
+        method: 'POST',
+        path: `/subscriptions/${id}/renew`,
+        body: { callerPublicKey },
+      }),
+
+    confirmRenew: (id: string, signedXdr: string) =>
+      this.request<Record<string, unknown>>({
+        method: 'POST',
+        path: `/subscriptions/${id}/renew/confirm`,
+        body: { signedXdr },
+      }),
+
+    cancel: (id: string, callerPublicKey: string) =>
+      this.request<{ id: string; unsignedXdr: string; message: string }>({
+        method: 'POST',
+        path: `/subscriptions/${id}/cancel`,
+        body: { callerPublicKey },
+      }),
+
+    confirmCancel: (id: string, signedXdr: string) =>
+      this.request<Record<string, unknown>>({
+        method: 'POST',
+        path: `/subscriptions/${id}/cancel/confirm`,
+        body: { signedXdr },
+      }),
+  };
+
+  treasury = {
+    operations: () =>
+      this.request<Array<Record<string, unknown>>>({ path: '/treasury/operations' }),
+
+    withdrawals: () =>
+      this.request<Array<Record<string, unknown>>>({ path: '/treasury/withdrawals' }),
+
+    deposit: (body: {
+      fromPublicKey: string;
+      assetCode?: string;
+      assetIssuer?: string | null;
+      amount: string;
+    }) =>
+      this.request<{ id: string; unsignedXdr: string; message: string }>({
+        method: 'POST',
+        path: '/treasury/deposits',
+        body,
+      }),
+
+    submitDeposit: (id: string, signedXdr: string) =>
+      this.request<Record<string, unknown>>({
+        method: 'POST',
+        path: `/treasury/deposits/${id}/submit`,
+        body: { signedXdr },
+      }),
+
+    proposeWithdrawal: (body: {
+      proposerPublicKey: string;
+      toPublicKey: string;
+      assetCode?: string;
+      assetIssuer?: string | null;
+      amount: string;
+    }) =>
+      this.request<{ id: string; unsignedXdr: string; message: string }>({
+        method: 'POST',
+        path: '/treasury/withdrawals',
+        body,
+      }),
+
+    submitProposal: (id: string, signedXdr: string) =>
+      this.request<Record<string, unknown>>({
+        method: 'POST',
+        path: `/treasury/withdrawals/${id}/submit`,
+        body: { signedXdr },
+      }),
+  };
+
+  // ------------------------------------------------- On-chain invoice actions
+
+  invoiceOnChain = {
+    issue: (invoiceId: string) =>
+      this.request<{ invoiceId: string; unsignedXdr: string; message: string }>({
+        method: 'POST',
+        path: `/merchants/me/invoices/${invoiceId}/issue-onchain`,
+      }),
+
+    submitIssue: (invoiceId: string, signedXdr: string) =>
+      this.request<Record<string, unknown>>({
+        method: 'POST',
+        path: `/merchants/me/invoices/${invoiceId}/issue-onchain/submit`,
+        body: { signedXdr },
+      }),
+
+    cancel: (invoiceId: string) =>
+      this.request<{ invoiceId: string; unsignedXdr: string; message: string }>({
+        method: 'POST',
+        path: `/merchants/me/invoices/${invoiceId}/cancel-onchain`,
+      }),
+
+    submitCancel: (invoiceId: string, signedXdr: string) =>
+      this.request<Record<string, unknown>>({
+        method: 'POST',
+        path: `/merchants/me/invoices/${invoiceId}/cancel-onchain/submit`,
+        body: { signedXdr },
+      }),
+
+    pay: (invoiceId: string, payerPublicKey: string) =>
+      this.request<{ invoiceId: string; unsignedXdr: string; message: string }>({
+        method: 'POST',
+        path: `/invoices/${invoiceId}/pay-onchain`,
+        body: { payerPublicKey },
+      }),
+
+    submitPay: (invoiceId: string, signedXdr: string) =>
+      this.request<Record<string, unknown>>({
+        method: 'POST',
+        path: `/invoices/${invoiceId}/pay-onchain/confirm`,
+        body: { signedXdr },
+      }),
+  };
+
   // ------------------------------------------------------------ Notifications
 
   notifications = {

@@ -78,6 +78,24 @@ export interface SorobanSendInput {
   memo?: string;
 }
 
+/**
+ * A generic Soroban contract invocation: source account, deployed contract id
+ * (C…), entry-point name, and the exact ScVal argument list. Used by the
+ * platform's escrow / invoices / subscriptions / treasury / merchant
+ * integrations — the payment route wraps the same pipeline with typed inputs.
+ */
+export interface ContractCallInput {
+  /** Account (G…) the transaction is sourced from and which must authorize
+   * (sign) any `require_auth` entries the simulation returns. */
+  source: string;
+  /** Deployed contract id (C…). */
+  contractId: string;
+  /** Entry-point name, e.g. `create`, `release`, `deposit`. */
+  functionName: string;
+  /** Exact ScVal argument list for the invocation. */
+  args: xdr.ScVal[];
+}
+
 /** Wraps Horizon + Soroban RPC for balances, tx building and submission. */
 export class StellarNetwork {
   readonly server: Horizon.Server;
@@ -196,36 +214,43 @@ export class StellarNetwork {
     return asset.contractId(this.config.networkPassphrase);
   }
 
-  /** Build the raw (pre-simulation) `send` invocation transaction. */
+  /**
+   * Build the raw (pre-simulation) `send` invocation transaction — a thin
+   * wrapper over the generic invoke-contract builder.
+   */
   private async buildSorobanSendRawTx(input: SorobanSendInput): Promise<Transaction> {
-    const source = await this.server.loadAccount(input.from);
     const amountStroops = BigInt(toStroops(input.amount));
+    return this.buildInvokeContractRawTx({
+      source: input.from,
+      contractId: input.contractId,
+      functionName: 'send',
+      args: [
+        this.accountScVal(input.from),
+        this.accountScVal(input.to),
+        this.accountScVal(input.tokenAddress),
+        this.i128ScVal(amountStroops),
+        input.memo ? xdr.ScVal.scvString(input.memo) : xdr.ScVal.scvVoid(),
+      ],
+    });
+  }
 
-    // The invocation target is the DEPLOYED PAYMENT CONTRACT (`contractId`),
-    // with the token SAC passed as the third argument. Invoking `send` on the
-    // token contract itself is a bug: the SAC has no `send` entry point.
+  /**
+   * Build the raw (pre-simulation) transaction for an arbitrary contract
+   * invocation `contractId.functionName(args...)` sourced from `source`. The
+   * returned envelope is *not* yet executable: callers must run
+   * `prepareContractCall` (simulate → assemble) so the envelope carries the
+   * on-chain footprint and the source account's authorization entries.
+   */
+  private async buildInvokeContractRawTx(input: ContractCallInput): Promise<Transaction> {
+    const source = await this.server.loadAccount(input.source);
     const hostFunction = xdr.HostFunction.hostFunctionTypeInvokeContract(
       new xdr.InvokeContractArgs({
         contractAddress: xdr.ScAddress.scAddressTypeContract(
           // v14 typings type the arm as Hash while decodeContract returns Buffer.
           StrKey.decodeContract(input.contractId) as unknown as xdr.Hash,
         ),
-        functionName: 'send',
-        args: [
-          this.accountScVal(input.from),
-          this.accountScVal(input.to),
-          this.accountScVal(input.tokenAddress),
-          xdr.ScVal.scvI128(
-            // Runtime expects bigint hi/lo; the generated typings use branded
-            // Uint64/Int64, hence the cast.
-            new xdr.Int128Parts({
-              hi: BigInt.asUintN(64, amountStroops >> 64n),
-              lo: BigInt.asUintN(64, amountStroops),
-            } as never),
-          ),
-          // Option<String> is encoded as the value itself, or void for None.
-          input.memo ? xdr.ScVal.scvString(input.memo) : xdr.ScVal.scvVoid(),
-        ],
+        functionName: input.functionName,
+        args: input.args,
       }),
     );
 
@@ -239,41 +264,25 @@ export class StellarNetwork {
   }
 
   /**
-   * Build an unsigned Soroban transaction that invokes the payment contract's
-   * `send(from, to, token, amount, memo)` entry point (the contract id is
-   * `input.contractId`; the token SAC is passed as an argument). The payer
-   * must sign the returned XDR (the contract calls `from.require_auth()`),
-   * then submit via `submitSorobanSendTransaction`.
+   * Prepare an executable Soroban contract call (`contractId.functionName`):
+   * build the raw invokeHostFunction transaction, simulate it against Soroban
+   * RPC (a reverting call — e.g. an un-allowlisted SAC or a failed
+   * precondition — surfaces here with the on-chain diagnostic), then assemble
+   * the simulated envelope (footprint / `sorobanData` + unsigned
+   * `require_auth()` entries).
    *
-   * Note: this is the *raw* pre-simulation XDR. For an executable contract
-   * payment the server must instead use `prepareSorobanSendTransaction` (which
-   * runs the simulate → assemble round-trip so the envelope carries the
-   * footprint and authorization entries).
+   * The returned XDR is what the wallet must sign (`signContractCall`); the
+   * server then submits the signed envelope via `submitContractCall` (Soroban
+   * RPC `sendTransaction`). This is the generic pipeline used by the
+   * platform's escrow / invoices / subscriptions / treasury / merchant
+   * integrations.
    */
-  async buildSorobanSendTransaction(input: SorobanSendInput): Promise<string> {
-    const tx = await this.buildSorobanSendRawTx(input);
-    return tx.toXDR();
-  }
-
-  /**
-   * Prepare an executable Soroban `send` payment:
-   *
-   *   1. build the raw invokeHostFunction transaction,
-   *   2. simulate it against Soroban RPC (this is where an un-allowlisted SAC
-   *      reverts — surfaced here as a clear error before anything is stored),
-   *   3. assemble the simulated envelope (footprint / `sorobanData` and the
-   *      `from.require_auth()` authorization entries embedded, unsigned).
-   *
-   * The returned XDR is what the payer's wallet must sign (see
-   * `signSorobanSendTransaction`); the server then submits the signed envelope
-   * via `submitSorobanSendTransaction` (Soroban RPC `sendTransaction`).
-   */
-  async prepareSorobanSendTransaction(input: SorobanSendInput): Promise<{
+  async prepareContractCall(input: ContractCallInput): Promise<{
     unsignedXdr: string;
     minResourceFee: string;
     latestLedger: number;
   }> {
-    const raw = await this.buildSorobanSendRawTx(input);
+    const raw = await this.buildInvokeContractRawTx(input);
     const rpcServer = this.sorobanRpc();
     const sim = await rpcServer.simulateTransaction(raw);
 
@@ -286,10 +295,8 @@ export class StellarNetwork {
       };
     }
 
-    // Simulation failed — most commonly because the token's SAC is not
-    // allowlisted on the deployed contract (TokenNotAllowed revert). Surface
-    // the on-chain diagnostic so the caller gets the real reason instead of a
-    // generic failure.
+    // Simulation failed — surface the on-chain diagnostic so the caller gets
+    // the real reason instead of a generic failure.
     const diag = this.extractSimulationError(sim);
     throw new SorobanSubmissionError(
       `Soroban simulation failed: ${diag.reason}${diag.detail ? ` (${diag.detail})` : ''}`,
@@ -297,12 +304,11 @@ export class StellarNetwork {
   }
 
   /**
-   * Sign an assembled Soroban `send` envelope with the payer's keypair:
-   * fills in the address-credential authorization entries returned by
-   * simulation (via soroban-auth), then signs the transaction envelope.
-   * Returns the base64 signed XDR ready for `submitSorobanSendTransaction`.
+   * Sign an assembled Soroban envelope (any contract invocation) with the
+   * given keypair: fills in the address-credential authorization entries
+   * returned by simulation (via soroban-auth), then signs the envelope.
    */
-  async signSorobanSendTransaction(
+  async signContractCall(
     unsignedXdr: string,
     keypair: Keypair,
     opts?: { validUntilLedgerSeq?: number },
@@ -345,12 +351,12 @@ export class StellarNetwork {
   }
 
   /**
-   * Submit a signed Soroban envelope via RPC `sendTransaction`, polling
-   * `getTransaction` until the ledger reports a terminal result. Returns the
-   * on-chain outcome (`SUCCEEDED` when the `send` invocation executed,
-   * `FAILED` when it reverted — e.g. token not allowlisted).
+   * Submit a signed Soroban envelope (any contract invocation) via RPC
+   * `sendTransaction`, polling `getTransaction` until the ledger reports a
+   * terminal result. Returns `SUCCEEDED` when the invocation executed on-chain
+   * (the contract reverts otherwise — e.g. token not allowlisted).
    */
-  async submitSorobanSendTransaction(signedXdr: string): Promise<SubmitResult> {
+  async submitContractCall(signedXdr: string): Promise<SubmitResult> {
     const rpcServer = this.sorobanRpc();
     const tx = TransactionBuilder.fromXDR(signedXdr, this.config.networkPassphrase) as Transaction;
     const sent = await rpcServer.sendTransaction(tx);
@@ -397,6 +403,80 @@ export class StellarNetwork {
       ledger: null,
       status: 'SUCCEEDED',
     };
+  }
+
+  /**
+   * Build an unsigned Soroban transaction that invokes the payment contract's
+   * `send(from, to, token, amount, memo)` entry point (the contract id is
+   * `input.contractId`; the token SAC is passed as an argument). The payer
+   * must sign the returned XDR (the contract calls `from.require_auth()`),
+   * then submit via `submitSorobanSendTransaction`.
+   *
+   * Note: this is the *raw* pre-simulation XDR. For an executable contract
+   * payment the server must instead use `prepareSorobanSendTransaction` (which
+   * runs the simulate → assemble round-trip so the envelope carries the
+   * footprint and authorization entries).
+   */
+  async buildSorobanSendTransaction(input: SorobanSendInput): Promise<string> {
+    const tx = await this.buildSorobanSendRawTx(input);
+    return tx.toXDR();
+  }
+
+  /**
+   * Prepare an executable Soroban `send` payment:
+   *
+   *   1. build the raw invokeHostFunction transaction,
+   *   2. simulate it against Soroban RPC (this is where an un-allowlisted SAC
+   *      reverts — surfaced here as a clear error before anything is stored),
+   *   3. assemble the simulated envelope (footprint / `sorobanData` and the
+   *      `from.require_auth()` authorization entries embedded, unsigned).
+   *
+   * The returned XDR is what the payer's wallet must sign (see
+   * `signSorobanSendTransaction`); the server then submits the signed envelope
+   * via `submitSorobanSendTransaction` (Soroban RPC `sendTransaction`).
+   */
+  async prepareSorobanSendTransaction(input: SorobanSendInput): Promise<{
+    unsignedXdr: string;
+    minResourceFee: string;
+    latestLedger: number;
+  }> {
+    const amountStroops = BigInt(toStroops(input.amount));
+    return this.prepareContractCall({
+      source: input.from,
+      contractId: input.contractId,
+      functionName: 'send',
+      args: [
+        this.accountScVal(input.from),
+        this.accountScVal(input.to),
+        this.accountScVal(input.tokenAddress),
+        this.i128ScVal(amountStroops),
+        input.memo ? xdr.ScVal.scvString(input.memo) : xdr.ScVal.scvVoid(),
+      ],
+    });
+  }
+
+  /**
+   * Sign an assembled Soroban `send` envelope with the payer's keypair:
+   * fills in the address-credential authorization entries returned by
+   * simulation (via soroban-auth), then signs the transaction envelope.
+   * Returns the base64 signed XDR ready for `submitSorobanSendTransaction`.
+   */
+  async signSorobanSendTransaction(
+    unsignedXdr: string,
+    keypair: Keypair,
+    opts?: { validUntilLedgerSeq?: number },
+  ): Promise<string> {
+    return this.signContractCall(unsignedXdr, keypair, opts);
+  }
+
+  /**
+   * Submit a signed Soroban envelope via RPC `sendTransaction`, polling
+   * `getTransaction` until the ledger reports a terminal result. Returns the
+   * on-chain outcome (`SUCCEEDED` when the `send` invocation executed,
+   * `FAILED` when it reverted — e.g. token not allowlisted).
+   */
+  async submitSorobanSendTransaction(signedXdr: string): Promise<SubmitResult> {
+    return this.submitContractCall(signedXdr);
   }
 
   /** Pull a readable reason out of a failed simulation response. */
@@ -622,7 +702,11 @@ export class StellarNetwork {
     };
   }
 
-  private accountScVal(address: string): xdr.ScVal {
+  /**
+   * Build an scvAddress ScVal for a G… account or C… contract address. This is
+   * the argument encoding the Soroban contracts expect for `Address` params.
+   */
+  accountScVal(address: string): xdr.ScVal {
     if (address.startsWith('C')) {
       return xdr.ScVal.scvAddress(
         xdr.ScAddress.scAddressTypeContract(
@@ -636,6 +720,44 @@ export class StellarNetwork {
         xdr.PublicKey.publicKeyTypeEd25519(StrKey.decodeEd25519PublicKey(address)),
       ),
     );
+  }
+
+  /** Build an scvI128 ScVal from a stroops bigint (contract `i128` params). */
+  i128ScVal(stroops: bigint): xdr.ScVal {
+    return xdr.ScVal.scvI128(
+      // Runtime expects bigint hi/lo; the generated typings use branded
+      // Uint64/Int64, hence the cast.
+      new xdr.Int128Parts({
+        hi: BigInt.asUintN(64, stroops >> 64n),
+        lo: BigInt.asUintN(64, stroops),
+      } as never),
+    );
+  }
+
+  /** Build an scvU64 ScVal from a bigint (contract `u64` params). */
+  u64ScVal(value: bigint): xdr.ScVal {
+    // Runtime accepts a bigint; the generated typings brand the arg as Uint64.
+    return xdr.ScVal.scvU64(value as never);
+  }
+
+  /** Build an scvU32 ScVal (contract `u32` params). */
+  u32ScVal(value: number): xdr.ScVal {
+    return xdr.ScVal.scvU32(value);
+  }
+
+  /** Build an scvString ScVal (contract `String` params). */
+  stringScVal(value: string): xdr.ScVal {
+    return xdr.ScVal.scvString(value);
+  }
+
+  /** Build an Option<T> ScVal: the value itself when present, scvVoid for None. */
+  optionScVal<T extends xdr.ScVal>(value: T | null | undefined): xdr.ScVal {
+    return value ?? xdr.ScVal.scvVoid();
+  }
+
+  /** Build a bool ScVal (contract `bool` params). */
+  boolScVal(value: boolean): xdr.ScVal {
+    return xdr.ScVal.scvBool(value);
   }
 
   /** Build a simulated fee estimate without submitting. */

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -6,12 +7,29 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '@stellar-pay/database';
 import { createId } from '@stellar-pay/shared';
+import { toStroops } from '@stellar-pay/shared';
 import { buildPaymentUri } from '@stellar-pay/shared';
-import type { CreateMerchant, UpdateMerchant, CreateProduct } from '@stellar-pay/validation';
+import { WalletService } from '../wallet/wallet.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { ContractIntegrationService } from '../contracts/contract-integration.service';
+import type {
+  CreateMerchant,
+  UpdateMerchant,
+  CreateProduct,
+  MerchantRegisterOnChain,
+  MerchantSettle,
+} from '@stellar-pay/validation';
+
+const MERCHANT_CONTRACT_ENV = 'CONTRACT_STELLAR_PAY_MERCHANT';
 
 @Injectable()
 export class MerchantsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly wallet: WalletService,
+    private readonly realtime: RealtimeGateway,
+    private readonly contracts: ContractIntegrationService,
+  ) {}
 
   async register(userId: string, input: CreateMerchant) {
     const existing = await this.prisma.merchant.findUnique({ where: { userId } });
@@ -153,6 +171,188 @@ export class MerchantsService {
       where: { merchantId: merchant.id },
       orderBy: { totalSpent: 'desc' },
     });
+  }
+
+  // ── On-chain merchant contract integration ────────────────────────────
+
+  /** Prepare `register(owner, name, settlement, commission_bps)` on the merchant contract. */
+  async registerOnChain(userId: string, dto: MerchantRegisterOnChain) {
+    const merchant = await this.activeMerchant(userId);
+    if (merchant.onChainMerchantId) {
+      throw new BadRequestException('Merchant is already registered on-chain');
+    }
+    await this.wallet.assertWalletOwnership(userId, dto.ownerPublicKey);
+    const contractId = this.contracts.requireContractAddress(MERCHANT_CONTRACT_ENV, 'Merchant');
+    const prepared = await this.contracts.prepareCall({
+      source: dto.ownerPublicKey,
+      contractId,
+      functionName: 'register',
+      args: [
+        this.contracts.network().accountScVal(dto.ownerPublicKey),
+        this.contracts.network().stringScVal(dto.name),
+        this.contracts.network().accountScVal(dto.settlementPublicKey),
+        this.contracts.network().u32ScVal(dto.commissionBps),
+      ],
+    });
+    return {
+      merchantId: merchant.id,
+      unsignedXdr: prepared.unsignedXdr,
+      message: 'Sign the transaction with your wallet, then submit it',
+    };
+  }
+
+  /** Submit the wallet-signed `register` envelope. */
+  async submitRegisterOnChain(userId: string, signedXdr: string) {
+    const merchant = await this.activeMerchant(userId);
+    if (merchant.onChainMerchantId) {
+      throw new BadRequestException('Merchant is already registered on-chain');
+    }
+    let result;
+    try {
+      result = await this.contracts.submitCall(signedXdr);
+    } catch (err) {
+      throw err;
+    }
+    if (result.status === 'FAILED') {
+      throw new BadRequestException(`Merchant registration reverted on-chain: ${result.errorMessage}`);
+    }
+    const updated = await this.prisma.merchant.update({
+      where: { id: merchant.id },
+      data: { registerTxHash: result.hash ?? null },
+    });
+    // onChainMerchantId is assigned by the indexer (`reg` event).
+    return updated;
+  }
+
+  /**
+   * Record a sale through the merchant contract (`record_sale`): the payer's
+   * tokens move to the contract and the merchant's on-chain balance is
+   * credited. The confirmed INCOMING transaction row is created by the
+   * indexer when the `sale` event is observed (never by this endpoint), so a
+   * re-submission cannot double-credit.
+   */
+  async recordSale(
+    userId: string,
+    merchantId: string,
+    input: { payerPublicKey: string; assetCode?: string; assetIssuer?: string | null; amount: string },
+  ) {
+    await this.wallet.assertWalletOwnership(userId, input.payerPublicKey);
+    const merchant = await this.prisma.merchant.findUnique({ where: { id: merchantId } });
+    if (!merchant) {
+      throw new NotFoundException('Merchant not found');
+    }
+    if (!merchant.onChainMerchantId) {
+      throw new BadRequestException('Merchant is not registered on-chain');
+    }
+    const assetCode = input.assetCode ?? 'XLM';
+    const tokenAddress = this.contracts.tokenAddress(assetCode, input.assetIssuer);
+    const contractId = this.contracts.requireContractAddress(MERCHANT_CONTRACT_ENV, 'Merchant');
+    const prepared = await this.contracts.prepareCall({
+      source: input.payerPublicKey,
+      contractId,
+      functionName: 'record_sale',
+      args: [
+        this.contracts.network().accountScVal(input.payerPublicKey),
+        this.contracts.network().u64ScVal(BigInt(merchant.onChainMerchantId)),
+        this.contracts.network().accountScVal(tokenAddress),
+        this.contracts.network().i128ScVal(BigInt(toStroops(input.amount))),
+      ],
+    });
+    return {
+      merchantId,
+      unsignedXdr: prepared.unsignedXdr,
+      message: 'Sign the transaction with your wallet, then submit it',
+    };
+  }
+
+  /** Submit the wallet-signed `record_sale` envelope. */
+  async submitSale(signedXdr: string) {
+    let result;
+    try {
+      result = await this.contracts.submitCall(signedXdr);
+    } catch (err) {
+      throw err;
+    }
+    if (result.status === 'FAILED') {
+      throw new BadRequestException(`Sale reverted on-chain: ${result.errorMessage}`);
+    }
+    // The merchant's INCOMING credit lands when the indexer observes `sale`.
+    return { hash: result.hash, status: 'SUBMITTED', message: 'Sale submitted — confirming on-chain' };
+  }
+
+  /**
+   * Prepare `settle(owner, id, token)` on the merchant contract: the owner
+   * moves the merchant's held balance (minus commission) to its settlement
+   * address. Creates a Settlement row in PROCESSING; the indexer marks it
+   * COMPLETED on the `settle` event and fills in the real amount.
+   */
+  async settleOnChain(userId: string, dto: MerchantSettle) {
+    const merchant = await this.activeMerchant(userId);
+    if (!merchant.onChainMerchantId) {
+      throw new BadRequestException('Merchant is not registered on-chain');
+    }
+    await this.wallet.assertWalletOwnership(userId, dto.ownerPublicKey);
+    const contractId = this.contracts.requireContractAddress(MERCHANT_CONTRACT_ENV, 'Merchant');
+    const tokenAddress = this.contracts.tokenAddress(dto.assetCode, dto.assetIssuer);
+    const prepared = await this.contracts.prepareCall({
+      source: dto.ownerPublicKey,
+      contractId,
+      functionName: 'settle',
+      args: [
+        this.contracts.network().accountScVal(dto.ownerPublicKey),
+        this.contracts.network().u64ScVal(BigInt(merchant.onChainMerchantId)),
+        this.contracts.network().accountScVal(tokenAddress),
+      ],
+    });
+    const settlement = await this.prisma.settlement.create({
+      data: {
+        merchantId: merchant.id,
+        periodStart: new Date(Date.now() - 30 * 86_400_000),
+        periodEnd: new Date(),
+        amount: '0', // filled in by the indexer from the `settle` event
+        assetCode: dto.assetCode,
+        assetIssuer: dto.assetIssuer ?? null,
+        status: 'PROCESSING',
+        onChainMerchantId: merchant.onChainMerchantId,
+      },
+    });
+    return {
+      settlementId: settlement.id,
+      unsignedXdr: prepared.unsignedXdr,
+      message: 'Sign the transaction with your wallet, then submit it',
+    };
+  }
+
+  /** Submit the wallet-signed `settle` envelope. */
+  async submitSettle(userId: string, settlementId: string, signedXdr: string) {
+    const settlement = await this.prisma.settlement.findFirst({
+      where: { id: settlementId, merchant: { userId } },
+    });
+    if (!settlement) {
+      throw new NotFoundException('Settlement not found');
+    }
+    if (settlement.status !== 'PROCESSING') {
+      throw new BadRequestException('Settlement is not awaiting submission');
+    }
+    let result;
+    try {
+      result = await this.contracts.submitCall(signedXdr);
+    } catch (err) {
+      throw err;
+    }
+    if (result.status === 'FAILED') {
+      await this.prisma.settlement.update({
+        where: { id: settlementId },
+        data: { status: 'FAILED' },
+      });
+      throw new BadRequestException(`Settlement reverted on-chain: ${result.errorMessage}`);
+    }
+    const updated = await this.prisma.settlement.update({
+      where: { id: settlementId },
+      data: { payoutTransactionId: result.hash ?? null },
+    });
+    // COMPLETED comes from the indexer (`settle` event).
+    return updated;
   }
 
   /** POS checkout: sum products (or a custom amount) into a payment URI + QR payload. */

@@ -10,3 +10,4 @@ export * from './payment-link';
 export * from './webhook';
 export * from './checkout';
 export * from './admin';
+export * from './contracts';

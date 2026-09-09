@@ -295,6 +295,8 @@ exports.Prisma.MerchantScalarFieldEnum = {
   kycStatus: 'kycStatus',
   webhookUrl: 'webhookUrl',
   webhookSecret: 'webhookSecret',
+  onChainMerchantId: 'onChainMerchantId',
+  registerTxHash: 'registerTxHash',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };
@@ -343,6 +345,8 @@ exports.Prisma.InvoiceScalarFieldEnum = {
   paidAt: 'paidAt',
   memo: 'memo',
   paymentTransactionId: 'paymentTransactionId',
+  onChainId: 'onChainId',
+  issueTxHash: 'issueTxHash',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };
@@ -376,6 +380,8 @@ exports.Prisma.SettlementScalarFieldEnum = {
   assetIssuer: 'assetIssuer',
   status: 'status',
   payoutTransactionId: 'payoutTransactionId',
+  onChainMerchantId: 'onChainMerchantId',
+  settleTxHash: 'settleTxHash',
   createdAt: 'createdAt'
 };
 
@@ -478,6 +484,93 @@ exports.Prisma.ChainEventScalarFieldEnum = {
   contractId: 'contractId',
   ledger: 'ledger',
   createdAt: 'createdAt'
+};
+
+exports.Prisma.EscrowScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  contractId: 'contractId',
+  initiatorPublicKey: 'initiatorPublicKey',
+  counterpartyPublicKey: 'counterpartyPublicKey',
+  arbiterPublicKey: 'arbiterPublicKey',
+  tokenAddress: 'tokenAddress',
+  assetCode: 'assetCode',
+  assetIssuer: 'assetIssuer',
+  amount: 'amount',
+  releaseTime: 'releaseTime',
+  expiry: 'expiry',
+  status: 'status',
+  hash: 'hash',
+  errorMessage: 'errorMessage',
+  releaseHash: 'releaseHash',
+  refundHash: 'refundHash',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.SubscriptionPlanScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  name: 'name',
+  description: 'description',
+  assetCode: 'assetCode',
+  assetIssuer: 'assetIssuer',
+  amount: 'amount',
+  intervalSeconds: 'intervalSeconds',
+  contractPlanId: 'contractPlanId',
+  status: 'status',
+  hash: 'hash',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.SubscriptionScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  planId: 'planId',
+  contractSubscriptionId: 'contractSubscriptionId',
+  status: 'status',
+  nextPaymentAt: 'nextPaymentAt',
+  hash: 'hash',
+  renewHash: 'renewHash',
+  cancelHash: 'cancelHash',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.TreasuryOperationScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  type: 'type',
+  tokenAddress: 'tokenAddress',
+  assetCode: 'assetCode',
+  assetIssuer: 'assetIssuer',
+  amount: 'amount',
+  withdrawalId: 'withdrawalId',
+  status: 'status',
+  hash: 'hash',
+  errorMessage: 'errorMessage',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.TreasuryWithdrawalScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  operationId: 'operationId',
+  toPublicKey: 'toPublicKey',
+  assetCode: 'assetCode',
+  assetIssuer: 'assetIssuer',
+  amount: 'amount',
+  contractWithdrawalId: 'contractWithdrawalId',
+  approvals: 'approvals',
+  threshold: 'threshold',
+  status: 'status',
+  hash: 'hash',
+  approveHash: 'approveHash',
+  executedHash: 'executedHash',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
 };
 
 exports.Prisma.SortOrder = {
@@ -615,6 +708,48 @@ exports.NotificationStatus = exports.$Enums.NotificationStatus = {
   READ: 'READ'
 };
 
+exports.EscrowStatus = exports.$Enums.EscrowStatus = {
+  AWAITING_SIGN: 'AWAITING_SIGN',
+  SUBMITTED: 'SUBMITTED',
+  FUNDED: 'FUNDED',
+  RELEASED: 'RELEASED',
+  REFUNDED: 'REFUNDED',
+  FAILED: 'FAILED'
+};
+
+exports.SubscriptionPlanStatus = exports.$Enums.SubscriptionPlanStatus = {
+  PENDING: 'PENDING',
+  ACTIVE: 'ACTIVE',
+  INACTIVE: 'INACTIVE',
+  FAILED: 'FAILED'
+};
+
+exports.SubscriptionStatus = exports.$Enums.SubscriptionStatus = {
+  PENDING: 'PENDING',
+  ACTIVE: 'ACTIVE',
+  CANCELED: 'CANCELED',
+  FAILED: 'FAILED'
+};
+
+exports.TreasuryOperationType = exports.$Enums.TreasuryOperationType = {
+  DEPOSIT: 'DEPOSIT',
+  WITHDRAWAL: 'WITHDRAWAL'
+};
+
+exports.TreasuryOperationStatus = exports.$Enums.TreasuryOperationStatus = {
+  AWAITING_SIGN: 'AWAITING_SIGN',
+  SUBMITTED: 'SUBMITTED',
+  CONFIRMED: 'CONFIRMED',
+  FAILED: 'FAILED'
+};
+
+exports.TreasuryWithdrawalStatus = exports.$Enums.TreasuryWithdrawalStatus = {
+  PROPOSED: 'PROPOSED',
+  APPROVED: 'APPROVED',
+  EXECUTED: 'EXECUTED',
+  FAILED: 'FAILED'
+};
+
 exports.Prisma.ModelName = {
   User: 'User',
   UserPreference: 'UserPreference',
@@ -642,7 +777,12 @@ exports.Prisma.ModelName = {
   Setting: 'Setting',
   Webhook: 'Webhook',
   WebhookDelivery: 'WebhookDelivery',
-  ChainEvent: 'ChainEvent'
+  ChainEvent: 'ChainEvent',
+  Escrow: 'Escrow',
+  SubscriptionPlan: 'SubscriptionPlan',
+  Subscription: 'Subscription',
+  TreasuryOperation: 'TreasuryOperation',
+  TreasuryWithdrawal: 'TreasuryWithdrawal'
 };
 
 /**

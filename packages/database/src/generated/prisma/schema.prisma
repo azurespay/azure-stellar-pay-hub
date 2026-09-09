@@ -122,6 +122,51 @@ enum NotificationStatus {
   READ
 }
 
+// Contract-integrated feature statuses. These advance ONLY on on-chain
+// evidence (the event indexer observes the contract's event, then the status
+// moves) — never on optimistic database writes alone.
+enum EscrowStatus {
+  AWAITING_SIGN // created locally; wallet must sign the create() call
+  SUBMITTED // create() accepted by Soroban RPC; awaiting on-chain `created` event
+  FUNDED // on-chain `created` event observed — tokens locked in the contract
+  RELEASED // on-chain `released` event observed
+  REFUNDED // on-chain `refund` event observed
+  FAILED // the create() invocation reverted on-chain
+}
+
+enum SubscriptionPlanStatus {
+  PENDING // created locally; awaiting the on-chain `plan` event
+  ACTIVE // on-chain `plan` event observed
+  INACTIVE // on-chain deactivation
+  FAILED
+}
+
+enum SubscriptionStatus {
+  PENDING // created locally; awaiting the on-chain `sub` event
+  ACTIVE // on-chain `sub` event observed (first payment executed)
+  CANCELED // on-chain `cancel` event observed
+  FAILED
+}
+
+enum TreasuryOperationType {
+  DEPOSIT
+  WITHDRAWAL
+}
+
+enum TreasuryOperationStatus {
+  AWAITING_SIGN
+  SUBMITTED
+  CONFIRMED // on-chain `deposit` / `wexec` event observed
+  FAILED
+}
+
+enum TreasuryWithdrawalStatus {
+  PROPOSED // on-chain `wprop` event observed
+  APPROVED // at least one on-chain `wappr` event observed
+  EXECUTED // on-chain `wexec` event observed — funds transferred
+  FAILED
+}
+
 // ---------------------------------------------------------------- Models
 
 model User {
@@ -136,18 +181,23 @@ model User {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
-  wallets       Wallet[]
-  contacts      Contact[]
-  sessions      Session[]
-  devices       Device[]
-  notifications Notification[]
-  apiKeys       ApiKey[]
-  beneficiaries Beneficiary[]
-  auditLogs     AuditLog[]
-  transactions  Transaction[]
-  trustlines    Trustline[]
-  merchant      Merchant?
-  preferences   UserPreference?
+  wallets             Wallet[]
+  contacts            Contact[]
+  sessions            Session[]
+  devices             Device[]
+  notifications       Notification[]
+  apiKeys             ApiKey[]
+  beneficiaries       Beneficiary[]
+  auditLogs           AuditLog[]
+  transactions        Transaction[]
+  trustlines          Trustline[]
+  merchant            Merchant?
+  preferences         UserPreference?
+  escrows             Escrow[]
+  subscriptionPlans   SubscriptionPlan[]
+  subscriptions       Subscription[]
+  treasuryOperations  TreasuryOperation[]
+  treasuryWithdrawals TreasuryWithdrawal[]
 
   @@index([role])
   @@index([status])
@@ -357,6 +407,10 @@ model Merchant {
   kycStatus             String         @default("PENDING")
   webhookUrl            String?
   webhookSecret         String?
+  // On-chain merchant-contract registration: the contract's merchant id and
+  // the `register` invocation hash. Set when the `reg` event is indexed.
+  onChainMerchantId     Int?           @unique
+  registerTxHash        String?
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
 
@@ -425,6 +479,11 @@ model Invoice {
   paidAt               DateTime?
   memo                 String?
   paymentTransactionId String?
+  // On-chain (Soroban invoices contract) fields. `onChainId` is the contract's
+  // invoice id; the invoice becomes ISSUED only when the `issued` event is
+  // indexed, and PAID only when the contract's `paid` event is observed.
+  onChainId            Int?          @unique
+  issueTxHash          String?
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
 
@@ -465,6 +524,11 @@ model Settlement {
   assetIssuer         String?
   status              String   @default("PENDING") // PENDING | PROCESSING | COMPLETED | FAILED
   payoutTransactionId String?
+  // On-chain merchant-contract settlement: the contract's merchant id and the
+  // `settle` invocation hash. COMPLETED is set only when the on-chain `settle`
+  // event is indexed.
+  onChainMerchantId   Int?
+  settleTxHash        String?
   createdAt           DateTime @default(now())
 
   @@index([merchantId])
@@ -603,4 +667,125 @@ model ChainEvent {
 
   @@index([source])
   @@index([createdAt])
+}
+
+// ----------------------------------------------------------------
+// Soroban contract-integrated features (escrow / subscriptions / treasury)
+// ----------------------------------------------------------------
+
+model Escrow {
+  id                    String       @id @default(uuid())
+  userId                String
+  user                  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // On-chain escrow id assigned by the contract (`create` returns it). Null
+  // until the `created` event is indexed.
+  contractId            Int?         @unique
+  initiatorPublicKey    String
+  counterpartyPublicKey String
+  arbiterPublicKey      String?
+  tokenAddress          String?
+  assetCode             String
+  assetIssuer           String?
+  amount                String
+  releaseTime           DateTime
+  expiry                DateTime?
+  status                EscrowStatus @default(AWAITING_SIGN)
+  hash                  String?
+  errorMessage          String?
+  releaseHash           String?
+  refundHash            String?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}
+
+model SubscriptionPlan {
+  id              String                 @id @default(uuid())
+  userId          String
+  user            User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name            String
+  description     String?
+  assetCode       String
+  assetIssuer     String?
+  amount          String
+  intervalSeconds Int
+  // On-chain plan id assigned by the subscriptions contract; the plan is
+  // ACTIVE only once the `plan` event is indexed.
+  contractPlanId  Int?                   @unique
+  status          SubscriptionPlanStatus @default(PENDING)
+  hash            String?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  subscriptions Subscription[]
+
+  @@index([userId])
+}
+
+model Subscription {
+  id                     String             @id @default(uuid())
+  userId                 String
+  user                   User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId                 String
+  plan                   SubscriptionPlan   @relation(fields: [planId], references: [id], onDelete: Cascade)
+  // On-chain subscription id assigned by the contract; ACTIVE only once the
+  // `sub` event is indexed (first payment executed on-chain).
+  contractSubscriptionId Int?               @unique
+  status                 SubscriptionStatus @default(PENDING)
+  nextPaymentAt          DateTime?
+  hash                   String?
+  renewHash              String?
+  cancelHash             String?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  @@index([userId])
+  @@index([planId])
+}
+
+model TreasuryOperation {
+  id           String                  @id @default(uuid())
+  userId       String
+  user         User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         TreasuryOperationType
+  tokenAddress String?
+  assetCode    String
+  assetIssuer  String?
+  amount       String
+  // Withdrawal proposals reference their operation row (executed → CONFIRMED).
+  withdrawalId String?
+  status       TreasuryOperationStatus @default(AWAITING_SIGN)
+  hash         String?
+  errorMessage String?
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}
+
+model TreasuryWithdrawal {
+  id                   String                   @id @default(uuid())
+  userId               String // proposer (must be a governance member on-chain)
+  user                 User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  operationId          String? // link to the treasury operation when executed
+  toPublicKey          String
+  assetCode            String
+  assetIssuer          String?
+  amount               String
+  // On-chain proposal id from the treasury contract (`propose_withdraw`).
+  contractWithdrawalId Int?                     @unique
+  approvals            Json                     @default("[]")
+  threshold            Int                      @default(0)
+  status               TreasuryWithdrawalStatus @default(PROPOSED)
+  hash                 String?
+  approveHash          String?
+  executedHash         String?
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+
+  @@index([userId])
+  @@index([status])
 }

@@ -4,6 +4,9 @@ import { InvoicesService } from './invoices.service';
 describe('InvoicesService', () => {
   let service: InvoicesService;
   let mockPrisma: Record<string, any>;
+  let mockWallet: Record<string, jest.Mock>;
+  let mockRealtime: Record<string, jest.Mock>;
+  let mockContracts: Record<string, any>;
 
   beforeEach(() => {
     mockPrisma = {
@@ -21,7 +24,29 @@ describe('InvoicesService', () => {
         upsert: jest.fn().mockImplementation(({ create }) => ({ id: 'cust-1', ...create })),
       },
     };
-    service = new InvoicesService(mockPrisma as never);
+    mockWallet = { assertWalletOwnership: jest.fn().mockResolvedValue(undefined) };
+    mockRealtime = { emitToUser: jest.fn() };
+    mockContracts = {
+      requireContractAddress: jest.fn().mockReturnValue('CCONTRACT'),
+      tokenAddress: jest.fn().mockReturnValue('CTOKEN'),
+      prepareCall: jest.fn().mockResolvedValue({ unsignedXdr: 'AAAA', minResourceFee: '100', latestLedger: 1 }),
+      submitCall: jest.fn().mockResolvedValue({ hash: 'hash-1', status: 'SUCCEEDED', fee: '100' }),
+      network: jest.fn().mockReturnValue({
+        accountScVal: jest.fn(),
+        stringScVal: jest.fn(),
+        u64ScVal: jest.fn(),
+        i128ScVal: jest.fn(),
+        optionScVal: jest.fn(),
+        u32ScVal: jest.fn(),
+        boolScVal: jest.fn(),
+      }),
+    };
+    service = new InvoicesService(
+      mockPrisma as never,
+      mockWallet as never,
+      mockRealtime as never,
+      mockContracts as never,
+    );
   });
 
   describe('create', () => {

@@ -27,6 +27,9 @@ import { AdminModule } from './admin/admin.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
 import { MetricsModule } from './metrics/metrics.module';
+import { EscrowsModule } from './escrows/escrows.module';
+import { SubscriptionsModule } from './subscriptions/subscriptions.module';
+import { TreasuryModule } from './treasury/treasury.module';
 
 @Module({
   imports: [
@@ -63,6 +66,9 @@ import { MetricsModule } from './metrics/metrics.module';
     RealtimeModule,
     SchedulerModule,
     MetricsModule,
+    EscrowsModule,
+    SubscriptionsModule,
+    TreasuryModule,
   ],
   controllers: [AppController],
   providers: [

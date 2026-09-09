@@ -22,24 +22,7 @@ export interface SorobanPaymentEvent {
 
 /** True when an event's topic names the payment contract's `payment` event. */
 export function topicIsPayment(topic: unknown): boolean {
-  const first = Array.isArray(topic) ? topic[0] : undefined;
-  if (first == null) {
-    return false;
-  }
-  // RPC returns topic entries either as XDR base64 strings or decoded objects.
-  const raw = typeof first === 'string' ? first : (first as { xdr?: string }).xdr;
-  if (!raw) {
-    return false;
-  }
-  try {
-    const scVal = xdr.ScVal.fromXDR(Buffer.from(raw, 'base64'));
-    if (scVal.switch().name !== 'scvSymbol') {
-      return false;
-    }
-    return Buffer.from(symBytes(scVal)).toString('utf8') === 'payment';
-  } catch {
-    return false;
-  }
+  return topicName(topic) === 'payment';
 }
 
 /**
@@ -99,7 +82,7 @@ interface FieldEntry {
 }
 
 /** Flatten a data ScVal into ordered fields with optional map-key names. */
-function collectFields(scVal: xdr.ScVal): FieldEntry[] {
+export function collectFields(scVal: xdr.ScVal): FieldEntry[] {
   try {
     switch (scVal.switch().name) {
       case 'scvVec': {
@@ -136,7 +119,7 @@ function keyName(key: xdr.ScVal): string | undefined {
 }
 
 /** Decode an xdr.ScVal address (scvAddress) to a G…/C… string, or null. */
-function addressToStr(scVal: xdr.ScVal | undefined): string | null {
+export function addressToStr(scVal: xdr.ScVal | undefined): string | null {
   if (!scVal || scVal.switch().name !== 'scvAddress') {
     return null;
   }
@@ -176,9 +159,9 @@ function addressToStr(scVal: xdr.ScVal | undefined): string | null {
 }
 
 /** Read the integer out of an scvI128 ScVal. */
-function i128ToBigInt(scVal: xdr.ScVal): bigint | null {
+export function i128ToBigInt(scVal: xdr.ScVal | undefined): bigint | null {
   try {
-    if (scVal.switch().name !== 'scvI128') {
+    if (!scVal || scVal.switch().name !== 'scvI128') {
       return null;
     }
     const parts = scVal.i128();
@@ -212,8 +195,35 @@ function i128ToBigInt(scVal: xdr.ScVal): bigint | null {
   }
 }
 
+/** Read an integer out of an scvU64 ScVal. */
+export function u64ToBigInt(scVal: xdr.ScVal | undefined): bigint | null {
+  if (!scVal || scVal.switch().name !== 'scvU64') {
+    return null;
+  }
+  try {
+    const parts = scVal.u64() as unknown as {
+      toString?: () => string;
+      toBigInt?: () => bigint;
+      hi?: unknown;
+      lo?: unknown;
+    };
+    if (typeof parts?.toBigInt === 'function') {
+      return parts.toBigInt();
+    }
+    if (typeof parts?.toString === 'function') {
+      return BigInt(parts.toString());
+    }
+    // js-xdr Uint64Parts: hi/lo accessors.
+    const hi = (parts?.hi as bigint | undefined) ?? 0n;
+    const lo = (parts?.lo as bigint | undefined) ?? 0n;
+    return (BigInt(hi) << 64n) | BigInt(lo);
+  } catch {
+    return null;
+  }
+}
+
 /** Read a string out of an scvString ScVal (empty string when not a string). */
-function stringOf(scVal: xdr.ScVal): string | null {
+export function stringOf(scVal: xdr.ScVal): string | null {
   try {
     if (scVal.switch().name !== 'scvString') {
       return null;
@@ -226,6 +236,31 @@ function stringOf(scVal: xdr.ScVal): string | null {
 
 function symBytes(scVal: xdr.ScVal): Uint8Array {
   return (scVal.sym() ?? Buffer.alloc(0)) as Uint8Array;
+}
+
+/**
+ * Decode the topic's first entry (the event name symbol) to a string, or null
+ * when the topic does not name an event. Works with both base64 XDR strings
+ * and decoded ScVal objects as returned by Soroban RPC.
+ */
+export function topicName(topic: unknown): string | null {
+  const first = Array.isArray(topic) ? topic[0] : undefined;
+  if (first == null) {
+    return null;
+  }
+  const raw = typeof first === 'string' ? first : (first as { xdr?: string }).xdr;
+  if (!raw) {
+    return null;
+  }
+  try {
+    const scVal = xdr.ScVal.fromXDR(Buffer.from(raw, 'base64'));
+    if (scVal.switch().name !== 'scvSymbol') {
+      return null;
+    }
+    return Buffer.from(symBytes(scVal)).toString('utf8');
+  } catch {
+    return null;
+  }
 }
 
 /** Convert stroops to a decimal units string (e.g. XLM 7 decimals). */

@@ -6,6 +6,7 @@ import { RedisService } from '../infra/redis.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { InboundReconciliationService } from './inbound.service';
+import { ContractReconciliationService } from './contract-reconciliation.service';
 import { parsePaymentEventData, stroopsToUnits, topicIsPayment } from './soroban-event';
 import { MetricsService } from '../metrics/metrics.service';
 import { TransactionReconciliationService } from '../payments/transaction-reconciliation.service';
@@ -62,10 +63,29 @@ export class IndexerService {
     private readonly inbound: InboundReconciliationService,
     private readonly metrics: MetricsService,
     private readonly reconciliation: TransactionReconciliationService,
+    private readonly contractReconciliation: ContractReconciliationService,
   ) {}
 
-  private contractId(): string | undefined {
+  /** Payment contract id (drives the contract-route payment confirmation). */
+  private paymentContractId(): string | undefined {
     return this.config.get<string>('CONTRACT_STELLAR_PAY_PAYMENT') ?? undefined;
+  }
+
+  /**
+   * Every deployed contract the indexer watches (payment + the on-chain
+   * integrations: escrow, invoices, subscriptions, treasury, merchant).
+   */
+  private contractIds(): string[] {
+    return [
+      'CONTRACT_STELLAR_PAY_PAYMENT',
+      'CONTRACT_STELLAR_PAY_ESCROW',
+      'CONTRACT_STELLAR_PAY_INVOICES',
+      'CONTRACT_STELLAR_PAY_SUBSCRIPTIONS',
+      'CONTRACT_STELLAR_PAY_TREASURY',
+      'CONTRACT_STELLAR_PAY_MERCHANT',
+    ]
+      .map((key) => this.config.get<string>(key))
+      .filter((id): id is string => !!id);
   }
 
   private rpcUrl(): string | undefined {
@@ -73,7 +93,7 @@ export class IndexerService {
   }
 
   private isEnabled(): boolean {
-    return !!(this.contractId() && this.rpcUrl());
+    return this.contractIds().length > 0 && !!this.rpcUrl();
   }
 
   /** Native SAC contract id for the configured network (XLM inbound only). */
@@ -88,7 +108,7 @@ export class IndexerService {
   async syncOnce(): Promise<void> {
     if (!this.isEnabled()) {
       if (!this.warnedNoConfig) {
-        this.logger.warn('SOROBAN_RPC_URL / CONTRACT_STELLAR_PAY_PAYMENT not set — indexer idle');
+        this.logger.warn('SOROBAN_RPC_URL / deployed contract addresses not set — indexer idle');
         this.warnedNoConfig = true;
       }
       return;
@@ -163,17 +183,47 @@ export class IndexerService {
   }
 
   /**
-   * Ingest contract events (payment contract) from Soroban RPC. Event payloads
-   * from transactions this platform never built (external wallets paying the
-   * contract directly) cannot be correlated to a local row yet — they are
-   * logged and skipped rather than fabricated into confirmations.
+   * Ingest contract events for every deployed platform contract (payment +
+   * escrow + invoices + subscriptions + treasury + merchant) from Soroban RPC.
+   * Soroban RPC caps the number of contract IDs per filter at 5, so the
+   * watched contracts are chunked into filter groups, each with its own
+   * persisted cursor (a cursor only remains valid for the same filter). Event
+   * payloads from transactions this platform never built (external wallets
+   * paying a contract directly) are still reconciled where the event carries
+   * enough information (e.g. merchant `sale`/`settle`, escrow `released` by
+   * the counterparty) and safely ignored otherwise.
    */
   private async ingestContractEvents(): Promise<void> {
-    const contractId = this.contractId()!;
-    const cursor = await this.redis.get(CURSOR_KEY);
+    const contractIds = this.contractIds();
+    const groups: string[][] = [];
+    for (let i = 0; i < contractIds.length; i += 5) {
+      groups.push(contractIds.slice(i, i + 5));
+    }
+    for (let group = 0; group < groups.length; group++) {
+      try {
+        await this.ingestContractEventsGroup(groups[group], group, groups.length);
+      } catch (err) {
+        this.metrics.inc('indexer_ingest_failures_total');
+        this.logger.warn(
+          { err: (err as Error).message, group },
+          'contract event ingestion failed for filter group',
+        );
+      }
+    }
+  }
+
+  private async ingestContractEventsGroup(
+    contractIds: string[],
+    groupIndex: number,
+    groupCount: number,
+  ): Promise<void> {
+    // Single-group deployments keep the legacy cursor key; multi-group use a
+    // per-group suffix so each filter's cursor stays valid.
+    const cursorKey = groupCount > 1 ? `${CURSOR_KEY}:g${groupIndex}` : CURSOR_KEY;
+    const cursor = await this.redis.get(cursorKey);
 
     const params: Record<string, unknown> = {
-      filters: [{ type: 'contract', contractIds: [contractId] }],
+      filters: [{ type: 'contract', contractIds }],
       limit: 50,
     };
     if (cursor) {
@@ -192,11 +242,30 @@ export class IndexerService {
     // stopped (no replay, no gap under normal operation).
     const nextCursor = page?.cursor ?? (cursor ? cursor : null);
     if (nextCursor) {
-      await this.redis.set(CURSOR_KEY, nextCursor);
+      await this.redis.set(cursorKey, nextCursor);
     }
   }
 
   private async handleContractEvent(event: SorobanEvent): Promise<void> {
+    // On-chain integrations (escrow / invoices / subscriptions / treasury /
+    // merchant): dispatch non-payment events to the reconciliation service,
+    // which advances the owning record on on-chain evidence.
+    if (event.contractId && event.contractId !== this.paymentContractId()) {
+      if (!event.id) {
+        this.logger.warn('soroban event without id — cannot dedupe, skipping');
+        return;
+      }
+      await this.contractReconciliation.reconcile({
+        contractId: event.contractId,
+        eventId: event.id,
+        txHash: event.txHash ?? null,
+        ledger: event.ledger ?? null,
+        topic: event.topic,
+        value: event.value,
+      });
+      return;
+    }
+
     // Platform correlation: `sp:<correlationId>` memos map back to a row we
     // created. When the row exists it governs the payment — confirm it if
     // still SUBMITTED and never treat it as a separate inbound credit.
@@ -252,7 +321,7 @@ export class IndexerService {
       assetIssuer: null,
       hash: event.txHash ?? null,
       memo: parsed.memo || null,
-      contractId: this.contractId(),
+      contractId: this.paymentContractId(),
       ledger: event.ledger ?? null,
     });
   }

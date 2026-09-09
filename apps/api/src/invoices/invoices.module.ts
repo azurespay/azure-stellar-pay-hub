@@ -1,10 +1,14 @@
 import { Module } from '@nestjs/common';
-import { InvoicesController } from './invoices.controller';
+import { InvoicePayController, InvoicesController } from './invoices.controller';
 import { InvoicesService } from './invoices.service';
+import { ContractIntegrationService } from '../contracts/contract-integration.service';
+import { WalletModule } from '../wallet/wallet.module';
+import { RealtimeModule } from '../realtime/realtime.module';
 
 @Module({
-  controllers: [InvoicesController],
-  providers: [InvoicesService],
+  imports: [WalletModule, RealtimeModule],
+  controllers: [InvoicesController, InvoicePayController],
+  providers: [InvoicesService, ContractIntegrationService],
   exports: [InvoicesService],
 })
 export class InvoicesModule {}

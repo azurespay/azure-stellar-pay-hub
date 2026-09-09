@@ -2,7 +2,13 @@ import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ForbiddenException } from '@nestjs/common';
 import { CurrentUser, type AuthenticatedUser } from '../common/decorators';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
-import { createInvoiceSchema, type CreateInvoice } from '@stellar-pay/validation';
+import {
+  createInvoiceSchema,
+  payOnChainInvoiceSchema,
+  contractSubmitSchema,
+  type CreateInvoice,
+  type PayOnChainInvoice,
+} from '@stellar-pay/validation';
 import { InvoicesService } from './invoices.service';
 import { PrismaService } from '@stellar-pay/database';
 
@@ -45,5 +51,64 @@ export class InvoicesController {
   async cancel(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     const merchantId = await this.merchantIdOf(user);
     return this.invoices.cancel(merchantId, id);
+  }
+
+  // ── On-chain invoice lifecycle (Soroban invoices contract) ─────────────
+
+  @Post(':id/issue-onchain')
+  async issueOnChain(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    const merchantId = await this.merchantIdOf(user);
+    return this.invoices.issueOnChain(merchantId, id);
+  }
+
+  @Post(':id/issue-onchain/submit')
+  async submitIssueOnChain(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe({ body: contractSubmitSchema })) body: { signedXdr: string },
+  ) {
+    const merchantId = await this.merchantIdOf(user);
+    return this.invoices.submitIssueOnChain(merchantId, id, body.signedXdr);
+  }
+
+  @Post(':id/cancel-onchain')
+  async cancelOnChain(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    const merchantId = await this.merchantIdOf(user);
+    return this.invoices.cancelOnChain(merchantId, id);
+  }
+
+  @Post(':id/cancel-onchain/submit')
+  async submitCancelOnChain(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe({ body: contractSubmitSchema })) body: { signedXdr: string },
+  ) {
+    const merchantId = await this.merchantIdOf(user);
+    return this.invoices.submitCancelOnChain(merchantId, id, body.signedXdr);
+  }
+}
+
+@Controller('invoices')
+export class InvoicePayController {
+  constructor(private readonly invoices: InvoicesService) {}
+
+  @Post(':id/pay-onchain')
+  payOnChain(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe({ body: payOnChainInvoiceSchema })) body: PayOnChainInvoice,
+  ) {
+    return this.invoices.payOnChain(id, {
+      payerPublicKey: body.payerPublicKey,
+      payerUserId: user.userId,
+    });
+  }
+
+  @Post(':id/pay-onchain/confirm')
+  submitPayOnChain(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe({ body: contractSubmitSchema })) body: { signedXdr: string },
+  ) {
+    return this.invoices.submitPayOnChain(id, body.signedXdr);
   }
 }

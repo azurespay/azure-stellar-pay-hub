@@ -46,6 +46,15 @@ export const envSchema = z
     // `send` entry point for the configured assets.
     PAYMENT_ROUTE: z.enum(['classic', 'contract']).default('classic'),
     CONTRACT_STELLAR_PAY_PAYMENT: z.string().optional(),
+    // Other deployed contract addresses (see `.deployed-contracts.env`). These
+    // gate the escrow / invoices / subscriptions / treasury / merchant
+    // on-chain integrations: each feature is inactive when its contract
+    // address is not configured.
+    CONTRACT_STELLAR_PAY_ESCROW: z.string().optional(),
+    CONTRACT_STELLAR_PAY_INVOICES: z.string().optional(),
+    CONTRACT_STELLAR_PAY_SUBSCRIPTIONS: z.string().optional(),
+    CONTRACT_STELLAR_PAY_TREASURY: z.string().optional(),
+    CONTRACT_STELLAR_PAY_MERCHANT: z.string().optional(),
     PAYMENT_CONTRACT_ASSETS: z
       .string()
       .default('XLM')
