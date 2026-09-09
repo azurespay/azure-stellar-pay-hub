@@ -107,29 +107,48 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
+
+      - name: Check AKS credentials
+        id: creds
+        env:
+          AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+        run: |
+          if [ -z "$AZURE_CREDENTIALS" ]; then
+            echo "::warning title=AKS deploy skipped::AZURE_CREDENTIALS secret is not set in the 'production' environment. Add an Azure service principal JSON (clientId/clientSecret/subscriptionId/tenantId) to enable AKS deploys."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+        if: steps.creds.outputs.skip != 'true'
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
       - uses: azure/aks-set-context@4edaee69f820359371ee8bc85189ac03a21d3a58 # v3
+        if: steps.creds.outputs.skip != 'true'
         with:
           resource-group: ${{ env.AKS_RESOURCE_GROUP }}
           cluster-name: ${{ env.AKS_CLUSTER }}
 
       - name: Install dependencies
+        if: steps.creds.outputs.skip != 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Compute lowercase image prefix
+        if: steps.creds.outputs.skip != 'true'
         run: echo "IMAGE_PREFIX=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
 
       # `prisma migrate deploy` (not `migrate dev`) is the production-safe
       # command: it applies pending migrations without a shadow database and
       # can never prompt for or perform a destructive reset.
       - name: Run database migrations
+        if: steps.creds.outputs.skip != 'true'
         run: pnpm db:generate && pnpm exec prisma migrate deploy --schema=packages/database/prisma/schema.prisma
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
       - name: Inject image digests into kustomize
+        if: steps.creds.outputs.skip != 'true'
         env:
           API_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/api:${{ github.sha }}
           WEB_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/web:${{ github.sha }}
@@ -141,14 +160,17 @@ jobs:
           kustomize edit set image admin=$ADMIN_IMAGE
 
       - name: Apply manifests
+        if: steps.creds.outputs.skip != 'true'
         run: kubectl apply -k infrastructure/kubernetes
 
       - name: Wait for rollout
+        if: steps.creds.outputs.skip != 'true'
         run: |
           kubectl -n stellar-pay rollout status deployment/api --timeout=300s
           kubectl -n stellar-pay rollout status deployment/web --timeout=300s
 
       - name: Smoke test (in-cluster health check)
+        if: steps.creds.outputs.skip != 'true'
         run: |
           # Verify the deployed API serves /api/health from inside the cluster
           # (no external DNS needed — the ingress hosts are per-environment).
