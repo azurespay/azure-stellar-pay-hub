@@ -37,6 +37,45 @@ const INPUT_API_URL = process.env.API_URL ?? 'http://localhost:4000/api';
 const BOOT_API = !process.env.API_URL;
 const apiUrl = BOOT_API ? 'http://localhost:4100/api' : INPUT_API_URL.replace(/\/$/, '');
 
+// The harness both boots the API and connects to Postgres directly (to activate
+// the E2E merchant). Resolve the same local defaults into *this* process so
+// `new PrismaClient()` works even when the caller has not exported DATABASE_URL
+// — otherwise merchant activation throws and every merchant-gated flow (invoice,
+// subscriptions, settlement) fails with "Merchant account is not active".
+const DATABASE_URL =
+  process.env.DATABASE_URL ??
+  'postgresql://postgres:postgres@localhost:5432/stellar_pay?schema=public';
+const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
+process.env.DATABASE_URL ??= DATABASE_URL;
+process.env.REDIS_URL ??= REDIS_URL;
+
+// ── Robust HTTP helpers ─────────────────────────────────────────────────────
+//
+// The SDK ApiClient already bounds its own requests (15s AbortSignal); these
+// cover harness-level fetches (Friendbot, health) so a hung endpoint can never
+// stall the run, and every failure reports a readable detail instead of a bare
+// `err.message` (which is empty for many HTTP/Prisma errors).
+const HTTP_TIMEOUT_MS = Number(process.env.E2E_HTTP_TIMEOUT_MS ?? 20_000);
+
+async function fetchWithTimeout(url, init = {}, timeoutMs = HTTP_TIMEOUT_MS) {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+  } catch (err) {
+    if (err?.name === 'TimeoutError') {
+      throw new Error(`Request to ${url} timed out after ${timeoutMs}ms`);
+    }
+    throw err;
+  }
+}
+
+/** Readable failure detail — name, HTTP status, message, and cause. */
+function describeError(err) {
+  if (!err) return 'unknown error';
+  const status = err.statusCode ? ` [HTTP ${err.statusCode}]` : '';
+  const cause = err.cause ? ` (cause: ${err.cause?.message ?? err.cause})` : '';
+  return `${err.name ?? 'Error'}${status}: ${err.message || String(err)}${cause}`;
+}
+
 const results = [];
 function check(name, ok, detail = '') {
   results.push({ name, ok, detail });
@@ -56,17 +95,29 @@ async function bootApi() {
       JWT_SECRET: 'e2e-contracts-secret-16-chars',
       ADMIN_PASSWORD: 'E2eTest123!',
       WEBHOOK_SIGNING_SECRET: 'e2e-webhook-secret-16-chars',
-      DATABASE_URL: process.env.DATABASE_URL ?? 'postgresql://postgres:postgres@localhost:5432/stellar_pay?schema=public',
-      REDIS_URL: process.env.REDIS_URL ?? 'redis://localhost:6379',
+      DATABASE_URL,
+      REDIS_URL,
       STELLAR_NETWORK: 'testnet',
       SOROBAN_RPC_URL: process.env.SOROBAN_RPC_URL ?? 'https://soroban-testnet.stellar.org',
       PAYMENT_ROUTE: process.env.PAYMENT_ROUTE ?? 'classic',
-      CONTRACT_STELLAR_PAY_PAYMENT: process.env.CONTRACT_STELLAR_PAY_PAYMENT ?? 'CBDOGRJIOX46MEHIYRGU7BFKLT2OOPT7QIN7ZU53DH5WK7FF5QK7IN4Q',
-      CONTRACT_STELLAR_PAY_ESCROW: process.env.CONTRACT_STELLAR_PAY_ESCROW ?? 'CDWVUTCME6JSATWKKWIFVBEO4NAZSJCCX2ECNRQN3L33W65EFT3AMUEY',
-      CONTRACT_STELLAR_PAY_INVOICES: process.env.CONTRACT_STELLAR_PAY_INVOICES ?? 'CB3XBXQUY4LHSFPWJ4XZL6T7A2ITNMBWMCTT2QOS6LB7PF7RPJBTVDHZ',
-      CONTRACT_STELLAR_PAY_SUBSCRIPTIONS: process.env.CONTRACT_STELLAR_PAY_SUBSCRIPTIONS ?? 'CCMQF6EB5DT6HKWGOB5BTRMD6Q66D5MVBQQN5HOK3565WHATXINOLBNI',
-      CONTRACT_STELLAR_PAY_TREASURY: process.env.CONTRACT_STELLAR_PAY_TREASURY ?? 'CCKWXDASGA7W3KWMEOEXYWMV5RVDLV2WGEJOHO3SYHKMXHZ3X4UWRMKZ',
-      CONTRACT_STELLAR_PAY_MERCHANT: process.env.CONTRACT_STELLAR_PAY_MERCHANT ?? 'CDNQTYF4XSOPNY6ID6MHUROAC2BNIQTYWHJYVGXWMU5WFA5AOQGDQUEU',
+      CONTRACT_STELLAR_PAY_PAYMENT:
+        process.env.CONTRACT_STELLAR_PAY_PAYMENT ??
+        'CBDOGRJIOX46MEHIYRGU7BFKLT2OOPT7QIN7ZU53DH5WK7FF5QK7IN4Q',
+      CONTRACT_STELLAR_PAY_ESCROW:
+        process.env.CONTRACT_STELLAR_PAY_ESCROW ??
+        'CDWVUTCME6JSATWKKWIFVBEO4NAZSJCCX2ECNRQN3L33W65EFT3AMUEY',
+      CONTRACT_STELLAR_PAY_INVOICES:
+        process.env.CONTRACT_STELLAR_PAY_INVOICES ??
+        'CB3XBXQUY4LHSFPWJ4XZL6T7A2ITNMBWMCTT2QOS6LB7PF7RPJBTVDHZ',
+      CONTRACT_STELLAR_PAY_SUBSCRIPTIONS:
+        process.env.CONTRACT_STELLAR_PAY_SUBSCRIPTIONS ??
+        'CCMQF6EB5DT6HKWGOB5BTRMD6Q66D5MVBQQN5HOK3565WHATXINOLBNI',
+      CONTRACT_STELLAR_PAY_TREASURY:
+        process.env.CONTRACT_STELLAR_PAY_TREASURY ??
+        'CCKWXDASGA7W3KWMEOEXYWMV5RVDLV2WGEJOHO3SYHKMXHZ3X4UWRMKZ',
+      CONTRACT_STELLAR_PAY_MERCHANT:
+        process.env.CONTRACT_STELLAR_PAY_MERCHANT ??
+        'CDNQTYF4XSOPNY6ID6MHUROAC2BNIQTYWHJYVGXWMU5WFA5AOQGDQUEU',
     },
     shell: false,
     detached: true,
@@ -74,9 +125,11 @@ async function bootApi() {
   for (let i = 0; i < 40; i++) {
     await delay(1_000);
     try {
-      const res = await fetch(`${apiUrl}/health`);
+      const res = await fetchWithTimeout(`${apiUrl}/health`, {}, 5_000);
       if (res.ok) return child;
-    } catch { /* booting */ }
+    } catch {
+      /* booting */
+    }
   }
   child.kill();
   throw new Error('API failed to start within 40s');
@@ -84,20 +137,26 @@ async function bootApi() {
 
 async function fundAccount(publicKey, label) {
   try {
-    const fbResp = await fetch(`https://friendbot.stellar.org?addr=${publicKey}`);
+    const fbResp = await fetchWithTimeout(`https://friendbot.stellar.org?addr=${publicKey}`);
     const fbData = await fbResp.json();
-    check(`Friendbot funded ${label}`, fbData?.successful === true, fbData?.hash?.slice(0, 8) ?? '');
+    check(
+      `Friendbot funded ${label}`,
+      fbData?.successful === true,
+      fbData?.hash?.slice(0, 8) ?? '',
+    );
     if (fbData?.successful) await delay(3_000);
     return fbData?.successful === true;
   } catch (err) {
-    check(`Friendbot funded ${label}`, false, err.message);
+    check(`Friendbot funded ${label}`, false, describeError(err));
     return false;
   }
 }
 
 async function authUser(client, keypair) {
   const challenge = await client.auth.challenge(keypair.publicKey());
-  const signature = Buffer.from(keypair.sign(Buffer.from(challenge.message, 'utf8'))).toString('hex');
+  const signature = Buffer.from(keypair.sign(Buffer.from(challenge.message, 'utf8'))).toString(
+    'hex',
+  );
   const auth = await client.auth.verify({
     publicKey: keypair.publicKey(),
     signature,
@@ -135,7 +194,7 @@ async function run() {
   if (BOOT_API) child = await bootApi();
 
   try {
-    const health = await fetch(`${apiUrl}/health`).then((r) => r.json());
+    const health = await fetchWithTimeout(`${apiUrl}/health`).then((r) => r.json());
     check('API healthy', health?.status === 'ok');
 
     // Keypairs: initiator + counterparty (escrow), merchant, customer.
@@ -176,14 +235,22 @@ async function run() {
           releaseTime: new Date(releaseTimeMs).toISOString(),
         },
       });
-      check('Escrow created (prepare)', !!created?.id && !!created?.unsignedXdr, `id=${created?.id?.slice(0, 8)}`);
+      check(
+        'Escrow created (prepare)',
+        !!created?.id && !!created?.unsignedXdr,
+        `id=${created?.id?.slice(0, 8)}`,
+      );
       const signed = await signXdr(created.unsignedXdr, initiatorKp);
       const submitted = await initiator.request({
         method: 'POST',
         path: `/escrows/${created.id}/submit`,
         body: { signedXdr: signed },
       });
-      check('Escrow create submitted', submitted?.status === 'SUBMITTED', `status=${submitted?.status}`);
+      check(
+        'Escrow create submitted',
+        submitted?.status === 'SUBMITTED',
+        `status=${submitted?.status}`,
+      );
       const fundedEscrow = await poll(
         async () => {
           const e = await initiator.request({ method: 'GET', path: `/escrows/${created.id}` });
@@ -192,7 +259,11 @@ async function run() {
         150_000,
         'escrow FUNDED (indexed `created`)',
       );
-      check('Escrow FUNDED on-chain (event indexer)', fundedEscrow?.status === 'FUNDED', `contractId=${fundedEscrow?.contractId}`);
+      check(
+        'Escrow FUNDED on-chain (event indexer)',
+        fundedEscrow?.status === 'FUNDED',
+        `contractId=${fundedEscrow?.contractId}`,
+      );
 
       // Wait for the release window to open (release_time passes on the ledger).
       const waitMs = releaseTimeMs - Date.now() + 15_000;
@@ -220,9 +291,13 @@ async function run() {
         150_000,
         'escrow RELEASED (indexed `released`)',
       );
-      check('Escrow RELEASED on-chain', released?.status === 'RELEASED', `hash=${released?.releaseHash?.slice(0, 8)}`);
+      check(
+        'Escrow RELEASED on-chain',
+        released?.status === 'RELEASED',
+        `hash=${released?.releaseHash?.slice(0, 8)}`,
+      );
     } catch (err) {
-      check('Escrow flow', false, err.message);
+      check('Escrow flow', false, describeError(err));
     }
 
     // ── Treasury: deposit → CONFIRMED ────────────────────────────────────
@@ -233,7 +308,11 @@ async function run() {
         path: '/treasury/deposits',
         body: { fromPublicKey: initiatorKp.publicKey(), assetCode: 'XLM', amount: '2' },
       });
-      check('Deposit prepared', !!deposit?.id && !!deposit?.unsignedXdr, `id=${deposit?.id?.slice(0, 8)}`);
+      check(
+        'Deposit prepared',
+        !!deposit?.id && !!deposit?.unsignedXdr,
+        `id=${deposit?.id?.slice(0, 8)}`,
+      );
       const signedDeposit = await signXdr(deposit.unsignedXdr, initiatorKp);
       await initiator.request({
         method: 'POST',
@@ -249,9 +328,13 @@ async function run() {
         150_000,
         'deposit CONFIRMED (indexed `deposit`)',
       );
-      check('Treasury deposit CONFIRMED on-chain', confirmedDeposit?.status === 'CONFIRMED', `hash=${confirmedDeposit?.hash?.slice(0, 8)}`);
+      check(
+        'Treasury deposit CONFIRMED on-chain',
+        confirmedDeposit?.status === 'CONFIRMED',
+        `hash=${confirmedDeposit?.hash?.slice(0, 8)}`,
+      );
     } catch (err) {
-      check('Treasury deposit flow', false, err.message);
+      check('Treasury deposit flow', false, describeError(err));
     }
 
     // ── Invoice: create → issue on-chain → pay on-chain → PAID ───────────
@@ -300,14 +383,21 @@ async function run() {
       });
       const issuedInvoice = await poll(
         async () => {
-          const list = await merchantUser.request({ method: 'GET', path: '/merchants/me/invoices' });
+          const list = await merchantUser.request({
+            method: 'GET',
+            path: '/merchants/me/invoices',
+          });
           const row = list.find((i) => i.id === invoice.id);
           return row?.onChainId ? row : null;
         },
         150_000,
         'invoice onChainId (indexed `issued`)',
       );
-      check('Invoice issued on-chain', !!issuedInvoice?.onChainId, `onChainId=${issuedInvoice?.onChainId}`);
+      check(
+        'Invoice issued on-chain',
+        !!issuedInvoice?.onChainId,
+        `onChainId=${issuedInvoice?.onChainId}`,
+      );
 
       const payPrepared = await customer.request({
         method: 'POST',
@@ -323,7 +413,10 @@ async function run() {
       });
       const paidInvoice = await poll(
         async () => {
-          const list = await merchantUser.request({ method: 'GET', path: '/merchants/me/invoices' });
+          const list = await merchantUser.request({
+            method: 'GET',
+            path: '/merchants/me/invoices',
+          });
           const row = list.find((i) => i.id === invoice.id);
           return row?.status === 'PAID' ? row : null;
         },
@@ -332,7 +425,7 @@ async function run() {
       );
       check('Invoice PAID on-chain (event indexer)', paidInvoice?.status === 'PAID');
     } catch (err) {
-      check('Invoice flow', false, err.message);
+      check('Invoice flow', false, describeError(err));
     }
 
     // ── Merchant on-chain + subscriptions ────────────────────────────────
@@ -363,7 +456,11 @@ async function run() {
         150_000,
         'merchant onChainMerchantId (indexed `reg`)',
       );
-      check('Merchant registered on-chain', !!registered?.onChainMerchantId, `id=${registered?.onChainMerchantId}`);
+      check(
+        'Merchant registered on-chain',
+        !!registered?.onChainMerchantId,
+        `id=${registered?.onChainMerchantId}`,
+      );
 
       const plan = await merchantUser.request({
         method: 'POST',
@@ -386,7 +483,11 @@ async function run() {
         150_000,
         'plan ACTIVE (indexed `plan`)',
       );
-      check('Subscription plan ACTIVE on-chain', activePlan?.status === 'ACTIVE', `contractPlanId=${activePlan?.contractPlanId}`);
+      check(
+        'Subscription plan ACTIVE on-chain',
+        activePlan?.status === 'ACTIVE',
+        `contractPlanId=${activePlan?.contractPlanId}`,
+      );
 
       const sub = await customer.request({
         method: 'POST',
@@ -409,7 +510,11 @@ async function run() {
         150_000,
         'subscription ACTIVE (indexed `sub`)',
       );
-      check('Subscription ACTIVE on-chain (first payment executed)', activeSub?.status === 'ACTIVE', `contractSubscriptionId=${activeSub?.contractSubscriptionId}`);
+      check(
+        'Subscription ACTIVE on-chain (first payment executed)',
+        activeSub?.status === 'ACTIVE',
+        `contractSubscriptionId=${activeSub?.contractSubscriptionId}`,
+      );
 
       // record_sale → settle: full merchant settlement lifecycle on-chain.
       const myMerchant = await merchantUser.request({ method: 'GET', path: '/merchants/me' });
@@ -427,7 +532,11 @@ async function run() {
       });
       const credited = await poll(
         async () => {
-          const txs = await merchantUser.request({ method: 'GET', path: '/transactions', query: {} });
+          const txs = await merchantUser.request({
+            method: 'GET',
+            path: '/transactions',
+            query: {},
+          });
           return txs?.data?.some((t) => t.kind === 'merchant_sale') ? true : null;
         },
         150_000,
@@ -440,7 +549,11 @@ async function run() {
         path: '/merchants/me/onchain/settle',
         body: { ownerPublicKey: merchantKp.publicKey(), assetCode: 'XLM' },
       });
-      check('Settle prepared', !!settle?.unsignedXdr, `settlementId=${settle?.settlementId?.slice(0, 8)}`);
+      check(
+        'Settle prepared',
+        !!settle?.unsignedXdr,
+        `settlementId=${settle?.settlementId?.slice(0, 8)}`,
+      );
       const signedSettle = await signXdr(settle.unsignedXdr, merchantKp);
       await merchantUser.request({
         method: 'POST',
@@ -449,31 +562,46 @@ async function run() {
       });
       const settled = await poll(
         async () => {
-          const settlements = await merchantUser.request({ method: 'GET', path: '/merchants/me/settlements' });
+          const settlements = await merchantUser.request({
+            method: 'GET',
+            path: '/merchants/me/settlements',
+          });
           const row = settlements.find((s) => s.id === settle.settlementId);
           return row?.status === 'COMPLETED' ? row : null;
         },
         150_000,
         'settlement COMPLETED (indexed `settle`)',
       );
-      check('Merchant settlement COMPLETED on-chain', settled?.status === 'COMPLETED', `amount=${settled?.amount}`);
+      check(
+        'Merchant settlement COMPLETED on-chain',
+        settled?.status === 'COMPLETED',
+        `amount=${settled?.amount}`,
+      );
     } catch (err) {
-      check('Merchant/subscriptions flow', false, err.message);
+      check('Merchant/subscriptions flow', false, describeError(err));
     }
   } finally {
     const passed = results.filter((r) => r.ok).length;
     const failed = results.filter((r) => !r.ok).length;
     console.log(`\n${'═'.repeat(60)}`);
-    console.log(`  Contract integrations E2E: ${passed} passed, ${failed} failed, ${results.length} total`);
+    console.log(
+      `  Contract integrations E2E: ${passed} passed, ${failed} failed, ${results.length} total`,
+    );
     console.log(`${'═'.repeat(60)}\n`);
     if (child) {
-      try { process.kill(-child.pid, 'SIGTERM'); } catch { child.kill('SIGTERM'); }
+      try {
+        process.kill(-child.pid, 'SIGTERM');
+      } catch {
+        child.kill('SIGTERM');
+      }
       await delay(1_000);
     }
   }
 }
 
-run().catch((err) => {
-  console.error('Fatal:', err.message);
-  process.exitCode = 1;
-}).finally(() => setTimeout(() => process.exit(process.exitCode ?? 0), 500));
+run()
+  .catch((err) => {
+    console.error('Fatal:', describeError(err));
+    process.exitCode = 1;
+  })
+  .finally(() => setTimeout(() => process.exit(process.exitCode ?? 0), 500));

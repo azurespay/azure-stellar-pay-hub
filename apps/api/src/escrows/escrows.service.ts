@@ -71,9 +71,9 @@ export class EscrowsService {
         this.contracts.network().accountScVal(tokenAddress),
         this.contracts.network().i128ScVal(BigInt(toStroops(dto.amount))),
         this.contracts.network().u64ScVal(BigInt(releaseTime)),
-        this.contracts.network().optionScVal(
-          expiry !== null ? this.contracts.network().u64ScVal(BigInt(expiry)) : null,
-        ),
+        this.contracts
+          .network()
+          .optionScVal(expiry !== null ? this.contracts.network().u64ScVal(BigInt(expiry)) : null),
       ],
     });
 
@@ -309,7 +309,11 @@ export class EscrowsService {
     if (!escrow.contractId) {
       throw new BadRequestException('Escrow is not yet funded on-chain');
     }
-    const allowed = [escrow.initiatorPublicKey, escrow.counterpartyPublicKey, escrow.arbiterPublicKey];
+    const allowed = [
+      escrow.initiatorPublicKey,
+      escrow.counterpartyPublicKey,
+      escrow.arbiterPublicKey,
+    ];
     if (!allowed.includes(callerPublicKey)) {
       throw new ForbiddenException('Only the initiator, counterparty, or arbiter can release');
     }
@@ -317,13 +321,20 @@ export class EscrowsService {
 
   /** Refund authorization: initiator or counterparty (contract enforces timing). */
   private assertCanRefund(
-    escrow: { contractId: number | null; initiatorPublicKey: string; counterpartyPublicKey: string },
+    escrow: {
+      contractId: number | null;
+      initiatorPublicKey: string;
+      counterpartyPublicKey: string;
+    },
     callerPublicKey: string,
   ) {
     if (!escrow.contractId) {
       throw new BadRequestException('Escrow is not yet funded on-chain');
     }
-    if (callerPublicKey !== escrow.initiatorPublicKey && callerPublicKey !== escrow.counterpartyPublicKey) {
+    if (
+      callerPublicKey !== escrow.initiatorPublicKey &&
+      callerPublicKey !== escrow.counterpartyPublicKey
+    ) {
       throw new ForbiddenException('Only the initiator or counterparty can refund');
     }
   }

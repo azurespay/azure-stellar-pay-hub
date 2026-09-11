@@ -24,6 +24,7 @@
     "test": "nx run-many -t test",
     "test:e2e": "node tests/smoke.mjs",
     "test:e2e:flow": "node tests/e2e/auth-payment-flow.mjs",
+    "test:e2e:contracts": "node tests/e2e/contracts-flow.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:generate": "pnpm --filter @stellar-pay/database build",

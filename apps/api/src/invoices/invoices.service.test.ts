@@ -29,7 +29,9 @@ describe('InvoicesService', () => {
     mockContracts = {
       requireContractAddress: jest.fn().mockReturnValue('CCONTRACT'),
       tokenAddress: jest.fn().mockReturnValue('CTOKEN'),
-      prepareCall: jest.fn().mockResolvedValue({ unsignedXdr: 'AAAA', minResourceFee: '100', latestLedger: 1 }),
+      prepareCall: jest
+        .fn()
+        .mockResolvedValue({ unsignedXdr: 'AAAA', minResourceFee: '100', latestLedger: 1 }),
       submitCall: jest.fn().mockResolvedValue({ hash: 'hash-1', status: 'SUCCEEDED', fee: '100' }),
       network: jest.fn().mockReturnValue({
         accountScVal: jest.fn(),

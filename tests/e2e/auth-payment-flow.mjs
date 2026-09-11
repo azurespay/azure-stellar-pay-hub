@@ -28,9 +28,11 @@
  * in boot mode, a CONTRACT_STELLAR_PAY_PAYMENT env var.
  *
  * This is a *testnet E2E test*: it requires a live API (Postgres + Redis) and
- * live Stellar testnet access (Friendbot + Horizon). It runs in CI on pushes
- * to main (non-blocking) in the `testnet-e2e` job; deterministic unit/
- * contract/integration tests gate PRs.
+ * live Stellar testnet access (Friendbot + Horizon). It runs in the
+ * `testnet-e2e` CI job on PRs and main as a **required** gate (retried once to
+ * absorb Friendbot/ledger flakiness), alongside the contract-integrations E2E
+ * (`tests/e2e/contracts-flow.mjs`). Every HTTP call is bounded by a timeout so
+ * a hung endpoint fails the run instead of stalling it.
  *
  * Usage:
  *   # Against a running API (API_URL must include the /api prefix):
@@ -61,6 +63,33 @@ const SUBMIT_STATUS = CONTRACT_ROUTE ? 'SUBMITTED' : 'SUCCEEDED';
 // mounted at the host root (`/realtime` namespace).
 const apiUrl = BOOT_API ? 'http://localhost:4100/api' : INPUT_API_URL.replace(/\/$/, '');
 const rootUrl = apiUrl.replace(/\/api$/, '');
+
+// ── Robust HTTP helpers ─────────────────────────────────────────────────────
+//
+// The SDK ApiClient already bounds its own requests (15s AbortSignal). These
+// helpers cover the *harness-level* fetches (Friendbot, health, logout) so a
+// hung endpoint can never stall the run indefinitely, and give every failure a
+// readable description (`err.message` alone is often empty for HTTP errors).
+const HTTP_TIMEOUT_MS = Number(process.env.E2E_HTTP_TIMEOUT_MS ?? 20_000);
+
+async function fetchWithTimeout(url, init = {}, timeoutMs = HTTP_TIMEOUT_MS) {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+  } catch (err) {
+    if (err?.name === 'TimeoutError') {
+      throw new Error(`Request to ${url} timed out after ${timeoutMs}ms`);
+    }
+    throw err;
+  }
+}
+
+/** Readable failure detail — name, HTTP status, message, and cause. */
+function describeError(err) {
+  if (!err) return 'unknown error';
+  const status = err.statusCode ? ` [HTTP ${err.statusCode}]` : '';
+  const cause = err.cause ? ` (cause: ${err.cause?.message ?? err.cause})` : '';
+  return `${err.name ?? 'Error'}${status}: ${err.message || String(err)}${cause}`;
+}
 
 // ── Test helpers ────────────────────────────────────────────────────────────
 
@@ -119,7 +148,7 @@ async function bootApi() {
   for (let i = 0; i < 30; i++) {
     await delay(1_000);
     try {
-      const res = await fetch(`http://localhost:4100/api/health`);
+      const res = await fetchWithTimeout(`http://localhost:4100/api/health`, {}, 5_000);
       if (res.ok) {
         console.log('  API is ready.');
         return child;
@@ -135,7 +164,7 @@ async function bootApi() {
 /** Fund a testnet account via Friendbot and wait for the ledger to close. */
 async function fundAccount(publicKey, label) {
   try {
-    const fbResp = await fetch(`https://friendbot.stellar.org?addr=${publicKey}`);
+    const fbResp = await fetchWithTimeout(`https://friendbot.stellar.org?addr=${publicKey}`);
     const fbData = await fbResp.json();
     check(
       `Friendbot funded ${label}`,
@@ -147,7 +176,7 @@ async function fundAccount(publicKey, label) {
     }
     return fbData?.successful === true;
   } catch (err) {
-    check(`Friendbot funded ${label}`, false, err.message);
+    check(`Friendbot funded ${label}`, false, describeError(err));
     return false;
   }
 }
@@ -192,7 +221,7 @@ async function run() {
   try {
     // -- Step 1: Health check ---------------------------------------------------
     console.log('\n1. Health check');
-    const health = await fetch(`${apiUrl}/health`).then((r) => r.json());
+    const health = await fetchWithTimeout(`${apiUrl}/health`).then((r) => r.json());
     check('API is healthy', health?.status === 'ok', JSON.stringify(health));
     if (health?.status !== 'ok') {
       console.error('  API not healthy — aborting');
@@ -223,7 +252,7 @@ async function run() {
         challenge?.message?.slice(0, 40),
       );
     } catch (err) {
-      check('Challenge received', false, err.message);
+      check('Challenge received', false, describeError(err));
       return;
     }
 
@@ -254,7 +283,7 @@ async function run() {
       check('Refresh token present', !!authResult?.refreshToken);
       check('User created/returned', !!authResult?.user?.id);
     } catch (err) {
-      check('Auth verified', false, err.message);
+      check('Auth verified', false, describeError(err));
       return;
     }
 
@@ -292,7 +321,7 @@ async function run() {
         `xdr=${payment?.unsignedXdr?.slice(0, 20)}…`,
       );
     } catch (err) {
-      check('Payment created', false, err.message);
+      check('Payment created', false, describeError(err));
       return;
     }
 
@@ -314,7 +343,7 @@ async function run() {
       socketConnected = true;
       check('Socket.IO connected with JWT', true, `socket=${socket.id?.slice(0, 8)}…`);
     } catch (err) {
-      check('Socket.IO connected with JWT', false, err.message);
+      check('Socket.IO connected with JWT', false, describeError(err));
     }
     const realtimeEvent = socketConnected
       ? waitForTransactionEvent(socket, payment.id).catch((err) => ({ error: err.message }))
@@ -345,7 +374,7 @@ async function run() {
       }
       check('Transaction signed', !!signedXdr, `xdr=${signedXdr.slice(0, 20)}…`);
     } catch (err) {
-      check('Transaction signed', false, err.message);
+      check('Transaction signed', false, describeError(err));
     }
 
     // -- Step 10: Submit the signed transaction ----------------------------------
@@ -364,7 +393,7 @@ async function run() {
           JSON.stringify(submitted),
         );
       } catch (err) {
-        check('Submission accepted', false, err.message);
+        check('Submission accepted', false, describeError(err));
       }
     }
 
@@ -422,7 +451,7 @@ async function run() {
     // -- Step 13: Logout ---------------------------------------------------------
     console.log('\n13. Logout');
     try {
-      const logoutResp = await fetch(`${apiUrl}/auth/logout`, {
+      const logoutResp = await fetchWithTimeout(`${apiUrl}/auth/logout`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${authResult.accessToken}` },
       });
@@ -432,7 +461,7 @@ async function run() {
         `HTTP ${logoutResp.status}`,
       );
     } catch (err) {
-      check('Logout succeeded', false, err.message);
+      check('Logout succeeded', false, describeError(err));
     }
 
     // -- Step 14: Verify JWT is invalidated --------------------------------------
@@ -455,7 +484,7 @@ async function run() {
       const account = await network.getAccount(destKp.publicKey());
       check('Testnet Horizon reachable', !!account, `sequence=${account?.sequenceNumber()}`);
     } catch (err) {
-      check('Testnet Horizon reachable', false, err.message);
+      check('Testnet Horizon reachable', false, describeError(err));
     }
   } finally {
     summary();
@@ -473,7 +502,7 @@ async function run() {
 
 run()
   .catch((err) => {
-    console.error('\nFatal error:', err.message);
+    console.error('\nFatal error:', describeError(err));
     process.exitCode = 1;
     summary();
   })

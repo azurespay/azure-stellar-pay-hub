@@ -183,7 +183,9 @@ export class SubscriptionsService {
     const plan = await this.prisma.subscriptionPlan.findUnique({
       where: { id: subscription.planId },
     });
-    const merchant = plan ? await this.prisma.merchant.findUnique({ where: { userId: plan.userId } }) : null;
+    const merchant = plan
+      ? await this.prisma.merchant.findUnique({ where: { userId: plan.userId } })
+      : null;
     const subscriberKeys = await this.prisma.wallet.findMany({
       where: { userId: subscription.userId, status: 'ACTIVE' },
       select: { publicKey: true },
@@ -252,7 +254,10 @@ export class SubscriptionsService {
   }
 
   async listPlans(userId: string) {
-    return this.prisma.subscriptionPlan.findMany({ where: { userId }, orderBy: { createdAt: 'desc' } });
+    return this.prisma.subscriptionPlan.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   async listSubscriptions(userId: string) {

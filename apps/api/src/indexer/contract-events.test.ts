@@ -11,9 +11,7 @@ function accountScVal(publicKey: string): xdr.ScVal {
 
 function contractScVal(contractId: string): xdr.ScVal {
   return xdr.ScVal.scvAddress(
-    xdr.ScAddress.scAddressTypeContract(
-      StrKey.decodeContract(contractId) as unknown as xdr.Hash,
-    ),
+    xdr.ScAddress.scAddressTypeContract(StrKey.decodeContract(contractId) as unknown as xdr.Hash),
   );
 }
 
@@ -55,12 +53,19 @@ describe('parseContractEvent', () => {
 
   it('returns null for unknown topics and unparseable payloads', () => {
     expect(parseContractEvent(['garbage'], undefined)).toBeNull();
-    expect(parseContractEvent([xdr.ScVal.scvSymbol('nope').toXDR('base64').toString()], '%%%')).toBeNull();
+    expect(
+      parseContractEvent([xdr.ScVal.scvSymbol('nope').toXDR('base64').toString()], '%%%'),
+    ).toBeNull();
     expect(parseContractEvent(undefined, undefined)).toBeNull();
   });
 
   it('parses the escrow `created` event (positional vec)', () => {
-    const value = vecValue([u64(7n), accountScVal(payer), accountScVal(recipient), i128(100_000_000n)]);
+    const value = vecValue([
+      u64(7n),
+      accountScVal(payer),
+      accountScVal(recipient),
+      i128(100_000_000n),
+    ]);
     const event = parseContractEvent(topic('created'), value);
     expect(event).toEqual({
       topic: 'created',
@@ -157,7 +162,13 @@ describe('parseContractEvent', () => {
 
     const wprop = parseContractEvent(
       topic('wprop'),
-      vecValue([u64(2n), contractScVal(sac), accountScVal(to), i128(10_000_000n), accountScVal(from)]),
+      vecValue([
+        u64(2n),
+        contractScVal(sac),
+        accountScVal(to),
+        i128(10_000_000n),
+        accountScVal(from),
+      ]),
     );
     expect(wprop?.topic).toBe('wprop');
     expect(wprop?.id).toBe(2n);
@@ -193,7 +204,13 @@ describe('parseContractEvent', () => {
 
     const settle = parseContractEvent(
       topic('settle'),
-      vecValue([u64(1n), contractScVal(sac), i128(8_900_000n), i128(100_000n), accountScVal(settlement)]),
+      vecValue([
+        u64(1n),
+        contractScVal(sac),
+        i128(8_900_000n),
+        i128(100_000n),
+        accountScVal(settlement),
+      ]),
     );
     expect(settle).toEqual({
       topic: 'settle',

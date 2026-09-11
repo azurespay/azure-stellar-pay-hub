@@ -42,9 +42,7 @@ function value(fields: xdr.ScVal[]): string {
 
 function contractScVal(contractId: string): xdr.ScVal {
   return xdr.ScVal.scvAddress(
-    xdr.ScAddress.scAddressTypeContract(
-      StrKey.decodeContract(contractId) as unknown as xdr.Hash,
-    ),
+    xdr.ScAddress.scAddressTypeContract(StrKey.decodeContract(contractId) as unknown as xdr.Hash),
   );
 }
 
@@ -65,8 +63,16 @@ describe('ContractReconciliationService', () => {
     mockPrisma = {
       escrow: { updateMany: jest.fn().mockResolvedValue({ count: 1 }), findFirst: jest.fn() },
       invoice: { updateMany: jest.fn().mockResolvedValue({ count: 1 }), findUnique: jest.fn() },
-      treasuryWithdrawal: { updateMany: jest.fn().mockResolvedValue({ count: 1 }), findUnique: jest.fn(), update: jest.fn() },
-      merchant: { updateMany: jest.fn().mockResolvedValue({ count: 1 }), findFirst: jest.fn(), findUnique: jest.fn() },
+      treasuryWithdrawal: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUnique: jest.fn(),
+        update: jest.fn(),
+      },
+      merchant: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findFirst: jest.fn(),
+        findUnique: jest.fn(),
+      },
       settlement: { updateMany: jest.fn().mockResolvedValue({ count: 1 }), findFirst: jest.fn() },
       chainEvent: { findUnique: jest.fn().mockResolvedValue(null), create: jest.fn() },
       transaction: { create: jest.fn() },
@@ -99,7 +105,12 @@ describe('ContractReconciliationService', () => {
         eventId: 'evt-1',
         txHash: 'tx-create',
         topic: topic('created'),
-        value: value([u64(5n), accountScVal(payer), accountScVal(counterparty), i128(100_000_000n)]),
+        value: value([
+          u64(5n),
+          accountScVal(payer),
+          accountScVal(counterparty),
+          i128(100_000_000n),
+        ]),
       });
       expect(mockPrisma.escrow.updateMany).toHaveBeenCalledWith({
         where: { hash: 'tx-create', status: 'SUBMITTED' },
@@ -119,7 +130,12 @@ describe('ContractReconciliationService', () => {
         eventId: 'evt-1-dup',
         txHash: 'tx-create',
         topic: topic('created'),
-        value: value([u64(5n), accountScVal(payer), accountScVal(counterparty), i128(100_000_000n)]),
+        value: value([
+          u64(5n),
+          accountScVal(payer),
+          accountScVal(counterparty),
+          i128(100_000_000n),
+        ]),
       });
       expect(mockPrisma.escrow.updateMany).toHaveBeenCalledTimes(1);
       expect(mockRealtime.emitToUser).not.toHaveBeenCalled();

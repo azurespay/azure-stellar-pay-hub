@@ -105,11 +105,15 @@ describe('EscrowsService', () => {
       mockContracts.requireContractAddress.mockImplementation(() => {
         throw new ServiceUnavailableException('not configured');
       });
-      await expect(service.create('user-1', dto as never)).rejects.toThrow(ServiceUnavailableException);
+      await expect(service.create('user-1', dto as never)).rejects.toThrow(
+        ServiceUnavailableException,
+      );
     });
 
     it('requires wallet ownership of the initiator key', async () => {
-      mockWallet.assertWalletOwnership.mockRejectedValue(new NotFoundException('Wallet not linked'));
+      mockWallet.assertWalletOwnership.mockRejectedValue(
+        new NotFoundException('Wallet not linked'),
+      );
       await expect(service.create('user-1', dto as never)).rejects.toThrow(NotFoundException);
     });
   });

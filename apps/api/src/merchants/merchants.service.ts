@@ -209,7 +209,9 @@ export class MerchantsService {
     }
     const result = await this.contracts.submitCall(signedXdr);
     if (result.status === 'FAILED') {
-      throw new BadRequestException(`Merchant registration reverted on-chain: ${result.errorMessage}`);
+      throw new BadRequestException(
+        `Merchant registration reverted on-chain: ${result.errorMessage}`,
+      );
     }
     const updated = await this.prisma.merchant.update({
       where: { id: merchant.id },
@@ -229,7 +231,12 @@ export class MerchantsService {
   async recordSale(
     userId: string,
     merchantId: string,
-    input: { payerPublicKey: string; assetCode?: string; assetIssuer?: string | null; amount: string },
+    input: {
+      payerPublicKey: string;
+      assetCode?: string;
+      assetIssuer?: string | null;
+      amount: string;
+    },
   ) {
     await this.wallet.assertWalletOwnership(userId, input.payerPublicKey);
     const merchant = await this.prisma.merchant.findUnique({ where: { id: merchantId } });
@@ -267,7 +274,11 @@ export class MerchantsService {
       throw new BadRequestException(`Sale reverted on-chain: ${result.errorMessage}`);
     }
     // The merchant's INCOMING credit lands when the indexer observes `sale`.
-    return { hash: result.hash, status: 'SUBMITTED', message: 'Sale submitted — confirming on-chain' };
+    return {
+      hash: result.hash,
+      status: 'SUBMITTED',
+      message: 'Sale submitted — confirming on-chain',
+    };
   }
 
   /**

@@ -5,30 +5,31 @@
 Tests are organised by how much live infrastructure they require, so each tier
 can be run in the right environment:
 
-| Tier                                     | Requires                                                                     | Run in CI?                                                         | Command                                   |
-| ---------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------ | ----------------------------------------- |
-| **1. Deterministic unit / integration**  | Nothing external (deps mocked)                                               | ✅ yes                                                             | `pnpm test`                               |
-| **2. Soroban contract tests**            | Rust toolchain (+ `wasm32v1-none`)                                           | ✅ yes                                                             | `pnpm contracts:test`                     |
-| **3. API integration (Nest, supertest)** | Postgres + Redis (docker-compose)                                            | ✅ yes (CI provisions the services and runs `db:push` + the suite) | `pnpm --filter @stellar-pay/api test:e2e` |
-| **4. Local-stack smoke**                 | Booted API + Postgres + Redis                                                | ❌ no                                                              | `pnpm test:e2e`                           |
-| **5. Testnet E2E (payment lifecycle)**   | Booted API + Postgres + Redis + **live Stellar testnet** (Friendbot/Horizon) | ❌ no                                                              | `pnpm test:e2e:flow`                      |
-| **6. Load test**                         | Booted API + Postgres + Redis                                                | ❌ no                                                              | `k6 run tests/load/payment-load.js`       |
+| Tier                                     | Requires                                                                     | Run in CI?                                                         | Command                                          |
+| ---------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------ |
+| **1. Deterministic unit / integration**  | Nothing external (deps mocked)                                               | ✅ yes                                                             | `pnpm test`                                      |
+| **2. Soroban contract tests**            | Rust toolchain (+ `wasm32v1-none`)                                           | ✅ yes                                                             | `pnpm contracts:test`                            |
+| **3. API integration (Nest, supertest)** | Postgres + Redis (docker-compose)                                            | ✅ yes (CI provisions the services and runs `db:push` + the suite) | `pnpm --filter @stellar-pay/api test:e2e`        |
+| **4. Local-stack smoke**                 | Booted API + Postgres + Redis                                                | ❌ no                                                              | `pnpm test:e2e`                                  |
+| **5. Testnet E2E (payment + contracts)** | Booted API + Postgres + Redis + **live Stellar testnet** (Friendbot/Horizon) | ✅ yes — **required** (`testnet-e2e` job, retried once)            | `pnpm test:e2e:flow` · `pnpm test:e2e:contracts` |
+| **6. Load test**                         | Booted API + Postgres + Redis                                                | ❌ no                                                              | `k6 run tests/load/payment-load.js`              |
 
-Tiers 4–6 are not part of CI (`.github/workflows/ci.yml`). Tier 3 runs in CI
-(the job provisions Postgres + Redis and runs `pnpm db:push` + the suite).
-Tiers 4–6 need a live database/Redis and, for tier 5, live testnet access —
-they run locally or against a deployed testnet environment.
+Tier 3 runs in CI (the job provisions Postgres + Redis and runs `pnpm db:push` +
+the suite). Tier 5 runs in the `testnet-e2e` job as a **required gate** on PRs
+and main — each flow is retried once to absorb Friendbot/ledger flakiness, and
+the job carries a 40-minute timeout. Tiers 4 and 6 need a live database/Redis
+and are not part of CI; they run locally or against a deployed environment.
 
-| Suite                  | Location                          | Command                                   |
-| ---------------------- | --------------------------------- | ----------------------------------------- |
-| Package unit tests     | `packages/*/src/*.test.ts`        | `pnpm test`                               |
-| API unit tests (Nest)  | `apps/api/src/**/*.test.ts`       | `pnpm test`                               |
-| API integration (Nest) | `apps/api/test/*.e2e-spec.ts`     | `pnpm --filter @stellar-pay/api test:e2e` |
-| Soroban contract tests | `contracts/*/src/test.rs`         | `pnpm contracts:test`                     |
-| Local-stack smoke      | `tests/smoke.mjs`                 | `pnpm test:e2e`                           |
-| Auth + payment E2E     | `tests/e2e/auth-payment-flow.mjs` | `pnpm test:e2e:flow`                      |
-| Load test (k6)         | `tests/load/payment-load.js`      | `k6 run tests/load/payment-load.js`       |
-| Security checks        | `.github/workflows/ci.yml`        | zizmor + npm audit (CI)                   |
+| Suite                     | Location                       | Command                                   |
+| ------------------------- | ------------------------------ | ----------------------------------------- |
+| Package unit tests        | `packages/*/src/*.test.ts`     | `pnpm test`                               |
+| API unit tests (Nest)     | `apps/api/src/**/*.test.ts`    | `pnpm test`                               |
+| API integration (Nest)    | `apps/api/test/*.e2e-spec.ts`  | `pnpm --filter @stellar-pay/api test:e2e` |
+| Soroban contract tests    | `contracts/*/src/test.rs`      | `pnpm contracts:test`                     |
+| Local-stack smoke         | `tests/smoke.mjs`              | `pnpm test:e2e`                           |     | Auth + payment E2E | `tests/e2e/auth-payment-flow.mjs` | `pnpm test:e2e:flow` |
+| Contract integrations E2E | `tests/e2e/contracts-flow.mjs` | `pnpm test:e2e:contracts`                 |
+| Load test (k6)            | `tests/load/payment-load.js`   | `k6 run tests/load/payment-load.js`       |
+| Security checks           | `.github/workflows/ci.yml`     | zizmor + npm audit (CI)                   |
 
 ## What each tier actually verifies
 
@@ -80,8 +81,12 @@ they run locally or against a deployed testnet environment.
   | Unknown event / unknown payment id   | Unit tests (non-merchant recipient ignored; unparseable payload skipped)                                                                                   |
   | Listener restart recovery            | Redis cursors + `ChainEvent` dedupe backstop (unit-tested idempotency)                                                                                     |
   | Infra failure ≠ payment failure      | Unit tests — transport error reverts SUBMITTED → PENDING (no FAILED, no notify)                                                                            |
-  | Already-paid invoice / double credit | Unit tests — guarded ISSUED/DRAFT → PAID `updateMany`; `hash` `@unique` backstop                                                                           |     | Duplicate webhook delivery | Unit tests — stable `deliveryId` in the signed payload; retries reuse the row |
+  | Already-paid invoice / double credit | Unit tests — guarded ISSUED/DRAFT → PAID `updateMany`; `hash` `@unique` backstop                                                                           |
+  | Duplicate webhook delivery           | Unit tests — stable `deliveryId` in the signed payload; retries reuse the row                                                                              |
   | Amount/recipient/asset tampering     | Unit tests — signed-XDR intent verification rejects a mismatched XDR pre-submit                                                                            |
+  | Escrow create/release/refund auth    | Unit tests (`escrows.service.test.ts`) — wallet ownership, party authorization, atomic submit claim                                                        |
+  | Treasury on-chain lifecycle          | E2E only (`tests/e2e/contracts-flow.mjs`, live testnet) — **no unit tests**                                                                                |
+  | Subscriptions on-chain lifecycle     | E2E only (`tests/e2e/contracts-flow.mjs`, live testnet) — **no unit tests**                                                                                |
   | Fixed-amount link underpayment       | Unit tests — server ignores a customer amount on `fixedAmount` links                                                                                       |
   | Expired link / closed invoice        | Unit tests — checkout refuses expired links and PAID/CANCELED/EXPIRED invoices                                                                             |
 

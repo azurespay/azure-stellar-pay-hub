@@ -19,12 +19,12 @@ built toward real-world commerce, not a mainnet deployment.
 
 [![Stellar](https://img.shields.io/badge/Stellar-7B3FE4?logo=stellar&logoColor=white)](https://stellar.org/developers)
 [![Soroban SDK](https://img.shields.io/badge/Soroban_SDK-21.7.1-7B3FE4?logo=stellar&logoColor=white)](https://soroban.stellar.org/docs)
-[![CI](https://github.com/Azure-StellarPay-Hub/azure-stellar-pay-hub/actions/workflows/ci.yml/badge.svg)](https://github.com/Azure-StellarPay-Hub/azure-stellar-pay-hub/actions/workflows/ci.yml)
-[![Railway](https://img.shields.io/badge/Railway-API_deployed-0B0D0E?logo=railway&logoColor=white)](https://railway.com)
-[![Vercel](https://img.shields.io/badge/Vercel-deployed-000000?logo=vercel&logoColor=white)](https://vercel.com)
+[![CI](https://github.com/azurespay/azure-stellar-pay-hub/actions/workflows/ci.yml/badge.svg)](https://github.com/azurespay/azure-stellar-pay-hub/actions/workflows/ci.yml)
+[![Railway](https://img.shields.io/badge/Railway-API_offline-critical?logo=railway&logoColor=white)](docs/deployment.md)
+[![Vercel](https://img.shields.io/badge/Vercel-frontends_serve_but_API_offline-eab308?logo=vercel&logoColor=white)](docs/deployment.md)
 [![Testnet](https://img.shields.io/badge/Testnet-8_contracts_deployed-34d399?logo=stellar&logoColor=white)](docs/testnet-deploy.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-ran_in_CI-34d399?logo=jest&logoColor=white)](https://github.com/Azure-StellarPay-Hub/azure-stellar-pay-hub/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-ran_in_CI-34d399?logo=jest&logoColor=white)](https://github.com/azurespay/azure-stellar-pay-hub/actions/workflows/ci.yml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-818cf8.svg)](CONTRIBUTING.md)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Rust](https://img.shields.io/badge/Rust-stable-db5a3b?logo=rust&logoColor=white)](https://www.rust-lang.org/)
@@ -95,10 +95,14 @@ infrastructure (currently on **Stellar testnet** with demo data — mainnet not 
 | `merchant`      | Merchant registry with commission & settlement |
 | `rewards`       | Loyalty tiers, earn & redeem points            |
 
-> Platform wiring: only the `payment` contract is reachable from the API today (an
-> **experimental, off-by-default** route). The other seven contracts are implemented,
-> unit-tested, and deployed to testnet, but are **not invoked by the platform** yet.
-> See [`docs/contracts.md`](docs/contracts.md) for the per-contract status matrix.
+> Platform wiring: the `payment` contract is reachable via an **experimental,
+> off-by-default** route. The `escrow`, `treasury`, `subscriptions`, `invoices`,
+> and `merchant` (settlement) contracts have API routes that prepare → sign →
+> submit → reconcile on on-chain events. All of these — plus the `payment` route
+> — were **live-verified on testnet on 2026-09-11** (see
+> [Verification](#verification-2026-09-11)). `multisig` and `rewards` remain
+> contract-level only. See [`docs/contracts.md`](docs/contracts.md) for the
+> per-contract status matrix.
 
 ### Admin Dashboard
 
@@ -132,29 +136,40 @@ see the detailed evidence table in [`docs/architecture.md`](docs/architecture.md
 Legend: **DEV** = implemented & tested on this stack · **EXPERIMENTAL** =
 off by default / not the live path · **SCAFFOLD** = placeholder behavior.
 
-| Area                                                 | Status                                                                   |
-| ---------------------------------------------------- | ------------------------------------------------------------------------ |
-| Auth (Ed25519 challenge → JWT, RBAC)                 | DEV (tested)                                                             |
-| Payments (classic Stellar send)                      | DEV (tested, testnet)                                                    |
-| Soroban `payment`-contract route                     | DEV (tested, testnet; contract-route E2E verified end-to-end 2026-09-09) |     | Checkout / payment links / invoices | DEV (tested; public routes CSRF-safe + validated) |
-| Merchant registry, products, links, invoices (DB)    | DEV (partial)                                                            |
-| Other Soroban contracts (escrow, multisig, etc.)     | DEV (contract-level)                                                     |
-| Scheduled / recurring / subscription jobs            | DEV (approval + execution; no auto-signer)                               |
-| Inbound detection (direct merchant-address payments) | DEV (testnet-verified)                                                   |
-| Realtime (Socket.IO)                                 | DEV (Redis-adapter, multi-instance)                                      |
-| Notifications & webhooks                             | DEV (partial)                                                            |
-| Admin analytics                                      | DEV (real DB aggregates)                                                 |
-| Rate limiting                                        | DEV (Redis-backed, shared across instances)                              |
-| Deployment                                           | TESTNET / DEMO                                                           |
+| Area                                                                        | Status                                                                                                                       |
+| --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Auth (Ed25519 challenge → JWT, RBAC)                                        | DEV (tested)                                                                                                                 |
+| Payments (classic Stellar send)                                             | DEV (tested, testnet)                                                                                                        |
+| Soroban `payment`-contract route                                            | DEV (tested; live-testnet E2E re-verified 2026-09-11)                                                                        |
+| Checkout / payment links / invoices                                         | DEV (tested; public routes CSRF-safe + validated)                                                                            |
+| Merchant registry, products, links, invoices (DB)                           | DEV (partial)                                                                                                                |
+| Escrow / subscriptions / treasury / on-chain invoices / merchant settlement | DEV (API-integrated + indexer-reconciled; **live-verified on testnet 2026-09-11**; unit-tested) |
+| Multisig / rewards contracts                                                | DEV (contract-level only — not invoked by the platform)                                                                      |
+| Scheduled / recurring / subscription jobs                                   | DEV (approval + execution; no auto-signer)                                                                                   |
+| Inbound detection (direct merchant-address payments)                        | DEV (testnet-verified)                                                                                                       |
+| Realtime (Socket.IO)                                                        | DEV (Redis-adapter, multi-instance)                                                                                          |
+| Notifications & webhooks                                                    | DEV (partial)                                                                                                                |
+| Admin analytics                                                             | DEV (real DB aggregates)                                                                                                     |
+| Rate limiting                                                               | DEV (Redis-backed, shared across instances)                                                                                  |
+| Deployment                                                                  | TESTNET / DEMO                                                                                                               |
 
 Nothing is marked **PRODUCTION**: the platform runs on Stellar **testnet**
 with demo data and is not deployed to mainnet.
 
 ## Live Demos
 
-Deployed and publicly accessible — Vercel-hosted frontends pointed at the
-Railway-hosted API (see [Deployment state](#deployment)). All hosted apps run
-against **Stellar testnet with demo data**; none are mainnet deployments:
+> ⚠️ **The hosted API is currently offline.** On 2026-09-11
+> `https://stellar-pay-api.up.railway.app` returned Railway's
+> `404 Application not found` for every path tested (`/api/health`,
+> `/api/assets`, `/api/metrics`). The Vercel frontends below still serve
+> (HTTP 200) but every request they make targets that dead API, so the hosted
+> demos are **not functional end-to-end** until the API service is redeployed
+> with Railway credentials. The locally-run stack is the verified working
+> configuration — see [Verification](#verification-2026-09-11) and
+> [`docs/deployment.md`](docs/deployment.md).
+
+The URLs below are deployed frontends (static shells); all target **Stellar
+testnet with demo data**, and none are mainnet deployments:
 
 | App                   | URL                                                                                                |
 | --------------------- | -------------------------------------------------------------------------------------------------- |
@@ -335,7 +350,7 @@ azure-stellar-pay-hub/
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/Azure-StellarPay-Hub/azure-stellar-pay-hub.git
+git clone https://github.com/azurespay/azure-stellar-pay-hub.git
 cd azure-stellar-pay-hub
 
 # 2. Install dependencies
@@ -466,25 +481,55 @@ Test categories — see [`tests/README.md`](tests/README.md) for the full tier b
 - **Soroban contract tests (CI)**: per-entry-point tests in `contracts/*/src/test.rs`
 - **Smoke test (not CI)**: `tests/smoke.mjs` — boots the API and checks the health
   endpoint (an API health check only, **not** a payment E2E)
-- **Payment-lifecycle E2E (live testnet, CI on main pushes)**: `tests/e2e/auth-payment-flow.mjs`
+- **Payment-lifecycle E2E (live testnet, required CI gate)**: `tests/e2e/auth-payment-flow.mjs`
   — auth challenge → verify → fund (Friendbot) → payment create → **sign → submit →
   on-chain confirmation → persisted final state → realtime Socket.IO
   `transaction.updated`** → logout → JWT invalidation. Runs in the `testnet-e2e`
-  CI job on pushes to `main` (non-blocking — Friendbot/ledger flakiness should not
-  gate merges).
+  CI job on **PRs and main** as a **required** gate (both the classic and the
+  Soroban contract route). Because live testnet is inherently flaky, each flow
+  is retried once before the step is allowed to fail.
+- **Contract-integrations E2E (live testnet, required CI gate)**:
+  `tests/e2e/contracts-flow.mjs` — escrow fund + release, treasury deposit,
+  on-chain invoice issue + pay, merchant registration, subscription plan +
+  subscribe, and merchant settlement, every state driven by the event indexer.
+  Runs in the same `testnet-e2e` job (see [Verification](#verification-2026-09-11)).
 - **Load tests**: `tests/load/payment-load.js` — k6/Artillery-style load generation
+
+## Verification (2026-09-11)
+
+Results of running the suites in this repository on a clean `pnpm install` with
+Postgres + Redis from `pnpm docker:up`. Every row is a command that was actually
+executed, not a claim.
+
+| Check                                | Command                                               | Result                                                                                                                  |
+| ------------------------------------ | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Packages build & typecheck           | `pnpm build:packages && pnpm typecheck`               | **PASS** — 0 errors across 17 projects                                                                                  |
+| Lint                                 | `pnpm lint`                                           | **PASS** — 17 projects                                                                                                  |
+| Unit / integration (tier 1)          | `pnpm test`                                           | **PASS** — 359 tests in 40 suites                                                                                       |
+| API integration (tier 3)             | `pnpm --filter @stellar-pay/api test:e2e`             | **PASS** — 15 tests in 3 suites                                                                                         |
+| Local-stack smoke (tier 4)           | `pnpm test:e2e`                                       | **PASS** — health `ok` (database up), `/assets`, `/health/ready`                                                        |
+| Live testnet E2E — classic (tier 5)  | `node tests/e2e/auth-payment-flow.mjs`                | **PASS** — 22/22; tx `393cc465…` confirmed in ledger 4_622_888                                                          |
+| Live testnet E2E — Soroban (tier 5)  | `E2E_CONTRACT=1 node tests/e2e/auth-payment-flow.mjs` | **PASS** — 22/22; `send` invoked, `CONFIRMED`, tx `cb8db1b8…` in ledger 4_622_907                                       |
+| Deployed contracts exist on testnet  | Soroban RPC `getLedgerEntries`                        | **PASS** — all 8 contract instances live                                                                                |
+| Payment contract initialized         | Soroban RPC simulate `admin()/paused()/is_allowed()`  | **PASS** — admin set, not paused, XLM SAC allowlisted                                                                   |
+| Contract integrations E2E (live)     | `node tests/e2e/contracts-flow.mjs`                   | **PASS** — 28/28: escrow fund+release, treasury deposit, invoice issue+pay, merchant register, subscription, settlement |
+| Soroban contract unit tests (tier 2) | `pnpm contracts:test`                                 | **NOT RUN** — no Rust toolchain in this environment                                                                     |
+
+Unverifiable in this environment and therefore **not claimed**: the hosted
+Railway API (offline), GitHub Actions runs, and the browser-based frontends
+(no display). See [Known limitations](#known-limitations).
 
 ## CI/CD
 
-| Workflow              | File                                      | Triggers                                                                  |
-| --------------------- | ----------------------------------------- | ------------------------------------------------------------------------- |
-| **CI**                | `.github/workflows/ci.yml`                | Every PR and push to `main` (incl. non-blocking live-testnet E2E on main) |
-| **Deploy to Railway** | `.github/workflows/deploy-railway.yml`    | Push to `main` (API/Docker changes)                                       |
-| **Deploy to AKS**     | `.github/workflows/deploy.yml`            | Push to `main` (AKS — production-oriented)                                |
-| **Release Extension** | `.github/workflows/publish-extension.yml` | Push `extension-v*` tag                                                   |
-| **PR Auto-Labeler**   | `.github/workflows/pr-labeler.yml`        | PR opened/edited                                                          |
-| **Badge Updater**     | `.github/workflows/update-badges.yml`     | Push to `main` with Cargo.toml changes                                    |
-| **Dependabot**        | `.github/dependabot.yml`                  | Weekly (npm + Cargo)                                                      |
+| Workflow              | File                                      | Triggers                                                               |
+| --------------------- | ----------------------------------------- | ---------------------------------------------------------------------- |
+| **CI**                | `.github/workflows/ci.yml`                | Every PR and push to `main` (incl. the required live-testnet E2E gate) |
+| **Deploy to Railway** | `.github/workflows/deploy-railway.yml`    | Push to `main` (API/Docker changes)                                    |
+| **Deploy to AKS**     | `.github/workflows/deploy.yml`            | Push to `main` (AKS — production-oriented)                             |
+| **Release Extension** | `.github/workflows/publish-extension.yml` | Push `extension-v*` tag                                                |
+| **PR Auto-Labeler**   | `.github/workflows/pr-labeler.yml`        | PR opened/edited                                                       |
+| **Badge Updater**     | `.github/workflows/update-badges.yml`     | Push to `main` with Cargo.toml changes                                 |
+| **Dependabot**        | `.github/dependabot.yml`                  | Weekly (npm + Cargo)                                                   |
 
 CI runs: lint → typecheck → format check → tests → contract build → contract tests → app builds → security audit (zizmor).
 
@@ -492,16 +537,18 @@ CI runs: lint → typecheck → format check → tests → contract build → co
 
 See [`docs/deployment.md`](docs/deployment.md) for full instructions, including a
 classification of every deployment target (canonical / supported / experimental).
-Current state: the hosted API + frontends run on **testnet with demo data**;
-Kubernetes/Terraform exist as production-oriented infrastructure but are **not** a
-verified live production deployment, and nothing is deployed to Stellar mainnet.
+Current state: the hosted **API service is offline** (Railway returns
+`404 Application not found`) while the frontends still serve static shells; both were
+built for **testnet with demo data**. Kubernetes/Terraform exist as production-oriented
+infrastructure but are **not** a verified live production deployment, and nothing is
+deployed to Stellar mainnet.
 
 > Note — the wireframe figures in this README (volumes, users, success rates) are
 > illustrative UI mockups, not live metrics.
 
 - **Docker Compose**: `pnpm docker:up` + `pnpm dev`
 - **Production Docker**: `infrastructure/docker/api.Dockerfile` and `web.Dockerfile`
-- **Railway (API)**: Auto-deploys on push to `main` via `deploy-railway.yml` — uses `infrastructure/docker/api.Dockerfile`
+- **Railway (API)**: Auto-deploys on push to `main` via `deploy-railway.yml` — uses `infrastructure/docker/api.Dockerfile`. **Currently offline** (the service returns 404); the workflow skips the deploy when `RAILWAY_TOKEN` is unset.
 - **Kubernetes**: `infrastructure/kubernetes/` — Kustomize bundle with Postgres, Redis, API, Web, Ingress
 - **Terraform (Azure)**: `infrastructure/terraform/` — provisions AKS, managed Postgres, Redis, Key Vault
 - **Monitoring**: `infrastructure/monitoring/` — Prometheus + Grafana + alert rules
@@ -535,6 +582,10 @@ verified live production deployment, and nothing is deployed to Stellar mainnet.
 Accurate as of 2026-09; see [`docs/architecture.md`](docs/architecture.md),
 [`docs/contracts.md`](docs/contracts.md) and [`SECURITY.md`](SECURITY.md) for detail.
 
+- **The hosted API demo is offline** — `https://stellar-pay-api.up.railway.app`
+  returns Railway's `404 Application not found`; restoring it requires Railway
+  credentials that are not present in this environment. The stack was verified
+  locally instead on 2026-09-11 (see [Verification](#verification-2026-09-11)).
 - **Mainnet is not deployed** — the platform, hosted apps, and contracts run on Stellar
   testnet with demo data only.
 - **The Soroban contract route is experimental and off by default.** The SDK now
@@ -578,11 +629,11 @@ We welcome contributions! See [`CONTRIBUTING.md`](CONTRIBUTING.md) for:
 - [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `chore:`, etc.)
 - Code style (ESLint + Prettier for TS, rustfmt for Rust)
 
-Browse [open issues](https://github.com/Azure-StellarPay-Hub/azure-stellar-pay-hub/issues) filtered by:
-[`good first issue`](https://github.com/Azure-StellarPay-Hub/azure-stellar-pay-hub/issues?q=is%3Aopen+label%3A%22good+first+issue%22) ·
-[`complexity:low`](https://github.com/Azure-StellarPay-Hub/azure-stellar-pay-hub/issues?q=is%3Aopen+label%3A%22complexity%3Alow%22) ·
-[`complexity:medium`](https://github.com/Azure-StellarPay-Hub/azure-stellar-pay-hub/issues?q=is%3Aopen+label%3A%22complexity%3Amedium%22) ·
-[`complexity:high`](https://github.com/Azure-StellarPay-Hub/azure-stellar-pay-hub/issues?q=is%3Aopen+label%3A%22complexity%3Ahigh%22)
+Browse [open issues](https://github.com/azurespay/azure-stellar-pay-hub/issues) filtered by:
+[`good first issue`](https://github.com/azurespay/azure-stellar-pay-hub/issues?q=is%3Aopen+label%3A%22good+first+issue%22) ·
+[`complexity:low`](https://github.com/azurespay/azure-stellar-pay-hub/issues?q=is%3Aopen+label%3A%22complexity%3Alow%22) ·
+[`complexity:medium`](https://github.com/azurespay/azure-stellar-pay-hub/issues?q=is%3Aopen+label%3A%22complexity%3Amedium%22) ·
+[`complexity:high`](https://github.com/azurespay/azure-stellar-pay-hub/issues?q=is%3Aopen+label%3A%22complexity%3Ahigh%22)
 
 All contributors must follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 

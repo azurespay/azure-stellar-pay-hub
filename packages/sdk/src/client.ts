@@ -506,8 +506,7 @@ export class ApiClient {
   // ------------------------------------------------------- On-chain contracts
 
   subscriptionPlans = {
-    list: () =>
-      this.request<Array<Record<string, unknown>>>({ path: '/subscription-plans' }),
+    list: () => this.request<Array<Record<string, unknown>>>({ path: '/subscription-plans' }),
 
     create: (body: {
       name: string;

@@ -1,18 +1,11 @@
 import { z } from 'zod';
-import {
-  amountSchema,
-  assetCodeSchema,
-  issuerSchema,
-  publicKeySchema,
-} from './common';
+import { amountSchema, assetCodeSchema, issuerSchema, publicKeySchema } from './common';
 
 /** The signable envelope the wallet must sign for a prepared contract call. */
 export const contractSignedXdrSchema = z.string().min(20, 'Signed XDR is required');
 
 /** Body for the submit/confirm endpoints of the contract integrations. */
-export const contractSubmitSchema = z
-  .object({ signedXdr: contractSignedXdrSchema })
-  .strict();
+export const contractSubmitSchema = z.object({ signedXdr: contractSignedXdrSchema }).strict();
 export type ContractSubmit = z.infer<typeof contractSubmitSchema>;
 
 export const createEscrowSchema = z
@@ -31,14 +24,10 @@ export const createEscrowSchema = z
   .strict();
 export type CreateEscrow = z.infer<typeof createEscrowSchema>;
 
-export const escrowSubmitSchema = z
-  .object({ signedXdr: contractSignedXdrSchema })
-  .strict();
+export const escrowSubmitSchema = z.object({ signedXdr: contractSignedXdrSchema }).strict();
 export type EscrowSubmit = z.infer<typeof escrowSubmitSchema>;
 
-export const escrowCallerActionSchema = z
-  .object({ callerPublicKey: publicKeySchema })
-  .strict();
+export const escrowCallerActionSchema = z.object({ callerPublicKey: publicKeySchema }).strict();
 export type EscrowCallerAction = z.infer<typeof escrowCallerActionSchema>;
 
 export const createSubscriptionPlanSchema = z
@@ -53,14 +42,10 @@ export const createSubscriptionPlanSchema = z
   .strict();
 export type CreateSubscriptionPlan = z.infer<typeof createSubscriptionPlanSchema>;
 
-export const subscribePlanSchema = z
-  .object({ subscriberPublicKey: publicKeySchema })
-  .strict();
+export const subscribePlanSchema = z.object({ subscriberPublicKey: publicKeySchema }).strict();
 export type SubscribePlan = z.infer<typeof subscribePlanSchema>;
 
-export const subscriptionCallSchema = z
-  .object({ callerPublicKey: publicKeySchema })
-  .strict();
+export const subscriptionCallSchema = z.object({ callerPublicKey: publicKeySchema }).strict();
 export type SubscriptionCall = z.infer<typeof subscriptionCallSchema>;
 
 export const treasuryDepositSchema = z
@@ -84,9 +69,7 @@ export const treasuryProposeWithdrawalSchema = z
   .strict();
 export type TreasuryProposeWithdrawal = z.infer<typeof treasuryProposeWithdrawalSchema>;
 
-export const treasuryMemberActionSchema = z
-  .object({ memberPublicKey: publicKeySchema })
-  .strict();
+export const treasuryMemberActionSchema = z.object({ memberPublicKey: publicKeySchema }).strict();
 export type TreasuryMemberAction = z.infer<typeof treasuryMemberActionSchema>;
 
 export const merchantRegisterOnChainSchema = z
@@ -118,7 +101,5 @@ export const recordMerchantSaleSchema = z
   .strict();
 export type RecordMerchantSale = z.infer<typeof recordMerchantSaleSchema>;
 
-export const payOnChainInvoiceSchema = z
-  .object({ payerPublicKey: publicKeySchema })
-  .strict();
+export const payOnChainInvoiceSchema = z.object({ payerPublicKey: publicKeySchema }).strict();
 export type PayOnChainInvoice = z.infer<typeof payOnChainInvoiceSchema>;

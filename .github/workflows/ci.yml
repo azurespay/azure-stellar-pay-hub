@@ -20,6 +20,7 @@ jobs:
   quality:
     name: Lint, typecheck & test
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:16-alpine
@@ -92,6 +93,7 @@ jobs:
   build-contracts:
     name: Build Soroban contracts
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -114,6 +116,7 @@ jobs:
   build-apps:
     name: Build apps & packages
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -137,15 +140,29 @@ jobs:
           NEXT_TELEMETRY_DISABLED: '1'
 
   testnet-e2e:
-    # Live end-to-end verification on Stellar testnet (auth → fund → create →
-    # sign → submit → on-chain confirm → realtime). Runs on main pushes only
-    # (Friendbot/ledger flakiness makes it unsuitable for PR gating) and is
-    # non-blocking so a transient testnet outage never breaks CI — failures
-    # still surface in the run summary for triage.
-    name: Testnet E2E (live, main only)
+    # Live end-to-end verification on Stellar testnet: auth → fund → create →
+    # sign → submit → on-chain confirm → realtime for BOTH the classic and the
+    # Soroban payment routes, plus the escrow / treasury / invoice / merchant /
+    # subscription contract integrations that the platform actually invokes.
+    #
+    # This is a REQUIRED gate: it runs on PRs and main pushes, and a failure
+    # fails the build (no `continue-on-error`). Live testnet is inherently
+    # flaky — Friendbot rate limits, ledger latency, RPC hiccups — so every flow
+    # is retried once by the inline loop before the step is allowed to fail.
+    # If the flake rate becomes disruptive, add `continue-on-error: true` here
+    # to demote it back to advisory.
+    name: Testnet E2E (live, required)
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    continue-on-error: true
+    timeout-minutes: 40
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stellar_pay?schema=public
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: e2e-test-secret-at-least-16-chars
+      WEBHOOK_SIGNING_SECRET: ci-e2e-webhook-secret-16-chars
+      STELLAR_NETWORK: testnet
+      SOROBAN_RPC_URL: https://soroban-testnet.stellar.org
+      ADMIN_EMAIL: ci-e2e@test.dev
+      ADMIN_PASSWORD: CiE2eTest123!
     services:
       postgres:
         image: postgres:16-alpine
@@ -183,12 +200,47 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stellar_pay?schema=public
       - name: Build API (booted in-process by the E2E script)
         run: pnpm --filter @stellar-pay/api build
-      - name: Run live testnet payment-lifecycle E2E
-        run: node tests/e2e/auth-payment-flow.mjs
+      - name: Payment lifecycle E2E — classic route (live testnet)
+        run: |
+          for attempt in 1 2; do
+            echo "classic payment lifecycle — attempt $attempt/2"
+            if node tests/e2e/auth-payment-flow.mjs; then exit 0; fi
+            echo "::warning::classic payment E2E failed (attempt $attempt/2)"
+            sleep 15
+          done
+          echo "::error::classic payment E2E failed after 2 attempts"
+          exit 1
+
+      - name: Payment lifecycle E2E — Soroban contract route (live testnet)
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stellar_pay?schema=public
-          REDIS_URL: redis://localhost:6379
-          JWT_SECRET: e2e-test-secret-at-least-16-chars
-          STELLAR_NETWORK: testnet
-          ADMIN_EMAIL: ci-e2e@test.dev
-          ADMIN_PASSWORD: CiE2eTest123!
+          E2E_CONTRACT: '1'
+          PAYMENT_ROUTE: contract
+          PAYMENT_CONTRACT_ASSETS: XLM
+          CONTRACT_STELLAR_PAY_PAYMENT: CBDOGRJIOX46MEHIYRGU7BFKLT2OOPT7QIN7ZU53DH5WK7FF5QK7IN4Q
+        run: |
+          for attempt in 1 2; do
+            echo "contract-route payment lifecycle — attempt $attempt/2"
+            if node tests/e2e/auth-payment-flow.mjs; then exit 0; fi
+            echo "::warning::contract-route payment E2E failed (attempt $attempt/2)"
+            sleep 15
+          done
+          echo "::error::contract-route payment E2E failed after 2 attempts"
+          exit 1
+
+      - name: Contract integrations E2E — escrow/treasury/invoices/subscriptions/settlement (live testnet)
+        env:
+          CONTRACT_STELLAR_PAY_PAYMENT: CBDOGRJIOX46MEHIYRGU7BFKLT2OOPT7QIN7ZU53DH5WK7FF5QK7IN4Q
+          CONTRACT_STELLAR_PAY_ESCROW: CDWVUTCME6JSATWKKWIFVBEO4NAZSJCCX2ECNRQN3L33W65EFT3AMUEY
+          CONTRACT_STELLAR_PAY_INVOICES: CB3XBXQUY4LHSFPWJ4XZL6T7A2ITNMBWMCTT2QOS6LB7PF7RPJBTVDHZ
+          CONTRACT_STELLAR_PAY_SUBSCRIPTIONS: CCMQF6EB5DT6HKWGOB5BTRMD6Q66D5MVBQQN5HOK3565WHATXINOLBNI
+          CONTRACT_STELLAR_PAY_TREASURY: CCKWXDASGA7W3KWMEOEXYWMV5RVDLV2WGEJOHO3SYHKMXHZ3X4UWRMKZ
+          CONTRACT_STELLAR_PAY_MERCHANT: CDNQTYF4XSOPNY6ID6MHUROAC2BNIQTYWHJYVGXWMU5WFA5AOQGDQUEU
+        run: |
+          for attempt in 1 2; do
+            echo "contract integrations — attempt $attempt/2"
+            if node tests/e2e/contracts-flow.mjs; then exit 0; fi
+            echo "::warning::contract integrations E2E failed (attempt $attempt/2)"
+            sleep 15
+          done
+          echo "::error::contract integrations E2E failed after 2 attempts"
+          exit 1

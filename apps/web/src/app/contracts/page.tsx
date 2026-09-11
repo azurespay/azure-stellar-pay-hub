@@ -109,7 +109,10 @@ export default function ContractsPage() {
     }
   };
 
-  const prepareSignSubmit = async (prepare: () => Promise<{ id: string; unsignedXdr: string }>, submit: (id: string, signedXdr: string) => Promise<unknown>) => {
+  const prepareSignSubmit = async (
+    prepare: () => Promise<{ id: string; unsignedXdr: string }>,
+    submit: (id: string, signedXdr: string) => Promise<unknown>,
+  ) => {
     const intent = await prepare();
     const signedXdr = await signTx(intent.unsignedXdr);
     return submit(intent.id, signedXdr);
@@ -126,10 +129,16 @@ export default function ContractsPage() {
             <div>
               <h1 className="text-2xl font-bold">On-chain contracts</h1>
               <p className="mt-2 text-sm text-muted-foreground">
-                Escrow, subscriptions and treasury run on Soroban smart contracts. Connect your wallet to get started.
+                Escrow, subscriptions and treasury run on Soroban smart contracts. Connect your
+                wallet to get started.
               </p>
             </div>
-            <Button variant="gradient" size="lg" onClick={() => void loginWithWallet()} disabled={loading}>
+            <Button
+              variant="gradient"
+              size="lg"
+              onClick={() => void loginWithWallet()}
+              disabled={loading}
+            >
               Sign in with wallet
             </Button>
           </CardContent>
@@ -143,7 +152,8 @@ export default function ContractsPage() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">On-chain contracts</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Statuses are confirmed by the event indexer from on-chain evidence — the Soroban contracts run on Stellar testnet.
+          Statuses are confirmed by the event indexer from on-chain evidence — the Soroban contracts
+          run on Stellar testnet.
         </p>
       </div>
 
@@ -155,9 +165,15 @@ export default function ContractsPage() {
 
       <Tabs defaultValue="escrow">
         <TabsList>
-          <TabsTrigger value="escrow"><Lock className="mr-1 h-4 w-4" /> Escrow</TabsTrigger>
-          <TabsTrigger value="subscriptions"><Repeat className="mr-1 h-4 w-4" /> Subscriptions</TabsTrigger>
-          <TabsTrigger value="treasury"><Landmark className="mr-1 h-4 w-4" /> Treasury</TabsTrigger>
+          <TabsTrigger value="escrow">
+            <Lock className="mr-1 h-4 w-4" /> Escrow
+          </TabsTrigger>
+          <TabsTrigger value="subscriptions">
+            <Repeat className="mr-1 h-4 w-4" /> Subscriptions
+          </TabsTrigger>
+          <TabsTrigger value="treasury">
+            <Landmark className="mr-1 h-4 w-4" /> Treasury
+          </TabsTrigger>
         </TabsList>
 
         {/* ── Escrow ─────────────────────────────────────────────────────── */}
@@ -169,7 +185,12 @@ export default function ContractsPage() {
             <CardContent className="grid gap-4 md:grid-cols-3">
               <div className="space-y-1.5">
                 <Label htmlFor="counterparty">Counterparty (G…)</Label>
-                <Input id="counterparty" placeholder="G…" value={counterparty} onChange={(e) => setCounterparty(e.target.value)} />
+                <Input
+                  id="counterparty"
+                  placeholder="G…"
+                  value={counterparty}
+                  onChange={(e) => setCounterparty(e.target.value)}
+                />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="amount">Amount (XLM)</Label>
@@ -177,7 +198,11 @@ export default function ContractsPage() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="release">Release in (minutes)</Label>
-                <Input id="release" value={releaseMinutes} onChange={(e) => setReleaseMinutes(e.target.value)} />
+                <Input
+                  id="release"
+                  value={releaseMinutes}
+                  onChange={(e) => setReleaseMinutes(e.target.value)}
+                />
               </div>
               <div className="md:col-span-3">
                 <Button
@@ -185,7 +210,9 @@ export default function ContractsPage() {
                   disabled={busy || !counterparty || !amount}
                   onClick={() =>
                     void run('Escrow', async () => {
-                      const releaseTime = new Date(Date.now() + Number(releaseMinutes) * 60_000).toISOString();
+                      const releaseTime = new Date(
+                        Date.now() + Number(releaseMinutes) * 60_000,
+                      ).toISOString();
                       await prepareSignSubmit(
                         () =>
                           api.escrows.create({
@@ -218,21 +245,30 @@ export default function ContractsPage() {
               ) : (
                 <div className="divide-y divide-border/60">
                   {escrows.map((escrow) => (
-                    <div key={escrow.id as string} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                    <div
+                      key={escrow.id as string}
+                      className="flex flex-wrap items-center justify-between gap-3 py-3"
+                    >
                       <div>
                         <p className="text-sm font-medium">
                           {shortKey(escrow.counterpartyPublicKey as string)} ·{' '}
                           <span className="font-mono">{String(escrow.amount)}</span> XLM
                           {escrow.contractId != null && (
-                            <span className="ml-2 text-xs text-muted-foreground">on-chain #{String(escrow.contractId)}</span>
+                            <span className="ml-2 text-xs text-muted-foreground">
+                              on-chain #{String(escrow.contractId)}
+                            </span>
                           )}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {formatDateTime(escrow.createdAt as string)} · release {formatDateTime(escrow.releaseTime as string)}
+                          {formatDateTime(escrow.createdAt as string)} · release{' '}
+                          {formatDateTime(escrow.releaseTime as string)}
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Badge variant="outline" className={STATUS_STYLES[escrow.status as string] ?? ''}>
+                        <Badge
+                          variant="outline"
+                          className={STATUS_STYLES[escrow.status as string] ?? ''}
+                        >
                           {escrow.status as string}
                         </Badge>
                         {escrow.status === 'FUNDED' && (
@@ -270,15 +306,28 @@ export default function ContractsPage() {
             <CardContent className="grid gap-4 md:grid-cols-3">
               <div className="space-y-1.5">
                 <Label htmlFor="plan-name">Name</Label>
-                <Input id="plan-name" placeholder="Pro plan" value={planName} onChange={(e) => setPlanName(e.target.value)} />
+                <Input
+                  id="plan-name"
+                  placeholder="Pro plan"
+                  value={planName}
+                  onChange={(e) => setPlanName(e.target.value)}
+                />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="plan-amount">Amount (XLM / period)</Label>
-                <Input id="plan-amount" value={planAmount} onChange={(e) => setPlanAmount(e.target.value)} />
+                <Input
+                  id="plan-amount"
+                  value={planAmount}
+                  onChange={(e) => setPlanAmount(e.target.value)}
+                />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="plan-interval">Interval (seconds)</Label>
-                <Input id="plan-interval" value={planInterval} onChange={(e) => setPlanInterval(e.target.value)} />
+                <Input
+                  id="plan-interval"
+                  value={planInterval}
+                  onChange={(e) => setPlanInterval(e.target.value)}
+                />
               </div>
               <div className="md:col-span-3">
                 <Button
@@ -318,16 +367,24 @@ export default function ContractsPage() {
                 ) : (
                   <div className="divide-y divide-border/60">
                     {plans.map((plan) => (
-                      <div key={plan.id as string} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                      <div
+                        key={plan.id as string}
+                        className="flex flex-wrap items-center justify-between gap-3 py-3"
+                      >
                         <div>
                           <p className="text-sm font-medium">
-                            {plan.name as string} · <span className="font-mono">{String(plan.amount)}</span> XLM / {String(plan.intervalSeconds)}s
+                            {plan.name as string} ·{' '}
+                            <span className="font-mono">{String(plan.amount)}</span> XLM /{' '}
+                            {String(plan.intervalSeconds)}s
                           </p>
                           <p className="text-xs text-muted-foreground">
                             {plan.contractPlanId != null && `on-chain #${plan.contractPlanId}`}
                           </p>
                         </div>
-                        <Badge variant="outline" className={STATUS_STYLES[plan.status as string] ?? ''}>
+                        <Badge
+                          variant="outline"
+                          className={STATUS_STYLES[plan.status as string] ?? ''}
+                        >
                           {plan.status as string}
                         </Badge>
                       </div>
@@ -349,14 +406,24 @@ export default function ContractsPage() {
                 ) : (
                   <div className="divide-y divide-border/60">
                     {subscriptions.map((sub) => (
-                      <div key={sub.id as string} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                      <div
+                        key={sub.id as string}
+                        className="flex flex-wrap items-center justify-between gap-3 py-3"
+                      >
                         <div>
-                          <p className="text-sm font-medium">{String((sub.plan as Plan | undefined)?.name ?? 'Subscription')}</p>
+                          <p className="text-sm font-medium">
+                            {String((sub.plan as Plan | undefined)?.name ?? 'Subscription')}
+                          </p>
                           <p className="text-xs text-muted-foreground">
-                            {sub.nextPaymentAt ? `next payment ${formatDateTime(String(sub.nextPaymentAt))}` : ''}
+                            {sub.nextPaymentAt
+                              ? `next payment ${formatDateTime(String(sub.nextPaymentAt))}`
+                              : ''}
                           </p>
                         </div>
-                        <Badge variant="outline" className={STATUS_STYLES[sub.status as string] ?? ''}>
+                        <Badge
+                          variant="outline"
+                          className={STATUS_STYLES[sub.status as string] ?? ''}
+                        >
                           {sub.status as string}
                         </Badge>
                       </div>
@@ -377,7 +444,11 @@ export default function ContractsPage() {
             <CardContent className="flex flex-wrap items-end gap-4">
               <div className="w-48 space-y-1.5">
                 <Label htmlFor="deposit-amount">Amount (XLM)</Label>
-                <Input id="deposit-amount" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)} />
+                <Input
+                  id="deposit-amount"
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(e.target.value)}
+                />
               </div>
               <Button
                 variant="gradient"
@@ -385,7 +456,12 @@ export default function ContractsPage() {
                 onClick={() =>
                   void run('Deposit', async () => {
                     await prepareSignSubmit(
-                      () => api.treasury.deposit({ fromPublicKey: publicKey, assetCode: 'XLM', amount: depositAmount }),
+                      () =>
+                        api.treasury.deposit({
+                          fromPublicKey: publicKey,
+                          assetCode: 'XLM',
+                          amount: depositAmount,
+                        }),
                       (id, xdr) => api.treasury.submitDeposit(id, xdr),
                     );
                   })
@@ -405,17 +481,25 @@ export default function ContractsPage() {
                 <Skeleton className="h-24 w-full" />
               ) : ops.length === 0 ? (
                 <p className="py-4 text-sm text-muted-foreground">
-                  No treasury operations yet. Deposits require the asset to be allowlisted on the treasury contract.
+                  No treasury operations yet. Deposits require the asset to be allowlisted on the
+                  treasury contract.
                 </p>
               ) : (
                 <div className="divide-y divide-border/60">
                   {ops.map((op) => (
-                    <div key={op.id as string} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                    <div
+                      key={op.id as string}
+                      className="flex flex-wrap items-center justify-between gap-3 py-3"
+                    >
                       <div>
                         <p className="text-sm font-medium">
-                          {op.type as string} · <span className="font-mono">{String(op.amount)}</span> {String(op.assetCode)}
+                          {op.type as string} ·{' '}
+                          <span className="font-mono">{String(op.amount)}</span>{' '}
+                          {String(op.assetCode)}
                         </p>
-                        <p className="text-xs text-muted-foreground">{formatDateTime(op.createdAt as string)}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatDateTime(op.createdAt as string)}
+                        </p>
                       </div>
                       <Badge variant="outline" className={STATUS_STYLES[op.status as string] ?? ''}>
                         {op.status as string}

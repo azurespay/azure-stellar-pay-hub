@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@stellar-pay/database';
 import { addAmounts, toStroops } from '@stellar-pay/shared';
 import { randomBytes } from 'crypto';
@@ -233,10 +229,7 @@ export class InvoicesService {
    * Pay an on-chain invoice: prepare `pay(payer, invoice_id)` where the payer
    * must be the invoice's customer (the contract enforces PayerMismatch).
    */
-  async payOnChain(
-    invoiceId: string,
-    input: { payerPublicKey: string; payerUserId: string },
-  ) {
+  async payOnChain(invoiceId: string, input: { payerPublicKey: string; payerUserId: string }) {
     await this.wallet.assertWalletOwnership(input.payerUserId, input.payerPublicKey);
     const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
     if (!invoice) {

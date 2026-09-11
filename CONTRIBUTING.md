@@ -27,14 +27,14 @@ pnpm dev                 # api:4000 · web:3000 · admin:3001 · explorer:3002 �
 
 ## Finding Work
 
-Browse [open issues](https://github.com/Azure-StellarPay-Hub/azure-stellar-pay-hub/issues)
+Browse [open issues](https://github.com/azurespay/azure-stellar-pay-hub/issues)
 filtered by label:
 
-- [`good first issue`](https://github.com/Azure-StellarPay-Hub/azure-stellar-pay-hub/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) — beginner-friendly tasks
-- [`help wanted`](https://github.com/Azure-StellarPay-Hub/azure-stellar-pay-hub/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) — we'd love community help
-- [`complexity:low`](https://github.com/Azure-StellarPay-Hub/azure-stellar-pay-hub/issues?q=is%3Aissue+is%3Aopen+label%3A%22complexity%3Alow%22) — small, scoped tasks
-- [`complexity:medium`](https://github.com/Azure-StellarPay-Hub/azure-stellar-pay-hub/issues?q=is%3Aissue+is%3Aopen+label%3A%22complexity%3Amedium%22) — feature work
-- [`complexity:high`](https://github.com/Azure-StellarPay-Hub/azure-stellar-pay-hub/issues?q=is%3Aissue+is%3Aopen+label%3A%22complexity%3Ahigh%22) — larger refactors or integrations
+- [`good first issue`](https://github.com/azurespay/azure-stellar-pay-hub/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) — beginner-friendly tasks
+- [`help wanted`](https://github.com/azurespay/azure-stellar-pay-hub/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) — we'd love community help
+- [`complexity:low`](https://github.com/azurespay/azure-stellar-pay-hub/issues?q=is%3Aissue+is%3Aopen+label%3A%22complexity%3Alow%22) — small, scoped tasks
+- [`complexity:medium`](https://github.com/azurespay/azure-stellar-pay-hub/issues?q=is%3Aissue+is%3Aopen+label%3A%22complexity%3Amedium%22) — feature work
+- [`complexity:high`](https://github.com/azurespay/azure-stellar-pay-hub/issues?q=is%3Aissue+is%3Aopen+label%3A%22complexity%3Ahigh%22) — larger refactors or integrations
 
 Comment on an issue to claim it, then open a PR referencing it.
 

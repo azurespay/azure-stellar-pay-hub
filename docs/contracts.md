@@ -28,21 +28,29 @@ Having a contract in this repo does **not** mean the platform invokes it.
 Distinguish _implemented_ (code + `test.rs`), _deployed_ (address on testnet),
 and _used by the platform_ (the API actually calls it):
 
-| Contract | Implemented | Unit tested (Rust) | Deployed (testnet) | Platform uses it |
-| --------------- | :---------: | :----------------: | :----------------: | :-----------------------------------: || `payment` | ✅ | ✅ (host tests) | ✅ | ⚠️ experimental route, off by default (SDK invoke fixed + tested) |
-| `escrow` | ✅ | ✅ (host tests) | ✅ | ❌ not invoked yet |
-| `multisig` | ✅ | ✅ (host tests) | ✅ | ❌ not invoked yet |
-| `treasury` | ✅ | ✅ (host tests) | ✅ | ❌ not invoked yet |
-| `subscriptions` | ✅ | ✅ (host tests) | ✅ | ❌ not invoked yet |
-| `invoices` | ✅ | ✅ (host tests) | ✅ | ❌ not invoked yet |
-| `merchant` | ✅ | ✅ (host tests) | ✅ | ❌ not invoked yet |
-| `rewards` | ✅ | ✅ (host tests) | ✅ | ❌ not invoked yet |
+| Contract        | Implemented | Unit tested (Rust) | Deployed (testnet) | Platform uses it                                                                                                              |
+| --------------- | :---------: | :----------------: | :----------------: | ----------------------------------------------------------------------------------------------------------------------------- |
+| `payment`       |     ✅      |  ✅ (host tests)   |         ✅         | ✅ API route (off by default) — **live-verified end-to-end 2026-09-11**                                                       |
+| `escrow`        |     ✅      |  ✅ (host tests)   |         ✅         | ✅ API route (`EscrowsService`) — **live-verified 2026-09-11** (create→FUNDED→release→RELEASED)                               |
+| `treasury`      |     ✅      |  ✅ (host tests)   |         ✅         | ✅ API route (`TreasuryService`) — **live-verified 2026-09-11** (deposit→CONFIRMED); **no JS/TS unit tests**                  |
+| `subscriptions` |     ✅      |  ✅ (host tests)   |         ✅         | ✅ API route (`SubscriptionsService`) — **live-verified 2026-09-11** (plan→ACTIVE, subscribe→ACTIVE); **no JS/TS unit tests** |
+| `invoices`      |     ✅      |  ✅ (host tests)   |         ✅         | ✅ API route (on-chain issue/pay) — **live-verified 2026-09-11** (issue→issued, pay→PAID)                                     |
+| `merchant`      |     ✅      |  ✅ (host tests)   |         ✅         | ✅ API route (register/sale/settle) — **live-verified 2026-09-11** (sale credited, settlement COMPLETED)                      |
+| `multisig`      |     ✅      |  ✅ (host tests)   |         ✅         | ❌ not invoked by the platform                                                                                                |
+| `rewards`       |     ✅      |  ✅ (host tests)   |         ✅         | ❌ not invoked by the platform                                                                                                |
 
-All eight testnet addresses are recorded in `.deployed-contracts.env`; they were
-deployed on 2026-08-10 and **verified live on-chain** via Soroban RPC
-`getLedgerEntries` on 2026-09-07 (see `docs/testnet-deploy.md` → Deployed
-contracts). Only the `payment` contract is reachable from the API, and only via
-the experimental route described below.
+All eight testnet addresses are recorded in `docs/testnet-deploy.md` and in the
+generated (gitignored) `.deployed-contracts.env`; they were deployed on
+2026-08-10. Re-verified on 2026-09-11 via Soroban RPC `getLedgerEntries` (all
+eight contract instances live) and by simulating `admin()` / `paused()` /
+`is_allowed(XLM SAC)` on the `payment` contract (admin set to the deployer, not
+paused, XLM allowlisted). On the same date the **contract-integrations E2E**
+(`node tests/e2e/contracts-flow.mjs`) passed 28/28 against live testnet: escrow
+fund + release, treasury deposit confirmed, invoice issued + paid, merchant
+registered on-chain, subscription plan + subscribe active, and merchant
+settlement completed — every state driven by the event indexer, never a DB-only
+write. The remaining gap is **unit** (not integration) coverage: `treasury` and
+`subscriptions` services have no JS/TS unit tests.
 
 ## Common conventions
 

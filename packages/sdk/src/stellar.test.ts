@@ -1,5 +1,9 @@
 import { Account, Address, Asset, Keypair, Networks, StrKey, xdr } from '@stellar/stellar-sdk';
-import { SorobanSubmissionError, StellarNetwork } from './stellar';
+import {
+  DEFAULT_STELLAR_REQUEST_TIMEOUT_MS,
+  SorobanSubmissionError,
+  StellarNetwork,
+} from './stellar';
 import { toStroops } from '@stellar-pay/shared';
 
 describe('StellarNetwork Soroban helpers', () => {
@@ -514,5 +518,30 @@ describe('StellarNetwork verifySignedPaymentMatchesIntent (anti-manipulation)', 
       toPublicKey: payee.publicKey(),
     });
     expect(result).toEqual({ matches: true });
+  });
+});
+
+describe('StellarNetwork request timeouts', () => {
+  it('applies a default per-request timeout to the Horizon client', () => {
+    const net = new StellarNetwork({
+      horizonUrl: 'https://horizon-testnet.stellar.org',
+      networkPassphrase: Networks.TESTNET,
+    });
+    // Both SDK clients default to no timeout, so without this a hung Horizon
+    // node blocks the caller indefinitely.
+    expect(net.timeoutMs).toBe(DEFAULT_STELLAR_REQUEST_TIMEOUT_MS);
+    expect(net.server.httpClient.defaults.timeout).toBe(DEFAULT_STELLAR_REQUEST_TIMEOUT_MS);
+  });
+
+  it('honours an explicit timeout override on both clients', () => {
+    const net = new StellarNetwork({
+      horizonUrl: 'https://horizon-testnet.stellar.org',
+      networkPassphrase: Networks.TESTNET,
+      sorobanRpcUrl: 'https://soroban-testnet.stellar.org',
+      requestTimeoutMs: 5_000,
+    });
+    expect(net.timeoutMs).toBe(5_000);
+    expect(net.server.httpClient.defaults.timeout).toBe(5_000);
+    expect(net.sorobanRpc()).toBeTruthy();
   });
 });

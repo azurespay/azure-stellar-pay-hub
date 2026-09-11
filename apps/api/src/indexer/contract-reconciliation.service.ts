@@ -513,7 +513,10 @@ export class ContractReconciliationService {
     // assets need code/decimals resolution before credit is safe. Never
     // mis-credit a USDC sale as XLM.
     if (event.token !== this.nativeSacAddress()) {
-      this.logger.log({ merchantId: merchant.id }, 'merchant sale for unsupported token — not credited');
+      this.logger.log(
+        { merchantId: merchant.id },
+        'merchant sale for unsupported token — not credited',
+      );
       return;
     }
     // Dedupe: a re-delivered `sale` event must not double-credit the merchant.
@@ -521,7 +524,9 @@ export class ContractReconciliationService {
     if (existing) {
       return;
     }
-    await this.prisma.chainEvent.create({ data: { eventId, source: 'soroban', txHash, ledger: null } });
+    await this.prisma.chainEvent.create({
+      data: { eventId, source: 'soroban', txHash, ledger: null },
+    });
     const amount = stroopsToUnits(event.amountStroops, 7);
     await this.prisma.transaction.create({
       data: {
@@ -563,7 +568,13 @@ export class ContractReconciliationService {
   }
 
   private async onMerchantSettled(
-    event: { id: bigint; token: string; amountStroops: bigint; commissionStroops: bigint; to: string },
+    event: {
+      id: bigint;
+      token: string;
+      amountStroops: bigint;
+      commissionStroops: bigint;
+      to: string;
+    },
     txHash: string | null,
   ): Promise<void> {
     // The settle event carries the real (net) amount the merchant received —
@@ -573,7 +584,10 @@ export class ContractReconciliationService {
       data: {
         status: 'COMPLETED',
         settleTxHash: txHash ?? undefined,
-        amount: event.token === this.nativeSacAddress() ? stroopsToUnits(event.amountStroops, 7) : undefined,
+        amount:
+          event.token === this.nativeSacAddress()
+            ? stroopsToUnits(event.amountStroops, 7)
+            : undefined,
       },
     });
     if (updated.count !== 1) {

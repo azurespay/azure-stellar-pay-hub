@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@stellar-pay/database';
 import { toStroops } from '@stellar-pay/shared';
 import { WalletService } from '../wallet/wallet.service';
@@ -220,7 +216,12 @@ export class TreasuryService {
     };
   }
 
-  async confirmAction(userId: string, id: string, action: 'approve' | 'execute', signedXdr: string) {
+  async confirmAction(
+    userId: string,
+    id: string,
+    action: 'approve' | 'execute',
+    signedXdr: string,
+  ) {
     const withdrawal = await this.findWithdrawal(userId, id);
     const hashField = action === 'approve' ? 'approveHash' : 'executedHash';
     if ((withdrawal as unknown as Record<string, string | null>)[hashField]) {

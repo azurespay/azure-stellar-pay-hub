@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Security vulnerability
-    url: https://github.com/Azure-StellarPay-Hub/azure-stellar-pay-hub/security/advisories/new
+    url: https://github.com/azurespay/azure-stellar-pay-hub/security/advisories/new
     about: Report a security vulnerability privately — do not open a public issue.
   - name: Questions & discussions
-    url: https://github.com/Azure-StellarPay-Hub/azure-stellar-pay-hub/discussions
+    url: https://github.com/azurespay/azure-stellar-pay-hub/discussions
     about: Ask questions or start a discussion.

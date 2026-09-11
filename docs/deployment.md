@@ -22,9 +22,13 @@ production routes — classify them as follows:
 
 **Deployment state today:** the platform is production-_oriented_ (Docker/K8s/
 Terraform/monitoring all exist), but real usage runs on **Stellar testnet** with
-demo data. Nothing has been deployed to Stellar mainnet and no mainnet
-contracts exist. Do not read the existence of production infrastructure as
-proof of a production deployment.
+demo data. The hosted Railway API is **offline** — on 2026-09-11 every probed
+path returned `404 Application not found`, and the Vercel frontends serve static
+shells with no working backend. Restoring it requires `RAILWAY_TOKEN` (and
+`RAILWAY_API_URL`) in the `railway` GitHub environment; `deploy-railway.yml`
+skips the deploy when the token is unset. Nothing has been deployed to Stellar
+mainnet and no mainnet contracts exist. Do not read the existence of production
+infrastructure as proof of a production deployment.
 
 ## 1. Local with Docker Compose
 

@@ -26,7 +26,8 @@ export class SubscriptionsController {
   @Post('subscription-plans')
   createPlan(
     @CurrentUser() user: AuthenticatedUser,
-    @Body(new ZodValidationPipe({ body: createSubscriptionPlanSchema })) body: CreateSubscriptionPlan,
+    @Body(new ZodValidationPipe({ body: createSubscriptionPlanSchema }))
+    body: CreateSubscriptionPlan,
   ) {
     return this.subscriptions.createPlan(user.userId, body);
   }

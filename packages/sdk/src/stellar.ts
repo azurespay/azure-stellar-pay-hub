@@ -23,7 +23,17 @@ export interface StellarNetworkConfig {
   networkPassphrase: string;
   /** Soroban RPC endpoint — required for the contract (Soroban) payment route. */
   sorobanRpcUrl?: string;
+  /**
+   * Per-request HTTP timeout for Horizon + Soroban RPC calls, in milliseconds.
+   * Both SDK clients default to *no* timeout, so a hung endpoint would block a
+   * caller (API request or E2E harness) forever. Defaults to 30s — comfortably
+   * above normal network latency but far below any operator patience threshold.
+   */
+  requestTimeoutMs?: number;
 }
+
+/** Default per-request timeout applied to Horizon + Soroban RPC clients. */
+export const DEFAULT_STELLAR_REQUEST_TIMEOUT_MS = 30_000;
 
 export interface PaymentTxInput {
   from: string;
@@ -100,11 +110,17 @@ export interface ContractCallInput {
 export class StellarNetwork {
   readonly server: Horizon.Server;
   readonly config: StellarNetworkConfig;
+  /** Per-request timeout applied to Horizon + Soroban RPC clients. */
+  readonly timeoutMs: number;
   private rpcServer: rpc.Server | null = null;
 
   constructor(config: StellarNetworkConfig) {
     this.config = config;
+    this.timeoutMs = config.requestTimeoutMs ?? DEFAULT_STELLAR_REQUEST_TIMEOUT_MS;
     this.server = new Horizon.Server(config.horizonUrl);
+    // Horizon.Server takes no timeout option — set it on the underlying client
+    // so a hung Horizon node fails fast instead of blocking the request.
+    this.server.httpClient.defaults.timeout = this.timeoutMs;
   }
 
   static forTestnet(): StellarNetwork {
@@ -122,7 +138,7 @@ export class StellarNetwork {
           'requires an RPC endpoint.',
       );
     }
-    this.rpcServer ??= new rpc.Server(this.config.sorobanRpcUrl);
+    this.rpcServer ??= new rpc.Server(this.config.sorobanRpcUrl, { timeout: this.timeoutMs });
     return this.rpcServer;
   }
 

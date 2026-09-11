@@ -2,7 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowDownLeft, ArrowUpRight, QrCode, Receipt, ShieldCheck, Sparkles, Wallet } from 'lucide-react';
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  QrCode,
+  Receipt,
+  ShieldCheck,
+  Sparkles,
+  Wallet,
+} from 'lucide-react';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Skeleton } from '@stellar-pay/ui';
 import { useWallet } from '@stellar-pay/wallet';
 import { api } from '@/lib/api';

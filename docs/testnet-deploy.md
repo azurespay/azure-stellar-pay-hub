@@ -200,7 +200,9 @@ curl -X POST http://localhost:4000/api/payments \
 | Merchant      | [`CDNQT...GDQUEU`](https://stellar.expert/explorer/testnet/contract/CDNQTYF4XSOPNY6ID6MHUROAC2BNIQTYWHJYVGXWMU5WFA5AOQGDQUEU)  |
 | Rewards       | [`CCVMQ...7SZYNC`](https://stellar.expert/explorer/testnet/contract/CCVMQIUDEJNOSFYU55DNNU3UHJJJDYJU66TPVJAYEXHWXNW2EY7SZYNC)  |
 
-Full addresses are in [`.deployed-contracts.env`](../.deployed-contracts.env).
+The full addresses are also written to the generated, gitignored
+`.deployed-contracts.env` by the deploy scripts (it is not committed, so the
+table above is the in-repo record).
 
 > **Verification (2026-09-09):** all eight contract addresses above were deployed
 > and **initialized + allowlisted on-chain** via `pnpm contracts:init` — Admin,
@@ -210,6 +212,13 @@ Full addresses are in [`.deployed-contracts.env`](../.deployed-contracts.env).
 > contract emitted its `payment` event, the indexer reconciled it to `CONFIRMED`,
 > and the realtime channel delivered the status update. The deployer account is
 > `GASXJVT43O2TZHOXR6KYZYJY3MSWG722XPYMB57KH5Q4MNXDRDCVKV4Y`.
+>
+> **Re-verification (2026-09-11):** all eight contract instances were confirmed
+> live via Soroban RPC `getLedgerEntries`, and `admin()` / `paused()` /
+> `is_allowed(XLM SAC)` were simulated on the `payment` contract (admin = the
+> deployer, not paused, XLM allowlisted). The contract-route E2E (`E2E_CONTRACT=1`)
+> was re-run and passed 22/22 (tx `cb8db1b8…`, ledger 4622907), as did the classic
+> route (22/22, tx `393cc465…`, ledger 4622888).
 
 ## Funding Test Accounts
 
