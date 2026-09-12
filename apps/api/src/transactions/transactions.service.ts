@@ -1,21 +1,16 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '@stellar-pay/database';
+import { Prisma, PrismaService } from '@stellar-pay/database';
+import type { TransactionQuery } from '@stellar-pay/validation';
 
 @Injectable()
 export class TransactionsService {
   constructor(private readonly prisma: PrismaService) {}
 
   /** Public explorer queries (transaction data is public on Stellar). */
-  async list(query: {
-    page?: number;
-    pageSize?: number;
-    status?: string;
-    assetCode?: string;
-    search?: string;
-  }) {
+  async list(query: TransactionQuery) {
     const page = Math.max(1, query.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));
-    const where: Record<string, unknown> = {};
+    const where: Prisma.TransactionWhereInput = {};
     if (query.status) {
       where.status = query.status;
     }
@@ -31,12 +26,12 @@ export class TransactionsService {
     }
     const [items, total] = await Promise.all([
       this.prisma.transaction.findMany({
-        where: where as never,
+        where,
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
-      this.prisma.transaction.count({ where: where as never }),
+      this.prisma.transaction.count({ where }),
     ]);
     return {
       data: items,

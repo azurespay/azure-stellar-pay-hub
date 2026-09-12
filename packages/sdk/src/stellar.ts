@@ -740,20 +740,20 @@ export class StellarNetwork {
 
   /** Build an scvI128 ScVal from a stroops bigint (contract `i128` params). */
   i128ScVal(stroops: bigint): xdr.ScVal {
-    return xdr.ScVal.scvI128(
-      // Runtime expects bigint hi/lo; the generated typings use branded
-      // Uint64/Int64, hence the cast.
-      new xdr.Int128Parts({
-        hi: BigInt.asUintN(64, stroops >> 64n),
-        lo: BigInt.asUintN(64, stroops),
-      } as never),
-    );
+    // The runtime accepts bigint for hi/lo (Int64/Uint64 extend Hyper, which is
+    // bigint-backed) but the generated typings brand them as xdr.Int64 /
+    // xdr.Uint64. Assert the real target type once, here.
+    const parts = {
+      hi: BigInt.asUintN(64, stroops >> 64n),
+      lo: BigInt.asUintN(64, stroops),
+    } as unknown as { hi: xdr.Int64; lo: xdr.Uint64 };
+    return xdr.ScVal.scvI128(new xdr.Int128Parts(parts));
   }
 
   /** Build an scvU64 ScVal from a bigint (contract `u64` params). */
   u64ScVal(value: bigint): xdr.ScVal {
     // Runtime accepts a bigint; the generated typings brand the arg as Uint64.
-    return xdr.ScVal.scvU64(value as never);
+    return xdr.ScVal.scvU64(value as unknown as xdr.Uint64);
   }
 
   /** Build an scvU32 ScVal (contract `u32` params). */

@@ -6,6 +6,22 @@ import {
 } from './stellar';
 import { toStroops } from '@stellar-pay/shared';
 
+/** The account shape `Horizon.Server.loadAccount` resolves to. */
+type HorizonAccount = Awaited<ReturnType<StellarNetwork['server']['loadAccount']>>;
+/** The Soroban RPC client shape `StellarNetwork.sorobanRpc()` returns. */
+type SorobanRpcClient = ReturnType<StellarNetwork['sorobanRpc']>;
+
+/**
+ * `ScAddress.contractId()` is typed as stellar-base's placeholder
+ * `Hash = Opaque[]` (its own .d.ts labels the type "workaround, cause
+ * unknown") even though it returns a Buffer at runtime. Narrow it to the real
+ * runtime shape here, once, with the upstream caveat documented — instead of
+ * an unexplained cast at every assertion.
+ */
+function scAddressBytes(value: xdr.ContractId): Uint8Array {
+  return value as unknown as Uint8Array;
+}
+
 describe('StellarNetwork Soroban helpers', () => {
   const passphrase = Networks.TESTNET;
   const network = new StellarNetwork({
@@ -19,7 +35,7 @@ describe('StellarNetwork Soroban helpers', () => {
   beforeEach(() => {
     jest
       .spyOn(network.server, 'loadAccount')
-      .mockResolvedValue(new Account(payer.publicKey(), '1') as never);
+      .mockResolvedValue(new Account(payer.publicKey(), '1') as unknown as HorizonAccount);
   });
 
   afterEach(() => {
@@ -75,20 +91,24 @@ describe('StellarNetwork Soroban helpers', () => {
     // REGRESSION GUARD: the invocation target must be the deployed payment
     // contract, never the token SAC (the SAC has no `send` entry point).
     // v14 Hash is a Buffer subclass — compare bytes directly.
-    expect(Buffer.from(invoke.contractBytes as never)).toEqual(StrKey.decodeContract(CONTRACT_ID));
-    expect(Buffer.from(invoke.contractBytes as never)).not.toEqual(StrKey.decodeContract(token));
+    expect(Buffer.from(scAddressBytes(invoke.contractBytes))).toEqual(
+      StrKey.decodeContract(CONTRACT_ID),
+    );
+    expect(Buffer.from(scAddressBytes(invoke.contractBytes))).not.toEqual(
+      StrKey.decodeContract(token),
+    );
     expect(invoke.args.length).toBe(5);
 
     // args[0]=from, args[1]=to, args[2]=token (accounts vs contract address).
     expect(invoke.args[0].address().switch().name).toBe('scAddressTypeAccount');
-    expect(Buffer.from(invoke.args[0].address().accountId().ed25519() as never)).toEqual(
+    expect(Buffer.from(invoke.args[0].address().accountId().ed25519())).toEqual(
       StrKey.decodeEd25519PublicKey(payer.publicKey()),
     );
     // The token SAC must be passed as the THIRD argument of the payment
     // contract's send(from, to, token, amount, memo) — and it must be the
     // XLM SAC, not the payment contract itself.
     expect(invoke.args[2].address().switch().name).toBe('scAddressTypeContract');
-    expect(Buffer.from(invoke.args[2].address().contractId() as never)).toEqual(
+    expect(Buffer.from(scAddressBytes(invoke.args[2].address().contractId()))).toEqual(
       StrKey.decodeContract(token),
     );
 
@@ -231,14 +251,14 @@ describe('StellarNetwork Soroban prepare/sign/submit (contract route)', () => {
       getTransaction: jest.fn().mockResolvedValue(overrides.getTx ?? null),
       getLatestLedger: jest.fn().mockResolvedValue({ sequence: overrides.latestLedger ?? 500 }),
     };
-    jest.spyOn(network, 'sorobanRpc').mockReturnValue(fake as never);
+    jest.spyOn(network, 'sorobanRpc').mockReturnValue(fake as unknown as SorobanRpcClient);
     return fake;
   }
 
   beforeEach(() => {
     jest
       .spyOn(network.server, 'loadAccount')
-      .mockResolvedValue(new Account(payer.publicKey(), '1') as never);
+      .mockResolvedValue(new Account(payer.publicKey(), '1') as unknown as HorizonAccount);
   });
 
   afterEach(() => {
@@ -402,7 +422,7 @@ describe('StellarNetwork Soroban prepare/sign/submit (contract route)', () => {
     });
     jest
       .spyOn(noRpc.server, 'loadAccount')
-      .mockResolvedValue(new Account(payer.publicKey(), '1') as never);
+      .mockResolvedValue(new Account(payer.publicKey(), '1') as unknown as HorizonAccount);
 
     await expect(
       noRpc.prepareSorobanSendTransaction({
@@ -429,7 +449,7 @@ describe('StellarNetwork verifySignedPaymentMatchesIntent (anti-manipulation)', 
   beforeEach(() => {
     jest
       .spyOn(network.server, 'loadAccount')
-      .mockResolvedValue(new Account(payer.publicKey(), '1') as never);
+      .mockResolvedValue(new Account(payer.publicKey(), '1') as unknown as HorizonAccount);
   });
 
   afterEach(() => {

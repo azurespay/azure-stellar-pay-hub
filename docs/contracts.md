@@ -1,6 +1,6 @@
 ---
 title: Smart Contracts
-description: The eight Soroban contracts, their interfaces, events, and deployment.
+description: The six Soroban contracts, their interfaces, events, and deployment.
 ---
 
 # Smart Contracts
@@ -15,12 +15,10 @@ All contracts live in `contracts/` and are written in Rust with
 | --------------- | --------------------------------------------------------------- |
 | `payment`       | Direct XLM/asset transfers with memo and receipt events         |
 | `escrow`        | Conditional escrow with initiator/counterparty/arbiter          |
-| `multisig`      | Threshold proposals that execute real cross-contract calls      |
 | `treasury`      | Allowlisted vault with governance propose→approve→execute       |
 | `subscriptions` | Recurring billing with plan management and cancellation         |
 | `invoices`      | On-chain invoice registry with paid/expired states              |
 | `merchant`      | Merchant registry + settlement distribution to multiple wallets |
-| `rewards`       | Loyalty points: earn/redeem with tiers                          |
 
 ## Contract status matrix
 
@@ -36,13 +34,11 @@ and _used by the platform_ (the API actually calls it):
 | `subscriptions` |     ✅      |  ✅ (host tests)   |         ✅         | ✅ API route (`SubscriptionsService`) — **live-verified 2026-09-11** (plan→ACTIVE, subscribe→ACTIVE); **no JS/TS unit tests** |
 | `invoices`      |     ✅      |  ✅ (host tests)   |         ✅         | ✅ API route (on-chain issue/pay) — **live-verified 2026-09-11** (issue→issued, pay→PAID)                                     |
 | `merchant`      |     ✅      |  ✅ (host tests)   |         ✅         | ✅ API route (register/sale/settle) — **live-verified 2026-09-11** (sale credited, settlement COMPLETED)                      |
-| `multisig`      |     ✅      |  ✅ (host tests)   |         ✅         | ❌ not invoked by the platform                                                                                                |
-| `rewards`       |     ✅      |  ✅ (host tests)   |         ✅         | ❌ not invoked by the platform                                                                                                |
 
-All eight testnet addresses are recorded in `docs/testnet-deploy.md` and in the
+All six testnet addresses are recorded in `docs/testnet-deploy.md` and in the
 generated (gitignored) `.deployed-contracts.env`; they were deployed on
 2026-08-10. Re-verified on 2026-09-11 via Soroban RPC `getLedgerEntries` (all
-eight contract instances live) and by simulating `admin()` / `paused()` /
+six contract instances live) and by simulating `admin()` / `paused()` /
 `is_allowed(XLM SAC)` on the `payment` contract (admin set to the deployer, not
 paused, XLM allowlisted). On the same date the **contract-integrations E2E**
 (`node tests/e2e/contracts-flow.mjs`) passed 28/28 against live testnet: escrow
@@ -55,7 +51,7 @@ write. The remaining gap is **unit** (not integration) coverage: `treasury` and
 ## Common conventions
 
 - **Events** — every state change emits a typed event (e.g. `PaymentReceived`,
-  `EscrowReleased`, `ProposalExecuted`).
+  `EscrowReleased`, `SubscriptionRenewed`).
 - **Errors** — each contract defines an `Error` enum with descriptive variants
   (`Unauthorized`, `InsufficientBalance`, `AlreadyExists`, …).
 - **Storage** — `DataKey` enums + `Persistent` storage; accessor patterns are public.
@@ -78,7 +74,7 @@ Artifacts: `contracts/target/wasm32v1-none/release/*.wasm`
 # Build contracts (requires rust + wasm32v1-none target)
 pnpm contracts:build
 
-# Deploy all 8 contracts (writes .deployed-contracts.env; stable per-contract
+# Deploy all 6 contracts (writes .deployed-contracts.env; stable per-contract
 # salts so re-runs are idempotent)
 export STELLAR_SECRET_KEY=S...
 pnpm deploy:contracts

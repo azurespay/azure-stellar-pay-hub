@@ -6,16 +6,19 @@ import {
   merchantStatusSchema,
   roleAssignmentSchema,
   settingsSchema,
+  transactionQuerySchema,
   userStatusSchema,
   type CreateAsset,
   type MerchantStatusUpdate,
   type RoleAssignment,
+  type TransactionQuery,
   type UpsertSetting,
   type UserStatusUpdate,
 } from '@stellar-pay/validation';
+import { UserRole } from '@stellar-pay/types';
 import { AdminService } from './admin.service';
 
-@Roles('ADMIN')
+@Roles(UserRole.ADMIN)
 @Controller('admin')
 export class AdminController {
   constructor(private readonly admin: AdminService) {}
@@ -59,12 +62,10 @@ export class AdminController {
   }
 
   @Get('transactions')
-  transactions(@Query() query: { page?: string; pageSize?: string; status?: string }) {
-    return this.admin.transactions({
-      page: Number(query.page) || 1,
-      pageSize: Number(query.pageSize) || 20,
-      status: query.status,
-    });
+  transactions(
+    @Query(new ZodValidationPipe({ query: transactionQuerySchema })) query: TransactionQuery,
+  ) {
+    return this.admin.transactions(query);
   }
 
   @Get('audit-logs')

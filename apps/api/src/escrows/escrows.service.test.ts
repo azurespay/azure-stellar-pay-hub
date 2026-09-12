@@ -4,7 +4,13 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import type { PrismaService } from '@stellar-pay/database';
+import type { CreateEscrow } from '@stellar-pay/validation';
 import { EscrowsService } from './escrows.service';
+import type { WalletService } from '../wallet/wallet.service';
+import type { RealtimeGateway } from '../realtime/realtime.gateway';
+import type { NotificationsService } from '../notifications/notifications.service';
+import type { ContractIntegrationService } from '../contracts/contract-integration.service';
 
 describe('EscrowsService', () => {
   let service: EscrowsService;
@@ -67,16 +73,16 @@ describe('EscrowsService', () => {
       }),
     };
     service = new EscrowsService(
-      mockPrisma as never,
-      mockWallet as never,
-      mockRealtime as never,
-      mockNotifications as never,
-      mockContracts as never,
+      mockPrisma as unknown as PrismaService,
+      mockWallet as unknown as WalletService,
+      mockRealtime as unknown as RealtimeGateway,
+      mockNotifications as unknown as NotificationsService,
+      mockContracts as unknown as ContractIntegrationService,
     );
   });
 
   describe('create', () => {
-    const dto = {
+    const dto: CreateEscrow = {
       initiatorPublicKey: 'GINIT',
       counterpartyPublicKey: 'GCOUNTER',
       assetCode: 'XLM',
@@ -85,7 +91,7 @@ describe('EscrowsService', () => {
     };
 
     it('prepares the contract create call and stores an AWAITING_SIGN row', async () => {
-      const result = await service.create('user-1', dto as never);
+      const result = await service.create('user-1', dto);
       expect(result.unsignedXdr).toBe('AAAA');
       expect(mockPrisma.escrow.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ status: 'AWAITING_SIGN', userId: 'user-1' }),
@@ -97,7 +103,7 @@ describe('EscrowsService', () => {
 
     it('rejects an expiry before the release time', async () => {
       await expect(
-        service.create('user-1', { ...dto, expiry: '2029-01-01T00:00:00.000Z' } as never),
+        service.create('user-1', { ...dto, expiry: '2029-01-01T00:00:00.000Z' }),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -105,16 +111,14 @@ describe('EscrowsService', () => {
       mockContracts.requireContractAddress.mockImplementation(() => {
         throw new ServiceUnavailableException('not configured');
       });
-      await expect(service.create('user-1', dto as never)).rejects.toThrow(
-        ServiceUnavailableException,
-      );
+      await expect(service.create('user-1', dto)).rejects.toThrow(ServiceUnavailableException);
     });
 
     it('requires wallet ownership of the initiator key', async () => {
       mockWallet.assertWalletOwnership.mockRejectedValue(
         new NotFoundException('Wallet not linked'),
       );
-      await expect(service.create('user-1', dto as never)).rejects.toThrow(NotFoundException);
+      await expect(service.create('user-1', dto)).rejects.toThrow(NotFoundException);
     });
   });
 

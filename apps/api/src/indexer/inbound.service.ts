@@ -178,7 +178,7 @@ export class InboundReconciliationService {
     if (invoiceMatches) {
       // Reuse the shared post-success reconciliation: marks the invoice PAID,
       // notifies the merchant, dispatches invoice.paid + payment.received.
-      await this.reconciliation.onPaymentSucceeded(transaction as never);
+      await this.reconciliation.onPaymentSucceeded(transaction);
     } else {
       await this.notifications.paymentReceived({
         userId: merchant.userId,

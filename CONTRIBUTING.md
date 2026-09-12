@@ -86,7 +86,7 @@ Example: `feat: add invoice expiry to Soroban contract`
 
 ```text
 apps/            web · admin · api · explorer · docs        (NestJS + Next.js)
-contracts/       payment · escrow · multisig · treasury · subscriptions · invoices · merchant · rewards  (Soroban/Rust)
+contracts/       payment · escrow · treasury · subscriptions · invoices · merchant  (Soroban/Rust)
 packages/        sdk · wallet · ui · authentication · database · validation · analytics · notifications · config · logger · shared · types
 infrastructure/  docker · kubernetes · terraform · monitoring
 docs/            architecture · api · sdk · contracts · database · deployment · development

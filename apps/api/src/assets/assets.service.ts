@@ -1,14 +1,15 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '@stellar-pay/database';
+import { Prisma, PrismaService } from '@stellar-pay/database';
+import type { AssetQuery } from '@stellar-pay/validation';
 
 @Injectable()
 export class AssetsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(query: { search?: string; type?: string; page?: number; pageSize?: number }) {
+  async list(query: AssetQuery) {
     const page = Math.max(1, query.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));
-    const where: Record<string, unknown> = { isEnabled: true };
+    const where: Prisma.AssetWhereInput = { isEnabled: true };
     if (query.type) {
       where.type = query.type;
     }
@@ -20,12 +21,12 @@ export class AssetsService {
     }
     const [items, total] = await Promise.all([
       this.prisma.asset.findMany({
-        where: where as never,
+        where,
         orderBy: { isNative: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
-      this.prisma.asset.count({ where: where as never }),
+      this.prisma.asset.count({ where }),
     ]);
     return {
       data: items,

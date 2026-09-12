@@ -37,7 +37,7 @@ The script will:
 2. Install dependencies
 3. Start Postgres + Redis
 4. Create and seed the database
-5. Build all 8 Soroban contracts
+5. Build all 6 Soroban contracts
 6. Deploy each contract to testnet
 7. **Initialize + allowlist each contract on-chain** (admin, XLM SAC allowlist, verification)
 8. Save contract addresses to `.deployed-contracts.env`
@@ -106,7 +106,7 @@ stellar contract deploy \
   --source-account SXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX \
   --network testnet
 
-# Repeat for: escrow, multisig, treasury, subscriptions, invoices, merchant, rewards
+# Repeat for: escrow, treasury, subscriptions, invoices, merchant
 
 # Save the returned addresses — you'll need them for the API
 ```
@@ -114,8 +114,8 @@ stellar contract deploy \
 ### 6. Initialize + Allowlist Contracts
 
 Deployed contracts are **inert until initialized**: `initialize(...)` must be
-called on the contracts that need it (payment, escrow, merchant, treasury,
-rewards, multisig), and the payment/treasury token allowlists must be set before
+called on the contracts that need it (payment, escrow, merchant, treasury),
+and the payment/treasury token allowlists must be set before
 `send`/`withdraw` will accept a token. All of this is automated:
 
 ```bash
@@ -129,20 +129,14 @@ passed as space-separated SAC addresses), and verifies the on-chain storage
 (`Admin` / `Paused` / `Allowed`) afterwards. Re-running is idempotent
 (already-initialized contracts are skipped).
 
-Custom multisig setup:
-
-```bash
-MULTISIG_SIGNERS="G... G..." MULTISIG_THRESHOLD=2 pnpm contracts:init
-```
-
 Manual equivalent for a single contract:
 
 ```bash
 stellar contract invoke \
-  --id <MULTISIG_ADDRESS> \
+  --id <CONTRACT_ADDRESS> \
   --source-account S... \
   --network testnet \
-  -- initialize --signers '["G...","G..."]' --threshold 2
+  -- initialize
 ```
 
 ### 7. Record Contract Addresses
@@ -152,12 +146,10 @@ Add deployed addresses to your `.env`:
 ```env
 CONTRACT_STELLAR_PAY_PAYMENT=C...
 CONTRACT_STELLAR_PAY_ESCROW=C...
-CONTRACT_STELLAR_PAY_MULTISIG=C...
 CONTRACT_STELLAR_PAY_TREASURY=C...
 CONTRACT_STELLAR_PAY_SUBSCRIPTIONS=C...
 CONTRACT_STELLAR_PAY_INVOICES=C...
 CONTRACT_STELLAR_PAY_MERCHANT=C...
-CONTRACT_STELLAR_PAY_REWARDS=C...
 ```
 
 ### 8. Build and Start
@@ -193,18 +185,16 @@ curl -X POST http://localhost:4000/api/payments \
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | Payment       | [`CBDOG...K7IN4Q`](https://stellar.expert/explorer/testnet/contract/CBDOGRJIOX46MEHIYRGU7BFKLT2OOPT7QIN7ZU53DH5WK7FF5QK7IN4Q)  |
 | Escrow        | [`CDWVU...3AMUEY`](https://stellar.expert/explorer/testnet/contract/CDWVUTCME6JSATWKKWIFVBEO4NAZSJCCX2ECNRQN3L33W65EFT3AMUEY)  |
-| Multisig      | [`CBHD5...A33BI`](https://stellar.expert/explorer/testnet/contract/CBHD5GZP6T4WB6LR2D776EKW73OP6JZGE25ERM36WPICGBSLJ6QA33BI)   |
 | Treasury      | [`CCKWX...4UWRMKZ`](https://stellar.expert/explorer/testnet/contract/CCKWXDASGA7W3KWMEOEXYWMV5RVDLV2WGEJOHO3SYHKMXHZ3X4UWRMKZ) |
 | Subscriptions | [`CCMQF...XOLBNI`](https://stellar.expert/explorer/testnet/contract/CCMQF6EB5DT6HKWGOB5BTRMD6Q66D5MVBQQN5HOK3565WHATXINOLBNI)  |
 | Invoices      | [`CB3XB...TVDHZ`](https://stellar.expert/explorer/testnet/contract/CB3XBXQUY4LHSFPWJ4XZL6T7A2ITNMBWMCTT2QOS6LB7PF7RPJBTVDHZ)   |
 | Merchant      | [`CDNQT...GDQUEU`](https://stellar.expert/explorer/testnet/contract/CDNQTYF4XSOPNY6ID6MHUROAC2BNIQTYWHJYVGXWMU5WFA5AOQGDQUEU)  |
-| Rewards       | [`CCVMQ...7SZYNC`](https://stellar.expert/explorer/testnet/contract/CCVMQIUDEJNOSFYU55DNNU3UHJJJDYJU66TPVJAYEXHWXNW2EY7SZYNC)  |
 
 The full addresses are also written to the generated, gitignored
 `.deployed-contracts.env` by the deploy scripts (it is not committed, so the
 table above is the in-repo record).
 
-> **Verification (2026-09-09):** all eight contract addresses above were deployed
+> **Verification (2026-09-09):** all six contract addresses above were deployed
 > and **initialized + allowlisted on-chain** via `pnpm contracts:init` — Admin,
 > Signers/Threshold, `Allowed(XLM)` and `Paused` were each read back from the
 > contracts' instance storage and verified. A contract-route payment (`E2E_CONTRACT=1`)
@@ -213,7 +203,7 @@ table above is the in-repo record).
 > and the realtime channel delivered the status update. The deployer account is
 > `GASXJVT43O2TZHOXR6KYZYJY3MSWG722XPYMB57KH5Q4MNXDRDCVKV4Y`.
 >
-> **Re-verification (2026-09-11):** all eight contract instances were confirmed
+> **Re-verification (2026-09-11):** all six contract instances were confirmed
 > live via Soroban RPC `getLedgerEntries`, and `admin()` / `paused()` /
 > `is_allowed(XLM SAC)` were simulated on the `payment` contract (admin = the
 > deployer, not paused, XLM allowlisted). The contract-route E2E (`E2E_CONTRACT=1`)

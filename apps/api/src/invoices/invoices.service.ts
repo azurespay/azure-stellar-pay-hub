@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '@stellar-pay/database';
+import { Prisma, PrismaService } from '@stellar-pay/database';
 import { addAmounts, toStroops } from '@stellar-pay/shared';
 import { randomBytes } from 'crypto';
 import { WalletService } from '../wallet/wallet.service';
@@ -68,7 +68,7 @@ export class InvoicesService {
         customerPublicKey: input.customerPublicKey,
         title: input.title,
         description: input.description,
-        items: input.items as never,
+        items: input.items as Prisma.InputJsonValue,
         amount: computed,
         assetCode: input.assetCode ?? 'USDC',
         assetIssuer: input.assetIssuer,

@@ -25,7 +25,7 @@ function i128(stroops: bigint): xdr.ScVal {
 }
 
 function u64(value: bigint): xdr.ScVal {
-  return xdr.ScVal.scvU64(value as never);
+  return xdr.ScVal.scvU64(new xdr.Uint64(value));
 }
 
 function topic(name: string): string[] {

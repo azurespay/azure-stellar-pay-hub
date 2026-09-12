@@ -1,5 +1,5 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { PrismaService } from '@stellar-pay/database';
+import { Prisma, PrismaService } from '@stellar-pay/database';
 import { RedisService } from '../infra/redis.service';
 import { WebhooksService } from '../webhooks/webhooks.service';
 import { createLogger } from '@stellar-pay/logger';
@@ -105,7 +105,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
       where: {
         status: { in: ['PENDING', 'SUBMITTED'] },
         meta: { path: ['scheduledId'], equals: scheduled.id },
-      } as never,
+      } satisfies Prisma.TransactionWhereInput,
     });
     if (inFlight) {
       return false; // occurrence already created and awaiting approval/confirmation

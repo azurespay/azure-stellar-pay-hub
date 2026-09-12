@@ -5,8 +5,11 @@ import {
   issuerSchema,
   memoSchema,
   memoTypeSchema,
+  pageSchema,
+  pageSizeSchema,
   publicKeySchema,
 } from './common';
+import { transactionDirectionSchema, transactionStatusSchema } from './transaction';
 
 const destinationSchema = z
   .object({
@@ -64,10 +67,12 @@ export const paymentRequestSchema = z
 export type PaymentRequestInput = z.infer<typeof paymentRequestSchema>;
 
 export const transactionListQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).optional().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).optional().default(20),
-  status: z.enum(['PENDING', 'SUBMITTED', 'SUCCEEDED', 'FAILED', 'CANCELED']).optional(),
-  direction: z.enum(['INCOMING', 'OUTGOING']).optional(),
+  page: pageSchema,
+  pageSize: pageSizeSchema,
+  // Reuses the shared status enum so CONFIRMED (the contract-route terminal
+  // state) is filterable here too, instead of being silently excluded.
+  status: transactionStatusSchema.optional(),
+  direction: transactionDirectionSchema.optional(),
   assetCode: assetCodeSchema.optional(),
 });
 

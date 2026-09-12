@@ -1250,21 +1250,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "stellar-pay-multisig"
-version = "0.1.0"
-dependencies = [
- "soroban-sdk",
-]
-
-[[package]]
 name = "stellar-pay-payment"
-version = "0.1.0"
-dependencies = [
- "soroban-sdk",
-]
-
-[[package]]
-name = "stellar-pay-rewards"
 version = "0.1.0"
 dependencies = [
  "soroban-sdk",

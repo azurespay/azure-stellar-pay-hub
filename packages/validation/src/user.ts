@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { amountSchema, publicKeySchema } from './common';
+import { publicKeySchema } from './common';
 
 export const updateProfileSchema = z
   .object({

@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '@stellar-pay/database';
+import { Prisma, PrismaService } from '@stellar-pay/database';
 import { toStroops } from '@stellar-pay/shared';
 import { WalletService } from '../wallet/wallet.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
@@ -233,7 +233,7 @@ export class TreasuryService {
     }
     const updated = await this.prisma.treasuryWithdrawal.update({
       where: { id },
-      data: { [hashField]: result.hash ?? null } as never,
+      data: { [hashField]: result.hash ?? null } as Prisma.TreasuryWithdrawalUpdateInput,
     });
     // Status advances on the `wappr` / `wexec` event.
     return updated;

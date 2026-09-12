@@ -272,7 +272,7 @@ export class IndexerService {
     const correlation = extractCorrelationMemo(event);
     if (correlation) {
       const tx = await this.prisma.transaction.findFirst({
-        where: { meta: { path: ['correlationId'], equals: correlation } } as never,
+        where: { meta: { path: ['correlationId'], equals: correlation } },
       });
       if (tx?.kind === 'contract_send') {
         if (tx.status === 'SUBMITTED') {

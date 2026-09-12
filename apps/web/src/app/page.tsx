@@ -44,7 +44,7 @@ const FEATURES = [
   {
     icon: ShieldCheck,
     title: 'Soroban secured',
-    body: 'Escrow, multisig and treasury contracts auditable and upgradeable.',
+    body: 'Escrow, treasury and invoicing contracts auditable and upgradeable.',
   },
 ];
 

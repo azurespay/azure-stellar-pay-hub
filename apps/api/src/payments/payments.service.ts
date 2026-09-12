@@ -1,12 +1,15 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Asset, BASE_FEE, Memo, Operation, TransactionBuilder } from '@stellar/stellar-sdk';
-import { PrismaService } from '@stellar-pay/database';
+import { Prisma, PrismaService } from '@stellar-pay/database';
 import { createStellarNetwork } from '../infra/stellar';
 import { createId, toStroops } from '@stellar-pay/shared';
 import { SorobanSubmissionError } from '@stellar-pay/sdk';
-import type { CreatePayment, PaymentRequestInput } from '@stellar-pay/validation';
-import type { TransactionDirection } from '@stellar-pay/types';
+import type {
+  CreatePayment,
+  PaymentRequestInput,
+  TransactionListQuery,
+} from '@stellar-pay/validation';
 import { WalletService } from '../wallet/wallet.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { WebhooksService } from '../webhooks/webhooks.service';
@@ -496,31 +499,30 @@ export class PaymentsService {
     return { uri, qrPayload: uri };
   }
 
-  async history(
-    userId: string,
-    query: {
-      page?: number;
-      pageSize?: number;
-      status?: string;
-      direction?: string;
-      assetCode?: string;
-    },
-  ) {
+  async history(userId: string, query: Partial<TransactionListQuery> = {}) {
     const page = Math.max(1, query.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));
+    // Build the filter once and use it for BOTH the page and the count: the
+    // count previously ignored status/direction/assetCode, so `total` and
+    // `totalPages` were wrong whenever any filter was applied.
+    const where: Prisma.TransactionWhereInput = { userId };
+    if (query.status) {
+      where.status = query.status;
+    }
+    if (query.direction) {
+      where.direction = query.direction;
+    }
+    if (query.assetCode) {
+      where.assetCode = query.assetCode;
+    }
     const [items, total] = await Promise.all([
       this.prisma.transaction.findMany({
-        where: {
-          userId,
-          status: query.status as never,
-          direction: query.direction as TransactionDirection | undefined,
-          assetCode: query.assetCode,
-        },
+        where,
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
-      this.prisma.transaction.count({ where: { userId } }),
+      this.prisma.transaction.count({ where }),
     ]);
     return {
       data: items,

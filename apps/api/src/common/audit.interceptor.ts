@@ -1,6 +1,6 @@
 import { CallHandler, ExecutionContext, Injectable, Logger, NestInterceptor } from '@nestjs/common';
 import { Observable, tap } from 'rxjs';
-import { PrismaService } from '@stellar-pay/database';
+import { Prisma, PrismaService } from '@stellar-pay/database';
 
 /**
  * Writes an AuditLog row for every mutating request (POST/PUT/PATCH/DELETE).
@@ -61,7 +61,7 @@ export class AuditInterceptor implements NestInterceptor {
           resourceId: undefined,
           ipAddress: request.ip,
           userAgent: request.headers?.['user-agent'],
-          metadata: { body: request.body } as never,
+          metadata: { body: request.body } as Prisma.InputJsonValue,
         },
       })
       .catch((err: Error) => {

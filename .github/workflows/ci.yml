@@ -108,10 +108,13 @@ jobs:
         with:
           toolchain: stable
           targets: wasm32v1-none
-      - name: Build contracts
-        run: cargo build --manifest-path contracts/Cargo.toml --workspace --release --target wasm32v1-none
-      - name: Test contracts
-        run: cargo test --manifest-path contracts/Cargo.toml --workspace
+      # The same script local `pnpm test` runs, so developer and CI contract
+      # verification cannot drift. REQUIRE_RUST_TOOLCHAIN makes a missing
+      # toolchain a hard failure here (locally it degrades to a visible skip).
+      - name: Verify contracts (wasm release build + tests)
+        run: pnpm contracts:verify
+        env:
+          REQUIRE_RUST_TOOLCHAIN: '1'
 
   build-apps:
     name: Build apps & packages

@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PrismaService } from '@stellar-pay/database';
+import { Prisma, PrismaService } from '@stellar-pay/database';
 import { toStroops } from '@stellar-pay/shared';
 import { WalletService } from '../wallet/wallet.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
@@ -248,7 +248,7 @@ export class SubscriptionsService {
     // Indexer advances status on the `renew`/`cancel` event.
     const updated = await this.prisma.subscription.update({
       where: { id },
-      data: { [hashField]: result.hash ?? null } as never,
+      data: { [hashField]: result.hash ?? null } as Prisma.SubscriptionUpdateInput,
     });
     return updated;
   }

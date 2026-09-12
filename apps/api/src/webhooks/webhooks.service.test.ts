@@ -1,3 +1,4 @@
+import { WebhookEventType } from '@stellar-pay/types';
 import { WebhooksService } from './webhooks.service';
 
 describe('WebhooksService', () => {
@@ -35,7 +36,9 @@ describe('WebhooksService', () => {
       },
     };
     service = new WebhooksService(mockPrisma as any);
-    (service as unknown as { logger: { warn: jest.Mock } }).logger = mockLogger as never;
+    (service as unknown as { logger: { warn: jest.Mock } }).logger = mockLogger as unknown as {
+      warn: jest.Mock;
+    };
   });
 
   afterEach(() => {
@@ -46,7 +49,7 @@ describe('WebhooksService', () => {
     mockPrisma.webhook.findMany.mockResolvedValue([webhook]);
 
     await service.dispatch(
-      'payment.received' as never,
+      WebhookEventType.PAYMENT_RECEIVED,
       { transactionId: 'tx-1', amount: '5' },
       { merchantId: 'merchant-1' },
     );
@@ -69,8 +72,8 @@ describe('WebhooksService', () => {
   it('gives every logical event a distinct deliveryId', async () => {
     mockPrisma.webhook.findMany.mockResolvedValue([webhook]);
 
-    await service.dispatch('payment.received' as never, {}, { merchantId: 'merchant-1' });
-    await service.dispatch('payment.received' as never, {}, { merchantId: 'merchant-1' });
+    await service.dispatch(WebhookEventType.PAYMENT_RECEIVED, {}, { merchantId: 'merchant-1' });
+    await service.dispatch(WebhookEventType.PAYMENT_RECEIVED, {}, { merchantId: 'merchant-1' });
 
     const ids = mockPrisma.webhookDelivery.create.mock.calls.map(
       (call: [{ data: { id: string } }]) => call[0].data.id,
@@ -88,7 +91,7 @@ describe('WebhooksService', () => {
         ),
     );
 
-    await service.dispatch('payment.received' as never, {}, { merchantId: 'merchant-1' });
+    await service.dispatch(WebhookEventType.PAYMENT_RECEIVED, {}, { merchantId: 'merchant-1' });
 
     expect(mockPrisma.webhook.findMany).toHaveBeenCalledWith({
       where: { merchantId: 'merchant-1', status: 'ACTIVE' },
@@ -101,7 +104,7 @@ describe('WebhooksService', () => {
   it('never broadcasts an event with no attributable merchant', async () => {
     mockPrisma.webhook.findMany.mockResolvedValue([webhook, otherMerchantWebhook]);
 
-    await service.dispatch('payment.received' as never, {});
+    await service.dispatch(WebhookEventType.PAYMENT_RECEIVED, {});
 
     expect(mockPrisma.webhook.findMany).not.toHaveBeenCalled();
     expect(mockPrisma.webhookDelivery.create).not.toHaveBeenCalled();
@@ -111,7 +114,7 @@ describe('WebhooksService', () => {
     mockPrisma.webhook.findMany.mockResolvedValue([webhook]);
     mockPrisma.webhookDelivery.findUnique.mockResolvedValue(null); // first attempt no-ops
     await service.dispatch(
-      'invoice.paid' as never,
+      WebhookEventType.INVOICE_PAID,
       { invoiceNumber: 'INV-1' },
       { merchantId: 'merchant-1' },
     );
@@ -148,7 +151,9 @@ describe('WebhooksService', () => {
   it('only dispatches to webhooks subscribed to the event', async () => {
     mockPrisma.webhook.findMany.mockResolvedValue([webhook]);
 
-    await service.dispatch('transaction.updated' as never, {}, { merchantId: 'merchant-1' });
+    // Valid event type the webhook is NOT subscribed to (it only subscribes to
+    // payment.received + invoice.paid) — exercises the subscription filter.
+    await service.dispatch(WebhookEventType.SETTLEMENT_COMPLETED, {}, { merchantId: 'merchant-1' });
 
     expect(mockPrisma.webhookDelivery.create).not.toHaveBeenCalled();
   });

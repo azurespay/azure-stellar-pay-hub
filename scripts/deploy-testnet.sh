@@ -100,12 +100,10 @@ echo "# Deployed contract addresses — $(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$DEPL
 declare -a CONTRACTS=(
   "stellar_pay_payment"
   "stellar_pay_escrow"
-  "stellar_pay_multisig"
   "stellar_pay_treasury"
   "stellar_pay_subscriptions"
   "stellar_pay_invoices"
   "stellar_pay_merchant"
-  "stellar_pay_rewards"
 )
 
 for contract in "${CONTRACTS[@]}"; do

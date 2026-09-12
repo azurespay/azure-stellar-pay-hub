@@ -1,4 +1,5 @@
-import { Logger } from '@nestjs/common';
+import { Logger, type ExecutionContext } from '@nestjs/common';
+import type { PrismaService } from '@stellar-pay/database';
 import { AuditInterceptor } from './audit.interceptor';
 import { lastValueFrom, of, throwError } from 'rxjs';
 
@@ -18,7 +19,7 @@ function makeContext(overrides: Record<string, unknown> = {}) {
       getRequest: () => request,
       getResponse: () => ({}),
     }),
-  } as never;
+  } as unknown as ExecutionContext;
 }
 
 describe('AuditInterceptor', () => {
@@ -28,7 +29,7 @@ describe('AuditInterceptor', () => {
 
   beforeEach(() => {
     prisma = { auditLog: { create: jest.fn().mockResolvedValue({}) } };
-    interceptor = new AuditInterceptor(prisma as never);
+    interceptor = new AuditInterceptor(prisma as unknown as PrismaService);
     loggerSpy.mockClear();
   });
 
@@ -40,7 +41,7 @@ describe('AuditInterceptor', () => {
     const context = makeContext();
     const next = { handle: () => of({ ok: true }) };
 
-    await lastValueFrom(interceptor.intercept(context, next as never));
+    await lastValueFrom(interceptor.intercept(context, next));
 
     expect(prisma.auditLog.create).toHaveBeenCalledWith({
       data: {
@@ -59,7 +60,7 @@ describe('AuditInterceptor', () => {
   it('covers PUT, PATCH and DELETE', async () => {
     for (const method of ['PUT', 'PATCH', 'DELETE']) {
       const context = makeContext({ method });
-      await lastValueFrom(interceptor.intercept(context, { handle: () => of({}) } as never));
+      await lastValueFrom(interceptor.intercept(context, { handle: () => of({}) }));
       expect(prisma.auditLog.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ action: `${method} /payments` }),
       });
@@ -69,7 +70,7 @@ describe('AuditInterceptor', () => {
   it('does not journal safe (GET/HEAD/OPTIONS) requests', async () => {
     for (const method of ['GET', 'HEAD', 'OPTIONS']) {
       const context = makeContext({ method });
-      await lastValueFrom(interceptor.intercept(context, { handle: () => of({}) } as never));
+      await lastValueFrom(interceptor.intercept(context, { handle: () => of({}) }));
     }
     expect(prisma.auditLog.create).not.toHaveBeenCalled();
   });
@@ -77,7 +78,7 @@ describe('AuditInterceptor', () => {
   it('propagates the response value to the caller', async () => {
     const context = makeContext();
     const result = await lastValueFrom(
-      interceptor.intercept(context, { handle: () => of({ id: 'tx-1' }) } as never),
+      interceptor.intercept(context, { handle: () => of({ id: 'tx-1' }) }),
     );
     expect(result).toEqual({ id: 'tx-1' });
   });
@@ -86,7 +87,7 @@ describe('AuditInterceptor', () => {
     prisma.auditLog.create.mockRejectedValue(new Error('db down'));
     const context = makeContext();
     const result = await lastValueFrom(
-      interceptor.intercept(context, { handle: () => of({ ok: true }) } as never),
+      interceptor.intercept(context, { handle: () => of({ ok: true }) }),
     );
     // The response is unaffected by the failed audit write.
     expect(result).toEqual({ ok: true });
@@ -104,7 +105,7 @@ describe('AuditInterceptor', () => {
       lastValueFrom(
         interceptor.intercept(context, {
           handle: () => throwError(() => new Error('boom')),
-        } as never),
+        }),
       ),
     ).rejects.toThrow('boom');
     expect(prisma.auditLog.create).toHaveBeenCalled();
@@ -112,7 +113,7 @@ describe('AuditInterceptor', () => {
 
   it('handles requests without a resolved route path', async () => {
     const context = makeContext({ route: undefined, path: undefined });
-    await lastValueFrom(interceptor.intercept(context, { handle: () => of({}) } as never));
+    await lastValueFrom(interceptor.intercept(context, { handle: () => of({}) }));
     expect(prisma.auditLog.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         action: 'POST unknown',

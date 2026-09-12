@@ -7,8 +7,8 @@ can be run in the right environment:
 
 | Tier                                     | Requires                                                                     | Run in CI?                                                         | Command                                          |
 | ---------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------ |
-| **1. Deterministic unit / integration**  | Nothing external (deps mocked)                                               | ✅ yes                                                             | `pnpm test`                                      |
-| **2. Soroban contract tests**            | Rust toolchain (+ `wasm32v1-none`)                                           | ✅ yes                                                             | `pnpm contracts:test`                            |
+| **1. Deterministic unit / integration**  | Nothing external (deps mocked)                                               | ✅ yes                                                             | `pnpm test:unit`                                 |
+| **2. Soroban contract tests**            | Rust toolchain (+ `wasm32v1-none`)                                           | ✅ yes                                                             | `pnpm contracts:verify`                          |
 | **3. API integration (Nest, supertest)** | Postgres + Redis (docker-compose)                                            | ✅ yes (CI provisions the services and runs `db:push` + the suite) | `pnpm --filter @stellar-pay/api test:e2e`        |
 | **4. Local-stack smoke**                 | Booted API + Postgres + Redis                                                | ❌ no                                                              | `pnpm test:e2e`                                  |
 | **5. Testnet E2E (payment + contracts)** | Booted API + Postgres + Redis + **live Stellar testnet** (Friendbot/Horizon) | ✅ yes — **required** (`testnet-e2e` job, retried once)            | `pnpm test:e2e:flow` · `pnpm test:e2e:contracts` |
@@ -20,12 +20,17 @@ and main — each flow is retried once to absorb Friendbot/ledger flakiness, and
 the job carries a 40-minute timeout. Tiers 4 and 6 need a live database/Redis
 and are not part of CI; they run locally or against a deployed environment.
 
+`pnpm test` runs tiers 1 and 2 together. When no Rust toolchain is present the
+contract step is skipped with a visible notice instead of failing, so JS-only
+contributors are not blocked; CI's `build-contracts` job sets
+`REQUIRE_RUST_TOOLCHAIN=1` and always runs them.
+
 | Suite                     | Location                       | Command                                   |
 | ------------------------- | ------------------------------ | ----------------------------------------- |
-| Package unit tests        | `packages/*/src/*.test.ts`     | `pnpm test`                               |
-| API unit tests (Nest)     | `apps/api/src/**/*.test.ts`    | `pnpm test`                               |
+| Package unit tests        | `packages/*/src/*.test.ts`     | `pnpm test:unit`                          |
+| API unit tests (Nest)     | `apps/api/src/**/*.test.ts`    | `pnpm test:unit`                          |
 | API integration (Nest)    | `apps/api/test/*.e2e-spec.ts`  | `pnpm --filter @stellar-pay/api test:e2e` |
-| Soroban contract tests    | `contracts/*/src/test.rs`      | `pnpm contracts:test`                     |
+| Soroban contract tests    | `contracts/*/src/test.rs`      | `pnpm contracts:verify`                   |
 | Local-stack smoke         | `tests/smoke.mjs`              | `pnpm test:e2e`                           |     | Auth + payment E2E | `tests/e2e/auth-payment-flow.mjs` | `pnpm test:e2e:flow` |
 | Contract integrations E2E | `tests/e2e/contracts-flow.mjs` | `pnpm test:e2e:contracts`                 |
 | Load test (k6)            | `tests/load/payment-load.js`   | `k6 run tests/load/payment-load.js`       |
@@ -67,7 +72,10 @@ and are not part of CI; they run locally or against a deployed environment.
   hash. A re-delivered event (simulated cursor loss) must not double-credit
   (the `ChainEvent` unique ledger is asserted). This is the deterministic,
   CI-safe version of the No. 3 journey; the testnet version that also drives
-  real create → sign → submit lives in tier 5.
+  real create → sign → submit lives in tier 5. Every e2e file resets Redis
+  before it runs (`apps/api/test/setup-e2e.ts`), so rate-limit and
+  auth-challenge state from one suite cannot throttle the next — or a repeated
+  local run.
 
   Failure-path and duplicate coverage across tiers:
 
@@ -110,8 +118,9 @@ and are not part of CI; they run locally or against a deployed environment.
 ## Running everything
 
 ```bash
-pnpm test                # Tier 1 — unit/integration
-pnpm contracts:test      # Tier 2 — requires Rust toolchain
+pnpm test                # Tier 1 + 2 — unit/integration, then contract build + tests
+pnpm test:unit           # Tier 1 only
+pnpm contracts:verify    # Tier 2 — requires Rust toolchain (+ wasm32v1-none target)
 pnpm --filter @stellar-pay/api test:e2e   # Tier 3 — requires Postgres + Redis
 pnpm test:e2e            # Tier 4 — boots API against a live DB + Redis
 pnpm test:e2e:flow       # Tier 5 — as above + live Stellar testnet

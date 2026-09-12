@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac } from 'node:crypto';
-import { PrismaService } from '@stellar-pay/database';
+import { Prisma, PrismaService } from '@stellar-pay/database';
 import {
   ConsoleChannelProvider,
   NotificationService as NotificationDispatcher,
@@ -94,7 +94,7 @@ export class NotificationsService {
           channel: 'IN_APP' as NotificationChannel,
           title,
           body: title,
-          payload: payload as never,
+          payload: payload as Prisma.InputJsonValue,
           status: 'SENT',
         },
       });

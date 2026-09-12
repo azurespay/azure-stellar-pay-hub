@@ -4,7 +4,12 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import type { PrismaService } from '@stellar-pay/database';
+import type { CreateSubscriptionPlan } from '@stellar-pay/validation';
 import { SubscriptionsService } from './subscriptions.service';
+import type { WalletService } from '../wallet/wallet.service';
+import type { RealtimeGateway } from '../realtime/realtime.gateway';
+import type { ContractIntegrationService } from '../contracts/contract-integration.service';
 
 describe('SubscriptionsService', () => {
   let service: SubscriptionsService;
@@ -80,18 +85,23 @@ describe('SubscriptionsService', () => {
       }),
     };
     service = new SubscriptionsService(
-      mockPrisma as never,
-      mockWallet as never,
-      mockRealtime as never,
-      mockContracts as never,
+      mockPrisma as unknown as PrismaService,
+      mockWallet as unknown as WalletService,
+      mockRealtime as unknown as RealtimeGateway,
+      mockContracts as unknown as ContractIntegrationService,
     );
   });
 
   describe('createPlan', () => {
-    const dto = { name: 'Pro', assetCode: 'XLM', amount: '1', intervalSeconds: 60 };
+    const dto: CreateSubscriptionPlan = {
+      name: 'Pro',
+      assetCode: 'XLM',
+      amount: '1',
+      intervalSeconds: 60,
+    };
 
     it('prepares create_plan from the merchant settlement key and stores a PENDING plan', async () => {
-      const result = await service.createPlan('merchant-user', dto as never);
+      const result = await service.createPlan('merchant-user', dto);
       expect(result.unsignedXdr).toBe('AAAA');
       expect(mockPrisma.subscriptionPlan.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ status: 'PENDING', userId: 'merchant-user' }),
@@ -103,7 +113,7 @@ describe('SubscriptionsService', () => {
 
     it('rejects a user without a merchant profile', async () => {
       mockPrisma.merchant.findUnique.mockResolvedValue(null);
-      await expect(service.createPlan('user-1', dto as never)).rejects.toThrow(ForbiddenException);
+      await expect(service.createPlan('user-1', dto)).rejects.toThrow(ForbiddenException);
     });
 
     it('rejects a merchant that is not ACTIVE', async () => {
@@ -111,25 +121,21 @@ describe('SubscriptionsService', () => {
         ...activeMerchant,
         status: 'PENDING',
       });
-      await expect(service.createPlan('merchant-user', dto as never)).rejects.toThrow(
-        ForbiddenException,
-      );
+      await expect(service.createPlan('merchant-user', dto)).rejects.toThrow(ForbiddenException);
     });
 
     it('requires wallet ownership of the merchant settlement key', async () => {
       mockWallet.assertWalletOwnership.mockRejectedValue(
         new NotFoundException('Wallet not linked'),
       );
-      await expect(service.createPlan('merchant-user', dto as never)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.createPlan('merchant-user', dto)).rejects.toThrow(NotFoundException);
     });
 
     it('throws 503 when the subscriptions contract is not configured', async () => {
       mockContracts.requireContractAddress.mockImplementation(() => {
         throw new ServiceUnavailableException('not configured');
       });
-      await expect(service.createPlan('merchant-user', dto as never)).rejects.toThrow(
+      await expect(service.createPlan('merchant-user', dto)).rejects.toThrow(
         ServiceUnavailableException,
       );
     });
@@ -181,7 +187,7 @@ describe('SubscriptionsService', () => {
       });
       const result = await service.subscribe('subscriber-user', 'plan-1', {
         subscriberPublicKey: 'GSUB',
-      } as never);
+      });
       expect(result.unsignedXdr).toBe('AAAA');
       expect(mockContracts.prepareCall).toHaveBeenCalledWith(
         expect.objectContaining({ functionName: 'subscribe' }),
@@ -190,7 +196,7 @@ describe('SubscriptionsService', () => {
 
     it('refuses to subscribe to a plan that is not ACTIVE on-chain', async () => {
       await expect(
-        service.subscribe('subscriber-user', 'plan-1', { subscriberPublicKey: 'GSUB' } as never),
+        service.subscribe('subscriber-user', 'plan-1', { subscriberPublicKey: 'GSUB' }),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -204,14 +210,14 @@ describe('SubscriptionsService', () => {
         new NotFoundException('Wallet not linked'),
       );
       await expect(
-        service.subscribe('subscriber-user', 'plan-1', { subscriberPublicKey: 'GSUB' } as never),
+        service.subscribe('subscriber-user', 'plan-1', { subscriberPublicKey: 'GSUB' }),
       ).rejects.toThrow(NotFoundException);
     });
 
     it('returns 404 for an unknown plan', async () => {
       mockPrisma.subscriptionPlan.findUnique.mockResolvedValue(null);
       await expect(
-        service.subscribe('subscriber-user', 'missing', { subscriberPublicKey: 'GSUB' } as never),
+        service.subscribe('subscriber-user', 'missing', { subscriberPublicKey: 'GSUB' }),
       ).rejects.toThrow(NotFoundException);
     });
   });
@@ -235,7 +241,7 @@ describe('SubscriptionsService', () => {
     it('allows the subscriber to prepare a renew', async () => {
       const result = await service.renew('subscriber-user', 'sub-1', {
         callerPublicKey: 'GSUB',
-      } as never);
+      });
       expect(result.action).toBe('renew');
       expect(mockContracts.prepareCall).toHaveBeenCalledWith(
         expect.objectContaining({ functionName: 'renew' }),
@@ -245,20 +251,20 @@ describe('SubscriptionsService', () => {
     it('allows the plan merchant to prepare a renew', async () => {
       const result = await service.renew('subscriber-user', 'sub-1', {
         callerPublicKey: 'GMERCHANT',
-      } as never);
+      });
       expect(result.action).toBe('renew');
     });
 
     it('rejects a caller who is neither subscriber nor merchant', async () => {
       await expect(
-        service.renew('subscriber-user', 'sub-1', { callerPublicKey: 'GINTRUDER' } as never),
+        service.renew('subscriber-user', 'sub-1', { callerPublicKey: 'GINTRUDER' }),
       ).rejects.toThrow(ForbiddenException);
     });
 
     it('refuses to renew a subscription that is not active on-chain', async () => {
       mockPrisma.subscription.findFirst.mockResolvedValue(subscriptionRow);
       await expect(
-        service.renew('subscriber-user', 'sub-1', { callerPublicKey: 'GSUB' } as never),
+        service.renew('subscriber-user', 'sub-1', { callerPublicKey: 'GSUB' }),
       ).rejects.toThrow(BadRequestException);
     });
   });
@@ -272,13 +278,13 @@ describe('SubscriptionsService', () => {
       });
       const result = await service.cancel('subscriber-user', 'sub-1', {
         callerPublicKey: 'GSUB',
-      } as never);
+      });
       expect(result.action).toBe('cancel');
     });
 
     it('refuses to cancel a subscription that was never created on-chain', async () => {
       await expect(
-        service.cancel('subscriber-user', 'sub-1', { callerPublicKey: 'GSUB' } as never),
+        service.cancel('subscriber-user', 'sub-1', { callerPublicKey: 'GSUB' }),
       ).rejects.toThrow(BadRequestException);
     });
   });

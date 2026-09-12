@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Asset, Networks } from '@stellar/stellar-sdk';
-import { PrismaService } from '@stellar-pay/database';
+import { Prisma, PrismaService } from '@stellar-pay/database';
 import type { WebhookEventType } from '@stellar-pay/types';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -9,6 +9,21 @@ import { WebhooksService } from '../webhooks/webhooks.service';
 import { parseContractEvent } from './contract-events';
 import { stroopsToUnits } from './soroban-event';
 import type { ParsedEvent } from './contract-events';
+
+/**
+ * Narrow a parsed contract event to a handler's typed payload.
+ *
+ * `ParsedEvent` is deliberately an open shape (`[key: string]: unknown`) because
+ * the same decoder serves several contracts. `parseContractEvent` validates each
+ * topic's required fields before dispatch (returning null when a field is
+ * missing), so at the point of dispatch the payload really does match the
+ * handler's declared type — the compiler just cannot see that through the index
+ * signature. The target type is inferred from the handler parameter, so this
+ * stays honest if a handler's payload type changes.
+ */
+function toEvent<T>(event: ParsedEvent): T {
+  return event as unknown as T;
+}
 
 /**
  * Reconciliation: advance platform records to their terminal states ONLY on
@@ -84,11 +99,11 @@ export class ContractReconciliationService {
     if (contractId === this.escrow) {
       switch (event.topic) {
         case 'created':
-          return this.onEscrowCreated(event as never, txHash);
+          return this.onEscrowCreated(toEvent(event), txHash);
         case 'released':
-          return this.onEscrowAction(event as never, txHash, 'released');
+          return this.onEscrowAction(toEvent(event), txHash, 'released');
         case 'refund':
-          return this.onEscrowAction(event as never, txHash, 'refund');
+          return this.onEscrowAction(toEvent(event), txHash, 'refund');
         default:
           return;
       }
@@ -96,11 +111,11 @@ export class ContractReconciliationService {
     if (contractId === this.invoices) {
       switch (event.topic) {
         case 'issued':
-          return this.onInvoiceIssued(event as never, txHash);
+          return this.onInvoiceIssued(toEvent(event), txHash);
         case 'paid':
-          return this.onInvoicePaid(event as never, txHash);
+          return this.onInvoicePaid(toEvent(event), txHash);
         case 'cancel':
-          return this.onInvoiceCanceled(event as never, txHash);
+          return this.onInvoiceCanceled(toEvent(event), txHash);
         default:
           return;
       }
@@ -108,13 +123,13 @@ export class ContractReconciliationService {
     if (contractId === this.subscriptions) {
       switch (event.topic) {
         case 'plan':
-          return this.onSubscriptionPlanCreated(event as never, txHash);
+          return this.onSubscriptionPlanCreated(toEvent(event), txHash);
         case 'sub':
-          return this.onSubscriptionCreated(event as never, txHash);
+          return this.onSubscriptionCreated(toEvent(event), txHash);
         case 'renew':
-          return this.onSubscriptionRenewed(event as never, txHash);
+          return this.onSubscriptionRenewed(toEvent(event), txHash);
         case 'cancel':
-          return this.onSubscriptionCanceled(event as never, txHash);
+          return this.onSubscriptionCanceled(toEvent(event), txHash);
         default:
           return;
       }
@@ -122,13 +137,13 @@ export class ContractReconciliationService {
     if (contractId === this.treasury) {
       switch (event.topic) {
         case 'deposit':
-          return this.onTreasuryDeposit(event as never, txHash);
+          return this.onTreasuryDeposit(toEvent(event), txHash);
         case 'wprop':
-          return this.onWithdrawalProposed(event as never, txHash);
+          return this.onWithdrawalProposed(toEvent(event), txHash);
         case 'wappr':
-          return this.onWithdrawalApproved(event as never, txHash);
+          return this.onWithdrawalApproved(toEvent(event), txHash);
         case 'wexec':
-          return this.onWithdrawalExecuted(event as never, txHash);
+          return this.onWithdrawalExecuted(toEvent(event), txHash);
         default:
           return;
       }
@@ -136,11 +151,11 @@ export class ContractReconciliationService {
     if (contractId === this.merchant) {
       switch (event.topic) {
         case 'reg':
-          return this.onMerchantRegistered(event as never, txHash);
+          return this.onMerchantRegistered(toEvent(event), txHash);
         case 'sale':
-          return this.onMerchantSale(event as never, txHash, eventId);
+          return this.onMerchantSale(toEvent(event), txHash, eventId);
         case 'settle':
-          return this.onMerchantSettled(event as never, txHash);
+          return this.onMerchantSettled(toEvent(event), txHash);
         default:
           return;
       }
@@ -434,7 +449,7 @@ export class ContractReconciliationService {
     const status: 'PROPOSED' | 'APPROVED' = next.length >= threshold ? 'APPROVED' : 'PROPOSED';
     await this.prisma.treasuryWithdrawal.update({
       where: { id: row.id },
-      data: { approvals: next as never, status },
+      data: { approvals: next as Prisma.InputJsonValue, status },
     });
     this.realtime.emitToUser(row.userId, 'treasury-withdrawal.updated', {
       id: row.id,

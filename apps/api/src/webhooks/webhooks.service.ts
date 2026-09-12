@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
-import { PrismaService } from '@stellar-pay/database';
+import { Prisma, PrismaService } from '@stellar-pay/database';
 import { createLogger } from '@stellar-pay/logger';
 import type { WebhookEventType } from '@stellar-pay/types';
 
@@ -19,12 +19,12 @@ export class WebhooksService {
     const secret = input.secret ?? merchant.webhookSecret ?? randomBytes(32).toString('hex');
     return this.prisma.webhook.upsert({
       where: { id: `${merchantId}:${input.url}` },
-      update: { url: input.url, events: input.events as never, secret },
+      update: { url: input.url, events: input.events, secret },
       create: {
         id: `${merchantId}:${input.url}`,
         merchantId,
         url: input.url,
-        events: input.events as never,
+        events: input.events,
         secret,
       },
     });
@@ -78,7 +78,7 @@ export class WebhooksService {
             event,
             deliveryId,
             timestamp: new Date().toISOString(),
-          } as never,
+          } as Prisma.InputJsonValue,
           status: 'PENDING',
           nextRetryAt: new Date(Date.now() + 5_000),
         },

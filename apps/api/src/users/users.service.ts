@@ -50,7 +50,7 @@ export class UsersService {
       update: {
         currency: input.currency,
         theme: input.theme,
-        notificationPreferences: input.notificationPreferences as never,
+        notificationPreferences: input.notificationPreferences,
       },
       create: { userId, currency: input.currency ?? 'USD', theme: input.theme ?? 'dark' },
     });
@@ -110,7 +110,7 @@ export class UsersService {
         publicKey: input.publicKey,
         currency: input.currency,
         country: input.country,
-        bankDetails: input.bankDetails as never,
+        bankDetails: input.bankDetails,
       },
     });
   }

@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import { SorobanSubmissionError } from '@stellar-pay/sdk';
 import { PaymentsService } from './payments.service';
 import { createStellarNetwork } from '../infra/stellar';
+import type { CreatePayment } from '@stellar-pay/validation';
 
 jest.mock('../infra/stellar', () => ({
   createStellarNetwork: jest.fn(),
@@ -45,7 +46,7 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
     PAYMENT_CONTRACT_ASSETS: ['XLM'],
   });
 
-  const dto = {
+  const dto: CreatePayment = {
     type: 'SEND',
     fromPublicKey: 'GPAYER',
     destinations: [{ publicKey: 'GPAYEE', amount: '10' }],
@@ -87,7 +88,9 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
       submitSorobanSendTransaction: jest.fn(),
       verifySignedPaymentMatchesIntent: jest.fn().mockReturnValue({ matches: true }),
     };
-    mockedCreateNetwork.mockReturnValue(mockNetwork as never);
+    mockedCreateNetwork.mockReturnValue(
+      mockNetwork as unknown as ReturnType<typeof createStellarNetwork>,
+    );
 
     service = new PaymentsService(
       mockPrisma as any,
@@ -109,7 +112,7 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
 
   describe('create — contract route', () => {
     it('simulates+assembles a Soroban send XDR with a sp: correlation memo and persists kind=contract_send', async () => {
-      const result = await service.create('user-1', dto as never);
+      const result = await service.create('user-1', dto);
 
       expect(mockWallet.assertWalletOwnership).toHaveBeenCalledWith('user-1', 'GPAYER');
       expect(mockNetwork.sorobanTokenAddress).toHaveBeenCalledWith('XLM', null);
@@ -148,7 +151,7 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
     it('stores the idempotency key + unsigned XDR and replays the original intent', async () => {
       mockPrisma.transaction.findFirst.mockResolvedValue(null);
 
-      const first = await service.create('user-1', dto as never, 'create-key-1');
+      const first = await service.create('user-1', dto, 'create-key-1');
 
       expect(mockPrisma.transaction.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
@@ -171,7 +174,7 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
         meta: { unsignedXdr: 'soroban-xdr' },
       });
 
-      const replay = await service.create('user-1', dto as never, 'create-key-1');
+      const replay = await service.create('user-1', dto, 'create-key-1');
 
       expect(replay).toEqual(
         expect.objectContaining({
@@ -193,7 +196,7 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
         meta: { unsignedXdr: 'soroban-xdr' },
       }); // refetch in the catch
 
-      const result = await service.create('user-1', dto as never, 'create-key-1');
+      const result = await service.create('user-1', dto, 'create-key-1');
 
       expect(result).toEqual(expect.objectContaining({ id: 'tx-contract', idempotent: true }));
     });
@@ -201,7 +204,7 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
     it('falls back to classic XDR when the asset is not in the contract-asset allowlist', async () => {
       const validIssuer = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN';
       const usdcDto = { ...dto, assetCode: 'USDC', assetIssuer: validIssuer };
-      await service.create('user-1', usdcDto as never);
+      await service.create('user-1', usdcDto);
 
       expect(mockNetwork.buildPaymentTransaction).toHaveBeenCalled();
       expect(mockNetwork.prepareSorobanSendTransaction).not.toHaveBeenCalled();
@@ -216,7 +219,7 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
         new SorobanSubmissionError(reason),
       );
 
-      await expect(service.create('user-1', dto as never)).rejects.toMatchObject({
+      await expect(service.create('user-1', dto)).rejects.toMatchObject({
         // BadRequestException → HTTP 400, never a 500 for a configuration/
         // on-chain revert at intent-creation time.
         response: expect.objectContaining({ statusCode: 400 }),
@@ -405,7 +408,7 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
         mockMetrics as any,
       );
 
-      await classicService.create('user-1', dto as never);
+      await classicService.create('user-1', dto);
 
       expect(mockNetwork.buildPaymentTransaction).toHaveBeenCalledWith(
         expect.objectContaining({ from: 'GPAYER', to: 'GPAYEE', amount: '10' }),
@@ -435,7 +438,7 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
         memoType: undefined,
       };
 
-      await classicService.create('user-1', memoDto as never);
+      await classicService.create('user-1', memoDto);
 
       // The unsigned XDR the wallet signs must carry the same memo the submit
       // gate verifies — otherwise every memo'd send is rejected as tampered.
@@ -451,7 +454,7 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
   describe('platform gates (Setting table)', () => {
     it('blocks payment creation during maintenance mode', async () => {
       mockPrisma.setting.findMany.mockResolvedValueOnce([{ key: 'maintenance_mode', value: true }]);
-      await expect(service.create('user-1', dto as never)).rejects.toThrow(
+      await expect(service.create('user-1', dto)).rejects.toThrow(
         'temporarily paused for maintenance',
       );
       expect(mockNetwork.prepareSorobanSendTransaction).not.toHaveBeenCalled();
@@ -465,7 +468,7 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
         ...dto,
         destinations: [{ publicKey: 'GPAYEE', amount: '0.1' }],
       };
-      await expect(service.create('user-1', tinyDto as never)).rejects.toThrow(
+      await expect(service.create('user-1', tinyDto)).rejects.toThrow(
         'Amount must be at least 0.5',
       );
     });
@@ -478,7 +481,7 @@ describe('PaymentsService — Soroban contract route (PAYMENT_ROUTE=contract)', 
         ...dto,
         destinations: [{ publicKey: 'GPAYEE', amount: '0.5' }],
       };
-      await expect(service.create('user-1', bigDto as never)).resolves.toBeDefined();
+      await expect(service.create('user-1', bigDto)).resolves.toBeDefined();
     });
   });
 

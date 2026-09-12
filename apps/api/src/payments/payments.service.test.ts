@@ -107,6 +107,69 @@ describe('PaymentsService', () => {
       const result = await service.history('user-1', { pageSize: 500 });
       expect(result.meta.pageSize).toBe(100);
     });
+
+    // Regression: `total`/`totalPages` were computed from an UNFILTERED count
+    // while the page itself was filtered, so the pagination metadata disagreed
+    // with the rows whenever status/direction/assetCode was supplied. The page
+    // query and the count must now share the exact same `where`.
+    it('applies status/direction/assetCode to BOTH the page query and the count', async () => {
+      mockPrisma.transaction.findMany.mockResolvedValue([{ id: 'tx-1' }]);
+      mockPrisma.transaction.count.mockResolvedValue(1);
+
+      const result = await service.history('user-1', {
+        status: 'SUCCEEDED',
+        direction: 'OUTGOING',
+        assetCode: 'USDC',
+      });
+
+      const expectedWhere = {
+        userId: 'user-1',
+        status: 'SUCCEEDED',
+        direction: 'OUTGOING',
+        assetCode: 'USDC',
+      };
+      expect(mockPrisma.transaction.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expectedWhere }),
+      );
+      // The count MUST receive the same filter — this is the regression.
+      expect(mockPrisma.transaction.count).toHaveBeenCalledWith({ where: expectedWhere });
+      expect(result.meta.total).toBe(1);
+      expect(result.meta.totalPages).toBe(1);
+    });
+
+    it('reports the filtered total, not the unfiltered row count', async () => {
+      // 3 matching rows filtered out of a much larger unfiltered table.
+      mockPrisma.transaction.findMany.mockResolvedValue([{ id: 'tx-1' }]);
+      mockPrisma.transaction.count.mockResolvedValue(3);
+
+      const result = await service.history('user-1', { status: 'CONFIRMED' });
+
+      expect(result.meta.total).toBe(3);
+      expect(result.meta.totalPages).toBe(1);
+      expect(result.data).toHaveLength(1);
+    });
+
+    it('derives totalPages from the filtered total', async () => {
+      mockPrisma.transaction.findMany.mockResolvedValue([]);
+      mockPrisma.transaction.count.mockResolvedValue(45);
+
+      const result = await service.history('user-1', { direction: 'INCOMING', pageSize: 20 });
+
+      expect(result.meta.total).toBe(45);
+      expect(result.meta.totalPages).toBe(3);
+    });
+
+    it('scopes to the caller and omits unset filters', async () => {
+      mockPrisma.transaction.findMany.mockResolvedValue([]);
+      mockPrisma.transaction.count.mockResolvedValue(0);
+
+      await service.history('user-1', {});
+
+      expect(mockPrisma.transaction.findMany.mock.calls[0][0].where).toEqual({
+        userId: 'user-1',
+      });
+      expect(mockPrisma.transaction.count.mock.calls[0][0].where).toEqual({ userId: 'user-1' });
+    });
   });
 
   describe('cancelScheduled', () => {

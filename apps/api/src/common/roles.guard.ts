@@ -1,6 +1,7 @@
 import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { hasRole } from '@stellar-pay/authentication';
+import type { UserRole } from '@stellar-pay/types';
 import { ROLES_KEY, type AuthenticatedUser } from './decorators';
 
 /**
@@ -12,7 +13,7 @@ export class RolesGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const required = this.reflector.getAllAndOverride<string[]>(ROLES_KEY, [
+    const required = this.reflector.getAllAndOverride<UserRole[]>(ROLES_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
@@ -24,7 +25,7 @@ export class RolesGuard implements CanActivate {
     if (!user) {
       throw new ForbiddenException('Not authenticated');
     }
-    const allowed = required.some((role) => hasRole(user.role, role as never));
+    const allowed = required.some((role) => hasRole(user.role, role));
     if (!allowed) {
       throw new ForbiddenException(`Requires one of: ${required.join(', ')}`);
     }

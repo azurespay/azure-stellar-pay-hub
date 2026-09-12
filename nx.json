@@ -16,9 +16,11 @@
       "inputs": ["production", "^production"]
     },
     "typecheck": {
+      "dependsOn": ["^build"],
       "inputs": ["default", "^default"]
     },
     "test": {
+      "dependsOn": ["^build"],
       "inputs": ["default", "^production"]
     },
     "lint": {

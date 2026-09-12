@@ -17,7 +17,6 @@
 //
 // Optional:
 //   ALLOWLIST_TOKENS="C... C..."              # extra SAC addresses to allowlist
-//   MULTISIG_SIGNERS="G... G..." MULTISIG_THRESHOLD=2   # override multisig setup
 //   SKIP_INIT=stellar_pay_invoices,stellar_pay_subscriptions  # skip contracts
 import {
   Asset,
@@ -55,17 +54,13 @@ for (const line of readFileSync(envFile, 'utf8').split('\n')) {
 }
 const payment = addresses['payment'];
 const escrow = addresses['escrow'];
-const multisig = addresses['multisig'];
 const treasury = addresses['treasury'];
 const merchant = addresses['merchant'];
-const rewards = addresses['rewards'];
 for (const [name, addr] of Object.entries({
   payment,
   escrow,
-  multisig,
   treasury,
   merchant,
-  rewards,
 })) {
   if (!addr) {
     console.error(`Missing CONTRACT_STELLAR_PAY_${name.toUpperCase()} in ${envFile}`);
@@ -230,8 +225,6 @@ const adminKey = () => dataKeyScVal(xdr.ScVal.scvSymbol('Admin'));
 const pausedKey = () => dataKeyScVal(xdr.ScVal.scvSymbol('Paused'));
 const allowedKey = (tokenId) =>
   dataKeyScVal(xdr.ScVal.scvSymbol('Allowed'), contractScVal(tokenId));
-const signersKey = () => dataKeyScVal(xdr.ScVal.scvSymbol('Signers'));
-const thresholdKey = () => dataKeyScVal(xdr.ScVal.scvSymbol('Threshold'));
 
 async function readAdmin(contractId) {
   const v = await readContractData(contractId, adminKey());
@@ -328,26 +321,6 @@ await init(
   adminProbe(treasury),
 );
 
-// Rewards needs a reward token at init — default to the XLM SAC.
-await init(
-  'rewards',
-  () => invokeContract(rewards, 'initialize', [accountScVal(adminPublic), contractScVal(xlmSac)]),
-  adminProbe(rewards),
-);
-
-// Multisig: signers + threshold (default: single signer = the deployer).
-const multisigSigners = (process.env.MULTISIG_SIGNERS ?? adminPublic).split(/\s+/).filter(Boolean);
-const multisigThreshold = Number(process.env.MULTISIG_THRESHOLD ?? '1');
-await init(
-  'multisig',
-  () =>
-    invokeContract(multisig, 'initialize', [
-      xdr.ScVal.scvVec(multisigSigners.map(accountScVal)),
-      xdr.ScVal.scvU32(multisigThreshold),
-    ]),
-  async () => (await readContractData(multisig, signersKey())) !== undefined,
-);
-
 // ── 2. Allowlist tokens ────────────────────────────────────────────────────
 
 console.log('\n── Setting token allowlists ──');
@@ -383,13 +356,12 @@ for (const token of tokensToAllow) {
 
 console.log('\n── Verifying on-chain state ──');
 
-// Admin check (multisig stores Signers + Threshold instead of an Admin key).
+// Admin check.
 for (const [label, contractId] of [
   ['payment', payment],
   ['escrow', escrow],
   ['merchant', merchant],
   ['treasury', treasury],
-  ['rewards', rewards],
 ]) {
   try {
     const admin = await readAdmin(contractId);
@@ -399,21 +371,6 @@ for (const [label, contractId] of [
   } catch (err) {
     console.error(`⚠️  could not read ${label}.Admin: ${err.message}`);
   }
-}
-
-try {
-  const signers = await readContractData(multisig, signersKey());
-  const threshold = await readContractData(multisig, thresholdKey());
-  const ok = signers !== undefined && threshold !== undefined;
-  console.log(
-    `${ok ? '✅' : '⚠️'} multisig.Signers = ${signers ? describeScVal(signers) : '<missing>'}`,
-  );
-  console.log(
-    `${ok ? '✅' : '⚠️'} multisig.Threshold = ${threshold ? describeScVal(threshold) : '<missing>'}`,
-  );
-  if (!ok) results.push(['multisig.Signers/Threshold', 'FAIL']);
-} catch (err) {
-  console.error(`⚠️  could not read multisig state: ${err.message}`);
 }
 
 for (const [label, contractId] of [

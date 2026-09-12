@@ -42,8 +42,9 @@ pnpm dev                 # everything (api, web, admin, explorer, docs)
 ```bash
 pnpm lint              # eslint across workspace
 pnpm typecheck         # tsc --noEmit everywhere
-pnpm test              # unit + integration suites
-pnpm contracts:test    # soroban contract tests
+pnpm test              # unit + integration suites, then the Soroban contract build + tests
+pnpm test:unit         # unit + integration suites only (skips the Rust step)
+pnpm contracts:verify  # soroban contract build + tests
 pnpm format:check      # prettier
 ```
 

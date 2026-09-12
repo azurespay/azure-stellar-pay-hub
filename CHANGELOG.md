@@ -7,6 +7,25 @@ This project follows [Semantic Versioning](https://semver.org/) and
 
 ---
 
+## [Unreleased]
+
+### Removed
+
+- **`multisig` and `rewards` Soroban contracts** — both were contract-level
+  demonstrations with no API module, SDK method, indexer reconciliation or UI,
+  so nothing in the platform could invoke them. Shipping them advertised
+  capabilities the product did not have. Their already-deployed testnet
+  instances remain on-chain but are no longer part of the repo, the deploy
+  scripts, or the docs (`contracts/Cargo.toml`, `scripts/*`).
+
+### Fixed
+
+- **Clean-clone `pnpm typecheck` / `pnpm test` now work** — the Nx `typecheck`
+  and `test` targets did not depend on their workspace dependencies' `build`,
+  so a fresh clone failed with ~209 `TS2307 Cannot find module '@stellar-pay/*'`
+  errors until `pnpm build:packages` was run by hand. CI compensated by building
+  first, which hid the problem from developers.
+
 ## [0.1.0] — 2026-08-10
 
 ### Added

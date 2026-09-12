@@ -1,5 +1,10 @@
 import { NotFoundException } from '@nestjs/common';
+import type { PrismaService } from '@stellar-pay/database';
+import type { CreateInvoice } from '@stellar-pay/validation';
 import { InvoicesService } from './invoices.service';
+import type { WalletService } from '../wallet/wallet.service';
+import type { RealtimeGateway } from '../realtime/realtime.gateway';
+import type { ContractIntegrationService } from '../contracts/contract-integration.service';
 
 describe('InvoicesService', () => {
   let service: InvoicesService;
@@ -44,23 +49,23 @@ describe('InvoicesService', () => {
       }),
     };
     service = new InvoicesService(
-      mockPrisma as never,
-      mockWallet as never,
-      mockRealtime as never,
-      mockContracts as never,
+      mockPrisma as unknown as PrismaService,
+      mockWallet as unknown as WalletService,
+      mockRealtime as unknown as RealtimeGateway,
+      mockContracts as unknown as ContractIntegrationService,
     );
   });
 
   describe('create', () => {
-    const baseInput = {
+    const baseInput: CreateInvoice = {
       title: 'Consulting',
       description: 'Q3 engagement',
-      items: [{ description: 'Hours', unitPrice: '100', quantity: 2 }],
+      items: [{ name: 'Hours', currency: 'USD', quantity: 2, unitPrice: '100' }],
       assetCode: 'USDC',
     };
 
     it('computes the amount from items and persists with a generated number', async () => {
-      const result = await service.create('merchant-1', baseInput as never);
+      const result = await service.create('merchant-1', baseInput);
 
       expect(mockPrisma.invoice.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
@@ -76,9 +81,7 @@ describe('InvoicesService', () => {
 
     it('throws NotFoundException when the merchant does not exist', async () => {
       mockPrisma.merchant.findUnique.mockResolvedValue(null);
-      await expect(service.create('merchant-x', baseInput as never)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.create('merchant-x', baseInput)).rejects.toThrow(NotFoundException);
       expect(mockPrisma.invoice.create).not.toHaveBeenCalled();
     });
 
@@ -87,7 +90,7 @@ describe('InvoicesService', () => {
       mockPrisma.invoice.findUnique
         .mockResolvedValueOnce({ id: 'existing' })
         .mockResolvedValueOnce(null);
-      const result = await service.create('merchant-1', baseInput as never);
+      const result = await service.create('merchant-1', baseInput);
       expect(mockPrisma.invoice.findUnique).toHaveBeenCalledTimes(2);
       expect(result.number).toMatch(/^INV-\d{4}-[A-F0-9]{8}$/);
     });
@@ -98,7 +101,7 @@ describe('InvoicesService', () => {
         customerPublicKey: 'GCUSTOMER',
         customerEmail: 'c@example.com',
         customerName: 'Carla',
-      } as never);
+      });
 
       expect(mockPrisma.customer.upsert).toHaveBeenCalledWith(
         expect.objectContaining({

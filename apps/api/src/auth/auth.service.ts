@@ -150,6 +150,20 @@ export class AuthService {
     if (!session || session.status !== 'ACTIVE' || session.expiresAt < new Date()) {
       throw new UnauthorizedException('Session revoked or expired');
     }
+    if (session.userId !== payload.sub) {
+      throw new UnauthorizedException('Session does not match token subject');
+    }
+    // Mirror the JwtAuthGuard: refresh is a public route, so it must apply the
+    // same account-status authority as the guard. Without this a suspended or
+    // deleted account could keep minting fresh access tokens (they would be
+    // rejected downstream, but issuance itself must fail closed).
+    const account = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { status: true },
+    });
+    if (!account || account.status !== 'ACTIVE') {
+      throw new UnauthorizedException('Account is suspended or not yet activated');
+    }
     const accessToken = signAccessToken(
       {
         sub: payload.sub,

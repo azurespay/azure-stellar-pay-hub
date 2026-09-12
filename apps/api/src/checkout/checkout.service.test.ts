@@ -61,7 +61,9 @@ describe('CheckoutService', () => {
       verifySignedPaymentMatchesIntent: jest.fn().mockReturnValue({ matches: true }),
       buildPaymentTransaction: jest.fn().mockResolvedValue('checkout-xdr'),
     };
-    mockedCreateNetwork.mockReturnValue(networkMock as never);
+    mockedCreateNetwork.mockReturnValue(
+      networkMock as unknown as ReturnType<typeof createStellarNetwork>,
+    );
 
     service = new CheckoutService(
       mockPrisma as any,

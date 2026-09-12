@@ -16,9 +16,10 @@ Vault holding platform funds (fees, settlements, reserves):
 ## Security considerations
 
 - Funds can only leave via admin withdrawal, capped per transaction.
-- Production hardening: route withdrawals through the Multisig contract
-  (proposal → quorum → `execute` → treasury `withdraw`), add a timelock, and
-  add a daily aggregate cap (the `DailyCap` key is reserved for that).
+- Production hardening: require multi-party approval for withdrawals (for
+  example a separate approval contract, or an off-chain quorum that co-signs),
+  add a timelock, and add a daily aggregate cap (the `DailyCap` key is
+  reserved for that).
 - `require_auth` on every privileged call.
 
 ## Upgrade strategy

@@ -4,6 +4,7 @@ export * from './user';
 export * from './wallet';
 export * from './payment';
 export * from './asset';
+export * from './transaction';
 export * from './merchant';
 export * from './invoice';
 export * from './payment-link';

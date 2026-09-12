@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { PaymentsService } from './payments.service';
 import { createStellarNetwork } from '../infra/stellar';
+import type { CreatePayment } from '@stellar-pay/validation';
 
 jest.mock('../infra/stellar', () => ({
   createStellarNetwork: jest.fn(),
@@ -54,7 +55,9 @@ describe('PaymentsService — batch & split (multi-recipient XDR)', () => {
       prepareSorobanSendTransaction: jest.fn(),
       config: { networkPassphrase: NETWORK_PASSPHRASE },
     };
-    mockedCreateNetwork.mockReturnValue(mockNetwork as never);
+    mockedCreateNetwork.mockReturnValue(
+      mockNetwork as unknown as ReturnType<typeof createStellarNetwork>,
+    );
 
     service = new PaymentsService(
       mockPrisma as any,
@@ -86,7 +89,7 @@ describe('PaymentsService — batch & split (multi-recipient XDR)', () => {
   }
 
   it('builds one payment op per recipient with the exact amounts (BATCH)', async () => {
-    const dto = {
+    const dto: CreatePayment = {
       type: 'BATCH',
       fromPublicKey: PAYER,
       destinations: [
@@ -100,7 +103,7 @@ describe('PaymentsService — batch & split (multi-recipient XDR)', () => {
       memoType: 'text',
     };
 
-    const result = await service.create('user-1', dto as never);
+    const result = await service.create('user-1', dto);
 
     expect(mockNetwork.buildPaymentTransaction).not.toHaveBeenCalled();
     expect(mockNetwork.prepareSorobanSendTransaction).not.toHaveBeenCalled();
@@ -127,7 +130,7 @@ describe('PaymentsService — batch & split (multi-recipient XDR)', () => {
   });
 
   it('uses the classic Operation.payment path for SPLIT too', async () => {
-    const dto = {
+    const dto: CreatePayment = {
       type: 'SPLIT',
       fromPublicKey: PAYER,
       destinations: [
@@ -138,7 +141,7 @@ describe('PaymentsService — batch & split (multi-recipient XDR)', () => {
       assetIssuer: null,
     };
 
-    const result = await service.create('user-1', dto as never);
+    const result = await service.create('user-1', dto);
 
     expect(result.unsignedXdr).toBeDefined();
     const ops = await decodePaymentOps(result.unsignedXdr as string);
@@ -169,7 +172,7 @@ describe('PaymentsService — batch & split (multi-recipient XDR)', () => {
       { inc: jest.fn(), set: jest.fn() } as any,
     );
 
-    const dto = {
+    const dto: CreatePayment = {
       type: 'BATCH',
       fromPublicKey: PAYER,
       destinations: [
@@ -179,7 +182,7 @@ describe('PaymentsService — batch & split (multi-recipient XDR)', () => {
       assetCode: 'XLM',
       assetIssuer: null,
     };
-    await contractService.create('user-1', dto as never);
+    await contractService.create('user-1', dto);
 
     expect(mockNetwork.prepareSorobanSendTransaction).not.toHaveBeenCalled();
     expect(mockNetwork.buildPaymentTransaction).not.toHaveBeenCalled();
@@ -189,14 +192,14 @@ describe('PaymentsService — batch & split (multi-recipient XDR)', () => {
   });
 
   it('loads the source account from Horizon when building the batch XDR', async () => {
-    const dto = {
+    const dto: CreatePayment = {
       type: 'BATCH',
       fromPublicKey: PAYER,
       destinations: [{ publicKey: DEST_A, amount: '1' }],
       assetCode: 'XLM',
       assetIssuer: null,
     };
-    await service.create('user-1', dto as never);
+    await service.create('user-1', dto);
     expect(mockNetwork.server.loadAccount).toHaveBeenCalledWith(PAYER);
   });
 });

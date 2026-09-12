@@ -3,16 +3,14 @@
 Soroban (Rust) smart contracts powering the payment platform. Each contract is
 self-contained with events, typed errors, unit tests and documentation.
 
-| Contract        | Crates.io name              | Purpose                                       |
-| --------------- | --------------------------- | --------------------------------------------- |
-| `payment`       | `stellar-pay-payment`       | Send XLM/assets, batch & split payments       |
-| `escrow`        | `stellar-pay-escrow`        | Timed escrow with release & refund            |
-| `multisig`      | `stellar-pay-multisig`      | Multi-signature proposal approval & execution |
-| `treasury`      | `stellar-pay-treasury`      | Allowlisted treasury (deposits/withdrawals)   |
-| `subscriptions` | `stellar-pay-subscriptions` | Recurring payment plans                       |
-| `invoices`      | `stellar-pay-invoices`      | On-chain invoice issuance & payment           |
-| `merchant`      | `stellar-pay-merchant`      | Merchant registry + commission & settlement   |
-| `rewards`       | `stellar-pay-rewards`       | Loyalty tiers, earn & redeem points           |
+| Contract        | Crates.io name              | Purpose                                     |
+| --------------- | --------------------------- | ------------------------------------------- |
+| `payment`       | `stellar-pay-payment`       | Send XLM/assets, batch & split payments     |
+| `escrow`        | `stellar-pay-escrow`        | Timed escrow with release & refund          |
+| `treasury`      | `stellar-pay-treasury`      | Allowlisted treasury (deposits/withdrawals) |
+| `subscriptions` | `stellar-pay-subscriptions` | Recurring payment plans                     |
+| `invoices`      | `stellar-pay-invoices`      | On-chain invoice issuance & payment         |
+| `merchant`      | `stellar-pay-merchant`      | Merchant registry + commission & settlement |
 
 ## Requirements
 

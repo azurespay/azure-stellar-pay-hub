@@ -3,7 +3,12 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import type { PrismaService } from '@stellar-pay/database';
+import type { TreasuryDeposit, TreasuryProposeWithdrawal } from '@stellar-pay/validation';
 import { TreasuryService } from './treasury.service';
+import type { WalletService } from '../wallet/wallet.service';
+import type { RealtimeGateway } from '../realtime/realtime.gateway';
+import type { ContractIntegrationService } from '../contracts/contract-integration.service';
 
 describe('TreasuryService', () => {
   let service: TreasuryService;
@@ -71,18 +76,18 @@ describe('TreasuryService', () => {
       }),
     };
     service = new TreasuryService(
-      mockPrisma as never,
-      mockWallet as never,
-      mockRealtime as never,
-      mockContracts as never,
+      mockPrisma as unknown as PrismaService,
+      mockWallet as unknown as WalletService,
+      mockRealtime as unknown as RealtimeGateway,
+      mockContracts as unknown as ContractIntegrationService,
     );
   });
 
   describe('deposits', () => {
-    const dto = { fromPublicKey: 'GFROM', assetCode: 'XLM', amount: '2' };
+    const dto: TreasuryDeposit = { fromPublicKey: 'GFROM', assetCode: 'XLM', amount: '2' };
 
     it('prepares the contract deposit and stores an AWAITING_SIGN row', async () => {
-      const result = await service.createDeposit('user-1', dto as never);
+      const result = await service.createDeposit('user-1', dto);
       expect(result.unsignedXdr).toBe('AAAA');
       expect(mockPrisma.treasuryOperation.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ type: 'DEPOSIT', status: 'AWAITING_SIGN' }),
@@ -96,16 +101,14 @@ describe('TreasuryService', () => {
       mockWallet.assertWalletOwnership.mockRejectedValue(
         new NotFoundException('Wallet not linked'),
       );
-      await expect(service.createDeposit('user-1', dto as never)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.createDeposit('user-1', dto)).rejects.toThrow(NotFoundException);
     });
 
     it('throws 503 when the treasury contract is not configured', async () => {
       mockContracts.requireContractAddress.mockImplementation(() => {
         throw new ServiceUnavailableException('not configured');
       });
-      await expect(service.createDeposit('user-1', dto as never)).rejects.toThrow(
+      await expect(service.createDeposit('user-1', dto)).rejects.toThrow(
         ServiceUnavailableException,
       );
     });
@@ -167,7 +170,7 @@ describe('TreasuryService', () => {
   });
 
   describe('governed withdrawals', () => {
-    const proposeDto = {
+    const proposeDto: TreasuryProposeWithdrawal = {
       proposerPublicKey: 'GPROPOSER',
       toPublicKey: 'GTO',
       assetCode: 'XLM',
@@ -175,7 +178,7 @@ describe('TreasuryService', () => {
     };
 
     it('prepares propose_withdraw and stores a PROPOSED row', async () => {
-      const result = await service.proposeWithdrawal('user-1', proposeDto as never);
+      const result = await service.proposeWithdrawal('user-1', proposeDto);
       expect(result.unsignedXdr).toBe('AAAA');
       expect(mockPrisma.treasuryWithdrawal.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ status: 'PROPOSED', approvals: [] }),
@@ -215,14 +218,14 @@ describe('TreasuryService', () => {
         contractWithdrawalId: null,
       });
       await expect(
-        service.approve('user-1', 'wd-1', { memberPublicKey: 'GMEMBER' } as never),
+        service.approve('user-1', 'wd-1', { memberPublicKey: 'GMEMBER' }),
       ).rejects.toThrow(BadRequestException);
     });
 
     it('prepares approve_withdraw with the on-chain withdrawal id', async () => {
       const result = await service.approve('user-1', 'wd-1', {
         memberPublicKey: 'GMEMBER',
-      } as never);
+      });
       expect(result.action).toBe('approve');
       expect(result.unsignedXdr).toBe('AAAA');
       expect(mockContracts.prepareCall).toHaveBeenCalledWith(
@@ -233,7 +236,7 @@ describe('TreasuryService', () => {
     it('prepares execute_withdraw for a funded, proposed withdrawal', async () => {
       const result = await service.execute('user-1', 'wd-1', {
         memberPublicKey: 'GMEMBER',
-      } as never);
+      });
       expect(result.action).toBe('execute');
       expect(mockContracts.prepareCall).toHaveBeenCalledWith(
         expect.objectContaining({ functionName: 'execute_withdraw' }),
@@ -246,7 +249,7 @@ describe('TreasuryService', () => {
         status: 'EXECUTED',
       });
       await expect(
-        service.execute('user-1', 'wd-1', { memberPublicKey: 'GMEMBER' } as never),
+        service.execute('user-1', 'wd-1', { memberPublicKey: 'GMEMBER' }),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -281,7 +284,7 @@ describe('TreasuryService', () => {
     it('returns 404 for another user\u2019s withdrawal', async () => {
       mockPrisma.treasuryWithdrawal.findFirst.mockResolvedValue(null);
       await expect(
-        service.approve('user-2', 'wd-1', { memberPublicKey: 'GMEMBER' } as never),
+        service.approve('user-2', 'wd-1', { memberPublicKey: 'GMEMBER' }),
       ).rejects.toThrow(NotFoundException);
     });
 

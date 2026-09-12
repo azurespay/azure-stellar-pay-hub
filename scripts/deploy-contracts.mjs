@@ -37,12 +37,10 @@ const server = new rpc.Server(RPC_URL);
 const CONTRACTS = [
   'stellar_pay_payment',
   'stellar_pay_escrow',
-  'stellar_pay_multisig',
   'stellar_pay_treasury',
   'stellar_pay_subscriptions',
   'stellar_pay_invoices',
   'stellar_pay_merchant',
-  'stellar_pay_rewards',
 ];
 
 // The repo's canonical contract target is wasm32v1-none (see deploy-testnet.sh
@@ -76,7 +74,7 @@ async function deploy(name, wasmPath) {
 
   // Salt for the create-contract preimage. By default it is random per run
   // (a fresh deployment each time); set DEPLOY_SALT to a fixed value for
-  // reproducible addresses. The per-contract component keeps the 8 addresses
+  // reproducible addresses. The per-contract component keeps the addresses
   // distinct within one run while a fresh DEPLOY_SALT rotates the whole set.
   const runSalt =
     process.env.DEPLOY_SALT ??
@@ -205,7 +203,7 @@ function extractContractId(info) {
 }
 
 async function main() {
-  console.log(`🚀 Deploying 8 Soroban contracts to testnet`);
+  console.log(`🚀 Deploying ${CONTRACTS.length} Soroban contracts to testnet`);
   console.log(`   Deployer: ${publicKey}\n`);
 
   // Idempotency: when DEPLOY_SALT is fixed, an existing output file lets a

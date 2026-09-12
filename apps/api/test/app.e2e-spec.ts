@@ -60,4 +60,35 @@ describe('API (e2e)', () => {
   it('requires auth on /api/users/me', async () => {
     await request(app.getHttpServer()).get('/api/users/me').expect(401);
   });
+
+  // Regression: the public /transactions list accepted an unvalidated `status`
+  // string and passed it straight into a Prisma `where`, so an unknown value
+  // surfaced as a 500. The query must be validated at the edge (400, not 500).
+  describe('GET /api/transactions query validation', () => {
+    it('rejects an unknown status filter with a 400', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/transactions?status=NOT_A_REAL_STATUS')
+        .expect(400);
+      expect(response.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('rejects an out-of-range pageSize', async () => {
+      await request(app.getHttpServer()).get('/api/transactions?pageSize=1000').expect(400);
+    });
+
+    it('accepts a valid status filter and returns pagination metadata', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/transactions?status=CONFIRMED&page=1&pageSize=5')
+        .expect(200);
+      expect(Array.isArray(response.body.data)).toBe(true);
+      expect(response.body.meta.page).toBe(1);
+      expect(response.body.meta.pageSize).toBe(5);
+    });
+
+    it('defaults pagination when no query params are supplied', async () => {
+      const response = await request(app.getHttpServer()).get('/api/transactions').expect(200);
+      expect(response.body.meta.page).toBe(1);
+      expect(response.body.meta.pageSize).toBe(20);
+    });
+  });
 });
