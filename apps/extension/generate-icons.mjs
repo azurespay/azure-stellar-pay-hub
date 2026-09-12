@@ -28,7 +28,6 @@ function blend(a, b, t) {
 const INDIGO = [79, 70, 229, 255]; // #4F46E5
 const PURPLE = [124, 58, 237, 255]; // #7C3AED
 const WHITE = [255, 255, 255, 255];
-const TRANSPARENT = [0, 0, 0, 0];
 
 // ── Draw functions ─────────────────────────────────────────────────────────
 function drawGradient(pixels, w, h) {
@@ -107,37 +106,6 @@ function drawStar(pixels, w, cx, cy, outerR, innerR, points, color) {
   }
 }
 
-// Simple anti-alias: blend edge pixels with background
-function antiAlias(pixels, w, h, passes = 1) {
-  const copy = new Uint8Array(pixels);
-  for (let pass = 0; pass < passes; pass++) {
-    for (let y = 1; y < h - 1; y++) {
-      for (let x = 1; x < w - 1; x++) {
-        const idx = (y * w + x) * 4;
-        if (copy[idx + 3] === 0) continue; // transparent, skip
-        let r = 0,
-          g = 0,
-          b = 0,
-          a = 0,
-          count = 0;
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            const nidx = ((y + dy) * w + (x + dx)) * 4;
-            r += copy[nidx];
-            g += copy[nidx + 1];
-            b += copy[nidx + 2];
-            a += copy[nidx + 3];
-            count++;
-          }
-        }
-        pixels[idx] = Math.round(r / count);
-        pixels[idx + 1] = Math.round(g / count);
-        pixels[idx + 2] = Math.round(b / count);
-      }
-    }
-  }
-}
-
 // ── Draw designs per size ──────────────────────────────────────────────────
 function drawDesign(pixels, w) {
   drawGradient(pixels, w, w);
@@ -183,8 +151,6 @@ function drawDesign(pixels, w) {
       drawFilledCircle(pixels, w, sx, sy, sr * 0.4, [255, 255, 255, 180]);
     }
   }
-
-  // antiAlias(pixels, w, w, 1); // skipped for performance; icons look crisp without it
 }
 
 // ── PNG encoder ────────────────────────────────────────────────────────────

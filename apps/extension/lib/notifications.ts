@@ -60,9 +60,9 @@ export function connect(): void {
             scheduleReconnect();
           });
 
-          socket.on('transaction.updated', (payload: unknown) => handleTransactionUpdated(payload));
-          socket.on('payment.received', (payload: unknown) => handlePaymentReceived(payload));
-          socket.on('notification', (payload: unknown) => handleNotification(payload));
+          socket.on('transaction.updated', (payload) => handleTransactionUpdated(payload));
+          socket.on('payment.received', (payload) => handlePaymentReceived(payload));
+          socket.on('notification', (payload) => handleNotification(payload));
         })
         .catch(() => {
           scheduleReconnect();
@@ -104,30 +104,33 @@ function notifyPopup(message: unknown): void {
 }
 
 // ── Event handlers ────────────────────────────────────────────
+//
+// Realtime payloads are untrusted network data, so handlers read the string
+// fields they need instead of casting the event to an interface: a malformed or
+// renamed field must not throw inside the service worker (which would kill the
+// notification client silently).
 
-interface TransactionUpdated {
-  id?: string;
-  status?: string;
+/** Keep only the named string fields of an unknown payload. */
+function pickStrings<T extends string>(
+  payload: unknown,
+  keys: readonly T[],
+): Partial<Record<T, string>> {
+  const picked: Partial<Record<T, string>> = {};
+  if (typeof payload !== 'object' || payload === null) {
+    return picked;
+  }
+  const source = payload as Record<string, unknown>;
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === 'string') {
+      picked[key] = value;
+    }
+  }
+  return picked;
 }
 
-interface PaymentReceived {
-  transactionId?: string;
-  status?: string;
-  fromPublicKey?: string;
-  toPublicKey?: string;
-  amount?: string;
-  assetCode?: string;
-}
-
-interface Notification {
-  title?: string;
-  message?: string;
-  body?: string;
-  type?: string;
-}
-
-function handleTransactionUpdated(payload: TransactionUpdated): void {
-  const { id, status } = payload;
+function handleTransactionUpdated(payload: unknown): void {
+  const { id, status } = pickStrings(payload, ['id', 'status']);
   if (status === 'SUCCEEDED' || status === 'CONFIRMED') {
     showNotification('Payment Successful', `Transaction ${shortKey(id ?? '')} confirmed on-chain`);
   } else if (status === 'FAILED') {
@@ -143,20 +146,28 @@ function handleTransactionUpdated(payload: TransactionUpdated): void {
   }
 }
 
-function handlePaymentReceived(payload: PaymentReceived): void {
-  const amount = payload.amount ?? '';
-  const asset = payload.assetCode ?? 'XLM';
-  const from = shortKey(payload.fromPublicKey ?? '');
-  showNotification('Payment Received', `${amount} ${asset} from ${from}`);
+function handlePaymentReceived(payload: unknown): void {
+  const { amount, assetCode, fromPublicKey } = pickStrings(payload, [
+    'amount',
+    'assetCode',
+    'fromPublicKey',
+  ]);
+  const asset = assetCode ?? 'XLM';
+  const from = shortKey(fromPublicKey ?? '');
+  showNotification('Payment Received', `${amount ?? ''} ${asset} from ${from}`);
 }
 
-function handleNotification(payload: Notification): void {
-  const title = payload.title ?? 'StellarPay Notification';
-  const message = payload.message ?? payload.body ?? '';
-  if (message) {
-    showNotification(title, message);
+function handleNotification(payload: unknown): void {
+  const { title, message, body } = pickStrings(payload, ['title', 'message', 'body']);
+  const resolvedTitle = title ?? 'StellarPay Notification';
+  const resolvedMessage = message ?? body ?? '';
+  if (resolvedMessage) {
+    showNotification(resolvedTitle, resolvedMessage);
   }
-  notifyPopup({ type: 'NOTIFICATION', payload });
+  notifyPopup({
+    type: 'NOTIFICATION',
+    payload: { title: resolvedTitle, message: resolvedMessage },
+  });
 }
 
 function showNotification(title: string, message: string): void {

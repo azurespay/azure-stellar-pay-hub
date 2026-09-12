@@ -497,6 +497,10 @@ Test categories — see [`tests/README.md`](tests/README.md) for the full tier b
   subscribe, and merchant settlement, every state driven by the event indexer.
   Runs in the same `testnet-e2e` job (see [Verification](#verification-2026-09-11)).
 - **Load tests**: `tests/load/payment-load.js` — k6/Artillery-style load generation
+- **Chrome extension (CI)**: `apps/extension` is outside the pnpm workspace, so it is
+  not an Nx project; CI lints and type-checks it explicitly (`npm run lint` /
+  `npm run typecheck` in that directory) because its esbuild build strips types without
+  checking them.
 
 ## Verification (2026-09-11)
 

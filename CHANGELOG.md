@@ -66,6 +66,14 @@ This project follows [Semantic Versioning](https://semver.org/) and
 - **Dependency hygiene** — removed the unused, deprecated `soroban-client`
   dependency and declared `globals`, which six ESLint configs imported without
   it being a dependency anywhere.
+- **The Chrome extension is linted and type-checked in CI.** `apps/extension` sits
+  outside the pnpm workspace, so no Nx target ever touched it and its esbuild build
+  strips types without checking them — it was the only unverified code in the repo. It
+  now has its own `tsconfig.json` + `eslint.config.mjs` (browser + WebExtension globals)
+  and CI runs both, which immediately caught three `unknown`-payload type errors in the
+  realtime client and a dead `getPublicKey` import. Socket/notification payloads are now
+  narrowed defensively instead of cast, so a malformed event cannot throw inside the
+  service worker.
 - **Clean-clone `pnpm typecheck` / `pnpm test` work** — the Nx `typecheck` and
   `test` targets did not depend on their workspace dependencies' `build`, so a
   fresh clone failed with ~209 `TS2307 Cannot find module '@stellar-pay/*'`

@@ -5,7 +5,7 @@
  */
 
 import { connect, disconnect } from './lib/notifications';
-import { getToken, setToken, getPublicKey, setPublicKey } from './lib/api';
+import { getToken, setToken, setPublicKey } from './lib/api';
 
 // ── Lifecycle ────────────────────────────────────────────────
 

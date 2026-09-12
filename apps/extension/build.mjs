@@ -1,5 +1,4 @@
 import * as esbuild from 'esbuild';
-import { readFileSync } from 'fs';
 
 const watch = process.argv.includes('--watch');
 
