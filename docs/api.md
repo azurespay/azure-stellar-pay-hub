@@ -216,6 +216,63 @@ allows `SUPPORT`.
 > are never mislabeled as a single currency. `paymentSuccessRate` is `null`
 > (not a fabricated 100%) when there is no data.
 
+## Contract integrations (Soroban)
+
+Escrow, on-chain invoices, subscriptions, treasury and merchant settlement all follow the
+same flow: **prepare** (build an unsigned contract call, persisted as a row in a
+non-terminal status) → **sign** (wallet) → **submit** (`{ signedXdr }`, sent via Soroban
+RPC) → **reconcile** (the event indexer observes the contract event and advances the
+row; nothing is marked settled optimistically). Contract addresses come from
+`CONTRACT_STELLAR_PAY_*`; a feature without a configured address is inactive.
+
+| Method | Path                                                | Description                                                                                          |
+| ------ | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| GET    | `/escrows`                                          | List escrows (owner-scoped)                                                                          |
+| GET    | `/escrows/:id`                                      | Escrow detail                                                                                        |
+| POST   | `/escrows`                                          | Prepare `create` (`initiatorPublicKey`, `counterpartyPublicKey`, `amount`, `releaseTime`, `expiry?`) |
+| POST   | `/escrows/:id/submit`                               | Submit the signed `create` call                                                                      |
+| POST   | `/escrows/:id/release`                              | Prepare `release` (`{ callerPublicKey }`)                                                            |
+| POST   | `/escrows/:id/release/confirm`                      | Submit the signed `release` call                                                                     |
+| POST   | `/escrows/:id/refund`                               | Prepare `refund` (`{ callerPublicKey }`)                                                             |
+| POST   | `/escrows/:id/refund/confirm`                       | Submit the signed `refund` call                                                                      |
+| POST   | `/merchants/me/invoices/:id/issue-onchain`          | Prepare on-chain invoice issuance                                                                    |
+| POST   | `/merchants/me/invoices/:id/issue-onchain/submit`   | Submit the signed issuance                                                                           |
+| POST   | `/merchants/me/invoices/:id/cancel-onchain`         | Prepare on-chain cancellation                                                                        |
+| POST   | `/merchants/me/invoices/:id/cancel-onchain/submit`  | Submit the signed cancellation                                                                       |
+| POST   | `/invoices/:id/pay-onchain`                         | Prepare an on-chain invoice payment (payer)                                                          |
+| POST   | `/invoices/:id/pay-onchain/confirm`                 | Submit the signed invoice payment                                                                    |
+| GET    | `/subscription-plans`                               | List plans (owner-scoped)                                                                            |
+| POST   | `/subscription-plans`                               | Prepare a plan (`name`, `amount`, `intervalSeconds`)                                                 |
+| POST   | `/subscription-plans/:id/submit`                    | Submit the signed plan creation                                                                      |
+| POST   | `/subscription-plans/:planId/subscribe`             | Prepare a subscription (`{ subscriberPublicKey }`)                                                   |
+| GET    | `/subscriptions`                                    | List subscriptions                                                                                   |
+| POST   | `/subscriptions/:id/submit`                         | Submit the signed subscription                                                                       |
+| POST   | `/subscriptions/:id/renew`                          | Prepare a renewal (`{ callerPublicKey }`)                                                            |
+| POST   | `/subscriptions/:id/renew/confirm`                  | Submit the signed renewal                                                                            |
+| POST   | `/subscriptions/:id/cancel`                         | Prepare a cancellation                                                                               |
+| POST   | `/subscriptions/:id/cancel/confirm`                 | Submit the signed cancellation                                                                       |
+| GET    | `/treasury/operations`                              | List deposits/withdrawals for the caller                                                             |
+| GET    | `/treasury/withdrawals`                             | List withdrawal proposals (approvals + threshold)                                                    |
+| POST   | `/treasury/deposits`                                | Prepare a deposit                                                                                    |
+| POST   | `/treasury/deposits/:id/submit`                     | Submit the signed deposit                                                                            |
+| POST   | `/treasury/withdrawals`                             | Prepare a governed withdrawal proposal                                                               |
+| POST   | `/treasury/withdrawals/:id/submit`                  | Submit the signed proposal                                                                           |
+| POST   | `/treasury/withdrawals/:id/approve`                 | Prepare an approval (`{ memberPublicKey }`)                                                          |
+| POST   | `/treasury/withdrawals/:id/approve/confirm`         | Submit the signed approval                                                                           |
+| POST   | `/treasury/withdrawals/:id/execute`                 | Prepare execution once the threshold is met                                                          |
+| POST   | `/treasury/withdrawals/:id/execute/confirm`         | Submit the signed execution                                                                          |
+| POST   | `/merchants/me/onchain/register`                    | Prepare merchant-contract registration                                                               |
+| POST   | `/merchants/me/onchain/register/submit`             | Submit the signed registration                                                                       |
+| POST   | `/merchants/:id/onchain/sale`                       | Prepare an on-chain sale for a merchant                                                              |
+| POST   | `/merchants/:id/onchain/sale/submit`                | Submit the signed sale                                                                               |
+| POST   | `/merchants/me/onchain/settle`                      | Prepare a settlement                                                                                 |
+| POST   | `/merchants/me/onchain/settle/:settlementId/submit` | Submit the signed settlement                                                                         |
+
+> Status values advance only on on-chain evidence: e.g. an escrow is `FUNDED` when the
+> contract's `created` event is indexed (not when the row is created), and `RELEASED`
+> only after the `released` event. See [`contracts.md`](contracts.md) for the per-contract
+> matrix and `docs/architecture.md` for the indexer.
+
 ## Webhooks (outbound)
 
 Merchants register endpoints with the events they care about
@@ -228,6 +285,12 @@ Merchants register endpoints with the events they care about
   re-attempt the same delivery row and body.
 - **Retried** by the scheduler with backoff (max 5 attempts) when the endpoint
   is down.
+- **SSRF-guarded** — `url` must be an `http(s)` FQDN with no embedded credentials and
+  must not be a loopback/private/link-local/CGNAT target (including
+  `localhost`, `*.internal`, `*.local`, `*.svc`/`*.cluster.local` and the cloud
+  metadata address). Every delivery re-resolves the hostname and refuses
+  non-public answers, so a URL that later starts pointing inside the network is
+  rejected (recorded once, not retried) instead of being fetched.
 
 ## WebSocket events (realtime)
 

@@ -38,9 +38,19 @@ describe('AuthService — unit-level validation', () => {
     });
   });
 
-  describe('JWT secret access', () => {
-    it('reads JWT_SECRET from config', () => {
-      expect(mockConfig.get).not.toHaveBeenCalled();
+  describe('challenge storage', () => {
+    it('stores the issued nonce under the wallet address with the challenge TTL', async () => {
+      const key = 'GBJQY3BN2MTOFBPCW4MZZQBZDY5IYRXBMJX3SB64STGW6UB44ZWIJSD3';
+      const challenge = await service.createChallenge(key);
+
+      // The stored nonce must be the one inside the signed message, and it must
+      // expire — a non-expiring challenge is replayable forever.
+      expect(mockRedis.setJson).toHaveBeenCalledWith(
+        `challenge:${key}`,
+        { nonce: challenge.nonce },
+        300,
+      );
+      expect(challenge.message).toContain(challenge.nonce);
     });
   });
 

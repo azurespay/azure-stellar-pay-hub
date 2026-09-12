@@ -5,6 +5,10 @@ describe('WebhooksService', () => {
   let service: WebhooksService;
   let mockPrisma: Record<string, any>;
   let mockLogger: { warn: jest.Mock };
+  let mockResolver: jest.Mock;
+
+  /** Public address so the SSRF guard passes without touching real DNS. */
+  const PUBLIC_ADDRESS = '93.184.216.34';
 
   const webhook = {
     id: 'merchant-1:https://example.com/hook',
@@ -35,7 +39,8 @@ describe('WebhooksService', () => {
         update: jest.fn(),
       },
     };
-    service = new WebhooksService(mockPrisma as any);
+    mockResolver = jest.fn().mockResolvedValue([PUBLIC_ADDRESS]);
+    service = new WebhooksService(mockPrisma as any, mockResolver);
     (service as unknown as { logger: { warn: jest.Mock } }).logger = mockLogger as unknown as {
       warn: jest.Mock;
     };
@@ -146,6 +151,64 @@ describe('WebhooksService', () => {
     // The retried body still carries the original deliveryId so a merchant can
     // recognise it as the same logical event.
     expect(JSON.parse(String(init.body)).deliveryId).toBe(id);
+  });
+
+  // `attemptDelivery` is private: the tests drive it directly to isolate the
+  // delivery-time SSRF guard from the retry query.
+  const attempt = (webhookId: string, deliveryId: string) =>
+    (
+      service as unknown as {
+        attemptDelivery: (w: string, d: string) => Promise<void>;
+      }
+    ).attemptDelivery(webhookId, deliveryId);
+
+  it('refuses to POST to a target that resolves to a private address (SSRF)', async () => {
+    mockPrisma.webhookDelivery.findUnique.mockResolvedValue({
+      id: 'delivery-1',
+      webhookId: webhook.id,
+      payload: { event: 'payment.received' },
+    });
+    mockPrisma.webhook.findUnique.mockResolvedValue(webhook);
+    // DNS answer that points at the cloud metadata service.
+    mockResolver.mockResolvedValue(['169.254.169.254']);
+    const fetchMock = jest.fn();
+    const originalFetch = global.fetch;
+    global.fetch = fetchMock as unknown as typeof fetch;
+    try {
+      await attempt(webhook.id, 'delivery-1');
+    } finally {
+      global.fetch = originalFetch;
+    }
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mockPrisma.webhookDelivery.update).toHaveBeenCalledWith({
+      where: { id: 'delivery-1' },
+      data: expect.objectContaining({
+        status: 'FAILED',
+        lastError: expect.stringContaining('blocked:'),
+        // No retry budget spent on a permanently blocked target.
+        nextRetryAt: null,
+      }),
+    });
+  });
+
+  it('rejects a literal loopback hostname without resolving it', async () => {
+    mockPrisma.webhookDelivery.findUnique.mockResolvedValue({
+      id: 'delivery-2',
+      webhookId: webhook.id,
+      payload: { event: 'payment.received' },
+    });
+    mockPrisma.webhook.findUnique.mockResolvedValue({
+      ...webhook,
+      url: 'http://127.0.0.1:9090/internal',
+    });
+    await attempt(webhook.id, 'delivery-2');
+
+    expect(mockResolver).not.toHaveBeenCalled();
+    expect(mockPrisma.webhookDelivery.update).toHaveBeenCalledWith({
+      where: { id: 'delivery-2' },
+      data: expect.objectContaining({ lastError: expect.stringContaining('private or loopback') }),
+    });
   });
 
   it('only dispatches to webhooks subscribed to the event', async () => {

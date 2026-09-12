@@ -57,6 +57,30 @@ describe('createPaymentSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('accepts a 28-byte text memo', () => {
+    const result = createPaymentSchema.safeParse({
+      type: 'SEND',
+      fromPublicKey: VALID_KEY,
+      destinations: [{ publicKey: VALID_KEY, amount: '1' }],
+      assetCode: 'XLM',
+      memo: 'a'.repeat(28),
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a memo that fits in 28 characters but exceeds 28 bytes', () => {
+    // '🚀' is one character but four UTF-8 bytes; Stellar enforces bytes, and a
+    // character-based limit would let this through to fail on-chain.
+    const result = createPaymentSchema.safeParse({
+      type: 'SEND',
+      fromPublicKey: VALID_KEY,
+      destinations: [{ publicKey: VALID_KEY, amount: '1' }],
+      assetCode: 'XLM',
+      memo: '🚀'.repeat(8), // 8 chars, 32 bytes
+    });
+    expect(result.success).toBe(false);
+  });
+
   it('accepts recurring payments with schedule', () => {
     const result = createPaymentSchema.safeParse({
       type: 'RECURRING',

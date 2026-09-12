@@ -111,6 +111,32 @@ describe('AuditInterceptor', () => {
     expect(prisma.auditLog.create).toHaveBeenCalled();
   });
 
+  it('redacts credentials instead of journaling them', async () => {
+    const context = makeContext({
+      path: '/auth/admin/login',
+      route: { path: '/auth/admin/login' },
+      body: {
+        email: 'admin@stellar-pay.dev',
+        password: 'super-secret-password',
+        nested: { refreshToken: 'live-refresh-token', keep: 'visible' },
+        events: ['payment.received'],
+      },
+    });
+
+    await lastValueFrom(interceptor.intercept(context, { handle: () => of({}) }));
+
+    const { metadata } = prisma.auditLog.create.mock.calls[0][0].data;
+    expect(metadata.body).toEqual({
+      email: 'admin@stellar-pay.dev',
+      password: '[REDACTED]',
+      nested: { refreshToken: '[REDACTED]', keep: 'visible' },
+      events: ['payment.received'],
+    });
+    // The raw body must not survive anywhere in the written row.
+    expect(JSON.stringify(metadata)).not.toContain('super-secret-password');
+    expect(JSON.stringify(metadata)).not.toContain('live-refresh-token');
+  });
+
   it('handles requests without a resolved route path', async () => {
     const context = makeContext({ route: undefined, path: undefined });
     await lastValueFrom(interceptor.intercept(context, { handle: () => of({}) }));

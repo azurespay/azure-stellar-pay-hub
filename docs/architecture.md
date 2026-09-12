@@ -80,12 +80,23 @@ JWT → every protected route           → RBAC via roles guard
   `AuditInterceptor` (registered in `AppModule` since the initial commit) writes an
   `AuditLog` row for every mutating HTTP request (POST/PUT/PATCH/DELETE) that reaches a
   controller and completes — capturing the actor (user id / public key), action
-  (`METHOD route`), resource, IP, and user-agent, plus request-body metadata. Writes are
-  fire-and-forget: a failure is logged and never blocks the response. The admin listing
-  endpoint (`GET /admin/audit-logs`) reads these rows. Dedicated interceptor unit tests cover
-  the write path (actor/action capture, fire-and-forget failure handling).
+  (`METHOD route`), resource, IP, and user-agent, plus request-body metadata with
+  credentials redacted (`password`, `token`/`refreshToken`, `secret`, `apiKey`,
+  `signature`, … → `[REDACTED]`, recursively), so the trail can never become a
+  credential store. Writes are fire-and-forget: a failure is logged and never blocks the
+  response. The admin listing endpoint (`GET /admin/audit-logs`) reads these rows.
+  Dedicated interceptor unit tests cover the write path (actor/action capture,
+  fire-and-forget failure handling, credential redaction).
   Limitations: rejected requests (guard/pipe failures before the controller) and
   non-HTTP/scheduler work are not journaled; response bodies are not captured.
+- **Realtime sockets are authenticated like HTTP requests.** The Socket.IO gateway
+  verifies the handshake JWT _and_ re-checks the session row (`ACTIVE`, unexpired,
+  matching subject) and the account status before joining a client to its `user:<id>`
+  room, so revocation and suspension apply to live channels too.
+- **Outbound webhooks are SSRF-guarded.** A merchant-supplied URL must be an http(s)
+  FQDN that is not a private/loopback/link-local/`*.svc`/`*.local`/`*.internal` target,
+  and every delivery re-resolves the hostname and rejects non-public answers before the
+  signed POST is made (bounded by a request timeout).
 - Soroban contracts enforce multi-sig thresholds and escrow rules on-chain.
 
 ## Current state & limitations (accurate as of 2026-09)

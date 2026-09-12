@@ -14,30 +14,34 @@ export function createId(): string {
   });
 }
 
+/**
+ * Cryptographically random bytes, or a hard failure.
+ *
+ * Security material (auth nonces, webhook secrets) must NEVER fall back to
+ * `Math.random()` — a predictable nonce lets an attacker pre-sign a challenge
+ * and mint a session for any wallet address. Supported runtimes (Node >= 19,
+ * every browser this platform targets, and workerd) all expose
+ * `crypto.getRandomValues`, so the old silent fallback was both unreachable and
+ * a foot-gun: it turned a missing primitive into a silent downgrade instead of
+ * a loud failure. Fail closed, like `hashSecret` below.
+ */
+function secureRandomBytes(bytes: number): Uint8Array {
+  if (!cryptoImpl?.getRandomValues) {
+    throw new Error('WebCrypto (crypto.getRandomValues) is required for secure randomness');
+  }
+  const buffer = new Uint8Array(bytes);
+  cryptoImpl.getRandomValues(buffer);
+  return buffer;
+}
+
 /** Generate a cryptographically random hex nonce (challenge for wallet auth). */
 export function newNonce(bytes = 32): string {
-  const buffer = new Uint8Array(bytes);
-  if (cryptoImpl?.getRandomValues) {
-    cryptoImpl.getRandomValues(buffer);
-  } else {
-    for (let i = 0; i < bytes; i++) {
-      buffer[i] = Math.floor(Math.random() * 256);
-    }
-  }
-  return Array.from(buffer, (b) => b.toString(16).padStart(2, '0')).join('');
+  return Array.from(secureRandomBytes(bytes), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /** Generate a URL-safe random secret (API keys, webhook secrets). */
 export function newSecret(bytes = 32): string {
-  const buffer = new Uint8Array(bytes);
-  if (cryptoImpl?.getRandomValues) {
-    cryptoImpl.getRandomValues(buffer);
-  } else {
-    for (let i = 0; i < bytes; i++) {
-      buffer[i] = Math.floor(Math.random() * 256);
-    }
-  }
-  return btoaSafe(buffer);
+  return btoaSafe(secureRandomBytes(bytes));
 }
 
 function btoaSafe(bytes: Uint8Array): string {

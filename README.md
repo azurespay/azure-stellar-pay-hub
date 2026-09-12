@@ -509,7 +509,7 @@ verification (`pnpm test:unit && pnpm contracts:verify`), matching what CI runs.
 | --------------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | Typecheck (clean clone, no prior build) | `pnpm typecheck`                                      | **PASS** — 0 errors across 17 projects; builds its workspace dependencies itself, so no `build:packages` step is needed first |
 | Lint                                    | `pnpm lint`                                           | **PASS** — 17 projects                                                                                                        |
-| Unit / integration (tier 1)             | `pnpm test:unit`                                      | **PASS** — 375 tests in 41 suites                                                                                             |
+| Unit / integration (tier 1)             | `pnpm test:unit`                                      | **PASS** — 446 tests in 46 suites (re-run 2026-09-12)                                                                         |
 | API integration (tier 3)                | `pnpm --filter @stellar-pay/api test:e2e`             | **PASS** — 19 tests in 3 suites                                                                                               |
 | Local-stack smoke (tier 4)              | `pnpm test:e2e`                                       | **PASS** — health `ok` (database up), `/assets`, `/health/ready`                                                              |
 | Live testnet E2E — classic (tier 5)     | `node tests/e2e/auth-payment-flow.mjs`                | **PASS** — 22/22; tx `393cc465…` confirmed in ledger 4_622_888                                                                |
@@ -520,6 +520,12 @@ verification (`pnpm test:unit && pnpm contracts:verify`), matching what CI runs.
 
 The Soroban rows were verified on 2026-09-12 after installing the Rust toolchain
 locally (rustc 1.98.1, target `wasm32v1-none`).
+
+On **2026-09-12** the tier-1 rows above (lint, typecheck, format check, `pnpm test:unit`,
+`pnpm build`) were re-run on a clean `pnpm install` after the security/hygiene fixes in
+this revision. The tier-3 API integration spec and the live-testnet suites were **not**
+re-run in that environment (no Postgres/Redis service and no Rust toolchain available),
+so their 2026-09-11 results stand unchanged — CI runs them on every PR.
 
 Unverifiable in this environment and therefore **not claimed**: the hosted
 Railway API (offline), GitHub Actions runs, and the browser-based frontends

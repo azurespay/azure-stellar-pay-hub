@@ -22,7 +22,17 @@ export const assetCodeSchema = z.string().regex(/^[a-zA-Z0-9]{1,12}$/);
 
 export const issuerSchema = publicKeySchema.nullable().optional();
 
-export const memoSchema = z.string().max(28, 'Memo must be at most 28 bytes').optional();
+/**
+ * Stellar text memos are limited to 28 **bytes**, not 28 characters. Counting
+ * UTF-16 code units (`z.string().max(28)`) lets a 28-character emoji memo
+ * through validation and then fail on-chain (Horizon rejects the envelope), so
+ * the limit is measured on the encoded bytes — the same rule
+ * `isValidMemo` in `@stellar-pay/shared` applies.
+ */
+export const memoSchema = z
+  .string()
+  .refine((memo) => new TextEncoder().encode(memo).length <= 28, 'Memo must be at most 28 bytes')
+  .optional();
 
 export const memoTypeSchema = z.enum(['text', 'hash', 'id']).optional();
 

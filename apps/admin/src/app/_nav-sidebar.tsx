@@ -2,22 +2,6 @@
 
 import Link from 'next/link';
 
-function Icon({ d, className }: { d: string; className?: string }) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d={d} />
-    </svg>
-  );
-}
-
 const DashboardIcon = () => (
   <svg
     className="h-4 w-4"

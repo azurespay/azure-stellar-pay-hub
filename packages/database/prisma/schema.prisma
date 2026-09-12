@@ -181,22 +181,22 @@ model User {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
-  wallets            Wallet[]
-  contacts           Contact[]
-  sessions           Session[]
-  devices            Device[]
-  notifications      Notification[]
-  apiKeys            ApiKey[]
-  beneficiaries      Beneficiary[]
-  auditLogs          AuditLog[]
-  transactions       Transaction[]
-  trustlines         Trustline[]
-  merchant           Merchant?
-  preferences        UserPreference?
-  escrows            Escrow[]
-  subscriptionPlans  SubscriptionPlan[]
-  subscriptions      Subscription[]
-  treasuryOperations TreasuryOperation[]
+  wallets             Wallet[]
+  contacts            Contact[]
+  sessions            Session[]
+  devices             Device[]
+  notifications       Notification[]
+  apiKeys             ApiKey[]
+  beneficiaries       Beneficiary[]
+  auditLogs           AuditLog[]
+  transactions        Transaction[]
+  trustlines          Trustline[]
+  merchant            Merchant?
+  preferences         UserPreference?
+  escrows             Escrow[]
+  subscriptionPlans   SubscriptionPlan[]
+  subscriptions       Subscription[]
+  treasuryOperations  TreasuryOperation[]
   treasuryWithdrawals TreasuryWithdrawal[]
 
   @@index([role])
@@ -204,45 +204,45 @@ model User {
 }
 
 model UserPreference {
-  id                       String   @id @default(uuid())
-  userId                   String   @unique
-  user                     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  currency                 String   @default("USD")
-  notificationPreferences  Json     @default("{}")
-  theme                    String   @default("dark")
-  twoFactorEnabled         Boolean  @default(false)
-  createdAt                DateTime @default(now())
-  updatedAt                DateTime @updatedAt
+  id                      String   @id @default(uuid())
+  userId                  String   @unique
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currency                String   @default("USD")
+  notificationPreferences Json     @default("{}")
+  theme                   String   @default("dark")
+  twoFactorEnabled        Boolean  @default(false)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 }
 
 model Wallet {
-  id          String         @id @default(uuid())
-  userId      String
-  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  publicKey   String         @unique
-  provider    WalletProvider
-  status      WalletStatus   @default(ACTIVE)
-  network     String         @default("testnet")
-  isPrimary   Boolean        @default(false)
-  lastUsedAt  DateTime?
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  id         String         @id @default(uuid())
+  userId     String
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  publicKey  String         @unique
+  provider   WalletProvider
+  status     WalletStatus   @default(ACTIVE)
+  network    String         @default("testnet")
+  isPrimary  Boolean        @default(false)
+  lastUsedAt DateTime?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
 
   @@index([userId])
 }
 
 model Session {
-  id         String        @id @default(uuid())
-  userId     String
-  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash  String        @unique
-  deviceId   String?
-  ipAddress  String?
-  userAgent  String?
-  expiresAt  DateTime
-  status     SessionStatus @default(ACTIVE)
-  createdAt  DateTime      @default(now())
-  revokedAt  DateTime?
+  id        String        @id @default(uuid())
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String        @unique
+  deviceId  String?
+  ipAddress String?
+  userAgent String?
+  expiresAt DateTime
+  status    SessionStatus @default(ACTIVE)
+  createdAt DateTime      @default(now())
+  revokedAt DateTime?
 
   @@index([userId])
   @@index([expiresAt])
@@ -332,40 +332,40 @@ model Trustline {
 }
 
 model Transaction {
-  id               String              @id @default(uuid())
-  userId           String?
-  user             User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
-  hash             String?             @unique
-  idempotencyKey   String?
-  stellarTxId      String?
-  fromPublicKey    String?
-  toPublicKey      String?
-  amount           String
-  assetCode        String
-  assetIssuer      String?
-  memo             String?
-  memoType         String              @default("text")
-  status           TransactionStatus   @default(PENDING)
-  direction        TransactionDirection
-  kind             String
-  fee              String?
-  sequence         String?
-  sourceNetwork    String              @default("testnet")
-  meta             Json?
-  errorMessage     String?
-  receiptIpfsCid   String?
-  createdAt        DateTime            @default(now())
-  updatedAt        DateTime            @updatedAt
+  id             String               @id @default(uuid())
+  userId         String?
+  user           User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  hash           String?              @unique
+  idempotencyKey String?
+  stellarTxId    String?
+  fromPublicKey  String?
+  toPublicKey    String?
+  amount         String
+  assetCode      String
+  assetIssuer    String?
+  memo           String?
+  memoType       String               @default("text")
+  status         TransactionStatus    @default(PENDING)
+  direction      TransactionDirection
+  kind           String
+  fee            String?
+  sequence       String?
+  sourceNetwork  String               @default("testnet")
+  meta           Json?
+  errorMessage   String?
+  receiptIpfsCid String?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
 
-  @@index([userId])
-  @@index([toPublicKey])
-  @@index([status])
-  @@index([createdAt])
   // Client-supplied dedupe: at most one payment intent per user + key, so a
   // retried POST /payments returns the original row instead of creating a
   // second payment. NULL keys are not deduped (Postgres treats NULLs as
   // distinct in unique indexes).
   @@unique([userId, idempotencyKey])
+  @@index([userId])
+  @@index([toPublicKey])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model ScheduledPayment {
@@ -425,34 +425,34 @@ model Merchant {
 }
 
 model Product {
-  id           String        @id @default(uuid())
-  merchantId   String
-  merchant     Merchant      @relation(fields: [merchantId], references: [id], onDelete: Cascade)
-  name         String
-  description  String?
-  priceAmount  String
-  assetCode    String        @default("USDC")
-  assetIssuer  String?
-  imageUrl     String?
-  status       ProductStatus @default(ACTIVE)
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  id          String        @id @default(uuid())
+  merchantId  String
+  merchant    Merchant      @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  priceAmount String
+  assetCode   String        @default("USDC")
+  assetIssuer String?
+  imageUrl    String?
+  status      ProductStatus @default(ACTIVE)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 
   @@index([merchantId])
 }
 
 model Customer {
-  id               String   @id @default(uuid())
+  id               String    @id @default(uuid())
   merchantId       String
-  merchant         Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  merchant         Merchant  @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   publicKey        String
   email            String?
   name             String?
-  totalSpent       String   @default("0")
-  transactionCount Int      @default(0)
+  totalSpent       String    @default("0")
+  transactionCount Int       @default(0)
   lastPurchaseAt   DateTime?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   invoices Invoice[]
 
@@ -461,75 +461,75 @@ model Customer {
 }
 
 model Invoice {
-  id                 String        @id @default(uuid())
-  number             String        @unique
-  merchantId         String
-  merchant           Merchant      @relation(fields: [merchantId], references: [id], onDelete: Cascade)
-  customerId         String?
-  customer           Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  customerPublicKey  String?
-  title              String
-  description        String?
-  items              Json
-  amount             String
-  assetCode          String        @default("USDC")
-  assetIssuer        String?
-  status             InvoiceStatus @default(DRAFT)
-  dueDate            DateTime?
-  paidAt             DateTime?
-  memo               String?
+  id                   String        @id @default(uuid())
+  number               String        @unique
+  merchantId           String
+  merchant             Merchant      @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  customerId           String?
+  customer             Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  customerPublicKey    String?
+  title                String
+  description          String?
+  items                Json
+  amount               String
+  assetCode            String        @default("USDC")
+  assetIssuer          String?
+  status               InvoiceStatus @default(DRAFT)
+  dueDate              DateTime?
+  paidAt               DateTime?
+  memo                 String?
   paymentTransactionId String?
   // On-chain (Soroban invoices contract) fields. `onChainId` is the contract's
   // invoice id; the invoice becomes ISSUED only when the `issued` event is
   // indexed, and PAID only when the contract's `paid` event is observed.
-  onChainId          Int?          @unique
-  issueTxHash        String?
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @updatedAt
+  onChainId            Int?          @unique
+  issueTxHash          String?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
 
   @@index([merchantId])
   @@index([status])
 }
 
 model PaymentLink {
-  id            String           @id @default(uuid())
-  merchantId    String
-  merchant      Merchant         @relation(fields: [merchantId], references: [id], onDelete: Cascade)
-  code          String           @unique
-  title         String
-  description   String?
-  amount        String?
-  assetCode     String           @default("USDC")
-  assetIssuer   String?
-  fixedAmount   Boolean          @default(true)
-  status        PaymentLinkStatus @default(ACTIVE)
-  expiresAt     DateTime?
-  redirectUrl   String?
-  totalPayments Int              @default(0)
-  totalCollected String           @default("0")
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  id             String            @id @default(uuid())
+  merchantId     String
+  merchant       Merchant          @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  code           String            @unique
+  title          String
+  description    String?
+  amount         String?
+  assetCode      String            @default("USDC")
+  assetIssuer    String?
+  fixedAmount    Boolean           @default(true)
+  status         PaymentLinkStatus @default(ACTIVE)
+  expiresAt      DateTime?
+  redirectUrl    String?
+  totalPayments  Int               @default(0)
+  totalCollected String            @default("0")
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
 
   @@index([merchantId])
 }
 
 model Settlement {
-  id                 String   @id @default(uuid())
-  merchantId         String
-  merchant           Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
-  periodStart        DateTime
-  periodEnd          DateTime
-  amount             String
-  assetCode          String
-  assetIssuer        String?
-  status             String   @default("PENDING") // PENDING | PROCESSING | COMPLETED | FAILED
+  id                  String   @id @default(uuid())
+  merchantId          String
+  merchant            Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  periodStart         DateTime
+  periodEnd           DateTime
+  amount              String
+  assetCode           String
+  assetIssuer         String?
+  status              String   @default("PENDING") // PENDING | PROCESSING | COMPLETED | FAILED
   payoutTransactionId String?
   // On-chain merchant-contract settlement: the contract's merchant id and the
   // `settle` invocation hash. COMPLETED is set only when the on-chain `settle`
   // event is indexed.
-  onChainMerchantId  Int?
-  settleTxHash       String?
-  createdAt          DateTime @default(now())
+  onChainMerchantId   Int?
+  settleTxHash        String?
+  createdAt           DateTime @default(now())
 
   @@index([merchantId])
 }
@@ -567,17 +567,17 @@ model ApiKey {
 }
 
 model AuditLog {
-  id            String   @id @default(uuid())
-  userId        String?
-  user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  id             String   @id @default(uuid())
+  userId         String?
+  user           User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   actorPublicKey String?
-  action        String
-  resource      String
-  resourceId    String?
-  ipAddress     String?
-  userAgent     String?
-  metadata      Json?
-  createdAt     DateTime @default(now())
+  action         String
+  resource       String
+  resourceId     String?
+  ipAddress      String?
+  userAgent      String?
+  metadata       Json?
+  createdAt      DateTime @default(now())
 
   @@index([userId])
   @@index([resource])
@@ -620,32 +620,33 @@ model Setting {
 }
 
 model Webhook {
-  id        String          @id @default(uuid())
+  id         String   @id @default(uuid())
   merchantId String
-  merchant  Merchant        @relation(fields: [merchantId], references: [id], onDelete: Cascade)
-  url       String
-  secret    String
-  events    Json
-  status    String          @default("ACTIVE")
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  url        String
+  secret     String
+  events     Json
+  status     String   @default("ACTIVE")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   deliveries WebhookDelivery[]
 
   @@index([merchantId])
-}model WebhookDelivery {
-  id            String    @id @default(uuid())
-  webhookId     String
-  webhook       Webhook   @relation(fields: [webhookId], references: [id], onDelete: Cascade)
-  event         String
-  payload       Json
-  status        String    @default("PENDING") // PENDING | DELIVERED | FAILED
-  attempts      Int       @default(0)
-  nextRetryAt   DateTime?
-  lastError     String?
+}
+model WebhookDelivery {
+  id             String    @id @default(uuid())
+  webhookId      String
+  webhook        Webhook   @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  event          String
+  payload        Json
+  status         String    @default("PENDING") // PENDING | DELIVERED | FAILED
+  attempts       Int       @default(0)
+  nextRetryAt    DateTime?
+  lastError      String?
   responseStatus Int?
-  createdAt     DateTime  @default(now())
-  deliveredAt   DateTime?
+  createdAt      DateTime  @default(now())
+  deliveredAt    DateTime?
 
   @@index([status, nextRetryAt])
 }
@@ -673,50 +674,50 @@ model ChainEvent {
 // ----------------------------------------------------------------
 
 model Escrow {
-  id                  String       @id @default(uuid())
-  userId              String
-  user                User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                    String       @id @default(uuid())
+  userId                String
+  user                  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   // On-chain escrow id assigned by the contract (`create` returns it). Null
   // until the `created` event is indexed.
-  contractId          Int?         @unique
-  initiatorPublicKey  String
+  contractId            Int?         @unique
+  initiatorPublicKey    String
   counterpartyPublicKey String
-  arbiterPublicKey    String?
-  tokenAddress        String?
-  assetCode           String
-  assetIssuer         String?
-  amount              String
-  releaseTime         DateTime
-  expiry              DateTime?
-  status              EscrowStatus @default(AWAITING_SIGN)
-  hash                String?
-  errorMessage        String?
-  releaseHash         String?
-  refundHash          String?
-  createdAt           DateTime     @default(now())
-  updatedAt           DateTime     @updatedAt
+  arbiterPublicKey      String?
+  tokenAddress          String?
+  assetCode             String
+  assetIssuer           String?
+  amount                String
+  releaseTime           DateTime
+  expiry                DateTime?
+  status                EscrowStatus @default(AWAITING_SIGN)
+  hash                  String?
+  errorMessage          String?
+  releaseHash           String?
+  refundHash            String?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
 
   @@index([userId])
   @@index([status])
 }
 
 model SubscriptionPlan {
-  id               String                @id @default(uuid())
-  userId           String
-  user             User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name             String
-  description      String?
-  assetCode        String
-  assetIssuer      String?
-  amount           String
-  intervalSeconds  Int
+  id              String                 @id @default(uuid())
+  userId          String
+  user            User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name            String
+  description     String?
+  assetCode       String
+  assetIssuer     String?
+  amount          String
+  intervalSeconds Int
   // On-chain plan id assigned by the subscriptions contract; the plan is
   // ACTIVE only once the `plan` event is indexed.
-  contractPlanId   Int?                  @unique
-  status           SubscriptionPlanStatus @default(PENDING)
-  hash             String?
-  createdAt        DateTime              @default(now())
-  updatedAt        DateTime              @updatedAt
+  contractPlanId  Int?                   @unique
+  status          SubscriptionPlanStatus @default(PENDING)
+  hash            String?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
 
   subscriptions Subscription[]
 
@@ -731,7 +732,7 @@ model Subscription {
   plan                   SubscriptionPlan   @relation(fields: [planId], references: [id], onDelete: Cascade)
   // On-chain subscription id assigned by the contract; ACTIVE only once the
   // `sub` event is indexed (first payment executed on-chain).
-  contractSubscriptionId Int?              @unique
+  contractSubscriptionId Int?               @unique
   status                 SubscriptionStatus @default(PENDING)
   nextPaymentAt          DateTime?
   hash                   String?
@@ -745,45 +746,45 @@ model Subscription {
 }
 
 model TreasuryOperation {
-  id          String                   @id @default(uuid())
-  userId      String
-  user        User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type        TreasuryOperationType
+  id           String                  @id @default(uuid())
+  userId       String
+  user         User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         TreasuryOperationType
   tokenAddress String?
-  assetCode   String
-  assetIssuer String?
-  amount      String
+  assetCode    String
+  assetIssuer  String?
+  amount       String
   // Withdrawal proposals reference their operation row (executed → CONFIRMED).
   withdrawalId String?
-  status      TreasuryOperationStatus  @default(AWAITING_SIGN)
-  hash        String?
+  status       TreasuryOperationStatus @default(AWAITING_SIGN)
+  hash         String?
   errorMessage String?
-  createdAt   DateTime                 @default(now())
-  updatedAt   DateTime                 @updatedAt
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
 
   @@index([userId])
   @@index([status])
 }
 
 model TreasuryWithdrawal {
-  id                 String                   @id @default(uuid())
-  userId             String                   // proposer (must be a governance member on-chain)
-  user               User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  operationId        String?                  // link to the treasury operation when executed
-  toPublicKey        String
-  assetCode          String
-  assetIssuer        String?
-  amount             String
+  id                   String                   @id @default(uuid())
+  userId               String // proposer (must be a governance member on-chain)
+  user                 User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  operationId          String? // link to the treasury operation when executed
+  toPublicKey          String
+  assetCode            String
+  assetIssuer          String?
+  amount               String
   // On-chain proposal id from the treasury contract (`propose_withdraw`).
-  contractWithdrawalId Int?                  @unique
-  approvals          Json                     @default("[]")
-  threshold          Int                      @default(0)
-  status             TreasuryWithdrawalStatus @default(PROPOSED)
-  hash               String?
-  approveHash        String?
-  executedHash       String?
-  createdAt          DateTime                 @default(now())
-  updatedAt          DateTime                 @updatedAt
+  contractWithdrawalId Int?                     @unique
+  approvals            Json                     @default("[]")
+  threshold            Int                      @default(0)
+  status               TreasuryWithdrawalStatus @default(PROPOSED)
+  hash                 String?
+  approveHash          String?
+  executedHash         String?
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
 
   @@index([userId])
   @@index([status])

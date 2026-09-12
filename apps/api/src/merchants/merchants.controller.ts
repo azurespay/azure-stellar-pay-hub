@@ -63,15 +63,12 @@ export class MerchantsController {
     return this.merchants.deleteProduct(user.userId, id);
   }
 
-  @Get('me/invoices')
-  invoices(@CurrentUser() user: AuthenticatedUser) {
-    return this.merchants.invoices(user.userId);
-  }
-
-  @Get('me/payment-links')
-  paymentLinks(@CurrentUser() user: AuthenticatedUser) {
-    return this.merchants.paymentLinks(user.userId);
-  }
+  // NOTE: `GET /merchants/me/invoices` and `GET /merchants/me/payment-links`
+  // are owned by InvoicesController and PaymentLinksController (same paths,
+  // same active-merchant gate). They used to be declared here *as well*, which
+  // registered the same method+path twice — Express then dispatched to
+  // whichever handler was registered first (module import order), silently
+  // making the other one dead code.
 
   @Get('me/settlements')
   settlements(@CurrentUser() user: AuthenticatedUser) {

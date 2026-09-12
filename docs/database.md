@@ -11,33 +11,54 @@ shared by every app through `@stellar-pay/database`.
 ## Core models
 
 ```text
-User ─┬─ Wallet (verified public keys, network)
-      ├─ Contact (address book)
-      ├─ Session (JWT refresh sessions, device info)
-      ├─ ApiKey (merchant API keys)
+User ─┬─ Wallet (verified public keys, provider, network)
+      ├─ UserPreference (currency, theme, notification prefs)
+      ├─ Contact (address book) / Beneficiary (payout targets)
+      ├─ Session (server-side revocable sessions) / Device
+      ├─ ApiKey
+      ├─ Trustline ─ Asset (code + issuer)
+      ├─ Transaction (classic + contract sends)
+      ├─ ScheduledPayment (one-off + recurring occurrences)
       ├─ Merchant ─┬─ Product
-      │            ├─ Invoice ─ Payment
-      │            └─ PaymentLink ─ Payment
+      │            ├─ Customer (buyer identity, optional invoice link)
+      │            ├─ Invoice (optional Customer link)
+      │            ├─ PaymentLink
+      │            ├─ Settlement
+      │            └─ Webhook ─ WebhookDelivery
       ├─ Notification
-      ├─ Subscription / SubscriptionPlan (recurring billing)
-      ├─ ScheduledPayment
+      ├─ Escrow (Soroban)
+      ├─ SubscriptionPlan ─ Subscription (Soroban)
+      ├─ TreasuryOperation / TreasuryWithdrawal (Soroban multisig)
       └─ AuditLog (who did what, when)
 
-Asset (code + issuer) ─ Trustline (user ↔ asset)
-Role ─ Permission  (RBAC; User hasMany Role)
-Webhook (endpoint + events + secret)
+Role ─ RolePermission ─ Permission   (RBAC catalogue)
+Setting                              (admin-editable key/value gates)
+ChainEvent                           (on-chain event dedupe ledger)
 ```
 
 ## Highlights
 
-- **Enums** — `Network` (testnet/mainnet), `TransactionStatus`, `PaymentStatus`,
-  `Role`, `WebhookEvent`, `NotificationType`, `InvoiceStatus`, …
-- **Indexes** — every FK and hot lookup column is indexed (`@@index`), including
-  `Transaction.fromAccount`, `Transaction.toAccount`, `Transaction.status`,
-  `PaymentLink.code`, `Invoice.number`, `AuditLog.actorId`, and composite
-  `(userId, createdAt)` for feed queries.
-- **Money** — amounts stored as `Decimal` strings, never floats.
-- **Soft-delete & timestamps** — `createdAt`/`updatedAt` on all models.
+- **Enums** — `UserRole`, `UserStatus`, `WalletProvider`, `WalletStatus`,
+  `SessionStatus`, `TransactionStatus`, `TransactionDirection`, `AssetType`,
+  `TrustlineStatus`, `MerchantStatus`, `ProductStatus`, `InvoiceStatus`,
+  `PaymentLinkStatus`, `NotificationChannel`/`NotificationType`/`NotificationStatus`,
+  plus the contract-lifecycle statuses `EscrowStatus`, `SubscriptionPlanStatus`,
+  `SubscriptionStatus`, `TreasuryOperationStatus`, `TreasuryWithdrawalStatus`.
+- **Indexes & constraints** — FKs and hot lookup columns are indexed, including
+  `Transaction.(userId, toPublicKey, status, createdAt)`, `Session.(userId, expiresAt)`,
+  `AuditLog.(userId, resource, createdAt)`, `WebhookDelivery.(status, nextRetryAt)` and
+  `ChainEvent` (`eventId @unique`, `source`, `createdAt`). Uniqueness is what makes
+  replay safe: `Transaction.hash`, `Transaction.(userId, idempotencyKey)`,
+  `ChainEvent.eventId`, `PaymentLink.code`, `Invoice.number`, `Merchant.slug`,
+  `Escrow.contractId`, `Invoice.onChainId`, and the contract ids on
+  `SubscriptionPlan`/`Subscription`/`TreasuryWithdrawal`.
+- **Money** — amounts are decimal _strings_ (`String`/`AmountString`), never floats and
+  never Prisma `Decimal`: arithmetic goes through the stroop bigint helpers in
+  `@stellar-pay/shared` (`toStroops`/`fromStroops`/`addAmounts`).
+- **Lifecycle over soft-delete** — models carry `createdAt`/`updatedAt` and (where a
+  record has a lifecycle) an explicit status enum. There is no `deletedAt` soft delete:
+  status transitions are the source of truth and are advanced only by evidence
+  (an on-chain event, an indexer observation, or a guarded atomic update).
 
 ## Workflow
 
@@ -49,8 +70,10 @@ pnpm db:seed       # seed admin user, demo merchant, assets
 pnpm db:studio     # Prisma Studio
 ```
 
-In CI, `prisma generate` runs as part of the database package build so the generated client
-is always in sync with the schema.
+The generated client (`packages/database/src/generated/prisma`) is **build output, not
+source**: it is gitignored, and `prisma generate` runs in the database package's `build`
+and `typecheck` scripts (and explicitly in CI before lint/typecheck/tests). Nothing else
+should import from that path directly — always through `@stellar-pay/database`.
 
 ## ERD generation
 

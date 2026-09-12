@@ -1,4 +1,4 @@
-import { Keypair, xdr } from '@stellar/stellar-sdk';
+import { Keypair, Transaction, TransactionBuilder, xdr } from '@stellar/stellar-sdk';
 
 export interface SignatureInput {
   publicKey: string;
@@ -59,7 +59,8 @@ export function verifyFreighterMessageSignature(input: SignatureInput): boolean 
 }
 
 type DecoratedSignatureLike = {
-  hint(): { toString(encoding?: string): string };
+  hint(): Buffer;
+  signature(): Buffer;
 };
 
 /**
@@ -75,34 +76,86 @@ type EnvelopeLike = {
 };
 
 function envelopeSignatures(env: EnvelopeLike): DecoratedSignatureLike[] {
-  const flat = env.signatures?.();
-  if (flat && flat.length > 0) {
-    return flat;
+  // The envelope shape varies across @stellar/stellar-base versions (a flat
+  // `signatures()` on older ones, `v0()/v1()/feeBump()` union accessors on
+  // newer ones). Two traps to avoid:
+  //   1. union accessors THROW when their arm is not set (`xdr` raises
+  //      "<arm> not set") instead of returning undefined, and
+  //   2. they read instance state through `this`, so they must be called
+  //      bound to the envelope — extracting the method and calling it
+  //      separately throws a TypeError.
+  const sigsOf = (inner: { signatures(): DecoratedSignatureLike[] } | undefined) => {
+    if (!inner) {
+      return [];
+    }
+    try {
+      return inner.signatures();
+    } catch {
+      return [];
+    }
+  };
+
+  try {
+    const flat = env.signatures ? env.signatures() : [];
+    if (flat.length > 0) {
+      return flat;
+    }
+  } catch {
+    /* not the flat envelope variant */
   }
+
   for (const variant of ['v0', 'v1', 'feeBump'] as const) {
-    const accessor = env[variant];
-    if (accessor) {
-      const inner = accessor();
-      if (inner?.signatures) {
-        return inner.signatures();
+    try {
+      const accessor = env[variant];
+      const sigs = accessor ? sigsOf(accessor.call(env)) : [];
+      if (sigs.length > 0) {
+        return sigs;
       }
+    } catch {
+      /* arm not set — try the next envelope variant */
     }
   }
   return [];
 }
 
-/** Verify that a signed XDR envelope was signed by the expected public key. */
-export function verifySignedXdrOwner(signedXdr: string, expectedPublicKey: string): boolean {
+/**
+ * Verify that a signed transaction envelope carries a valid signature from
+ * `expectedPublicKey`.
+ *
+ * For each attached decorated signature this checks both:
+ *
+ *  1. the 4-byte hint equals the last 4 bytes of the signer's raw ed25519 key
+ *     (a cheap filter — it is *not* proof: the hint space is tiny and anyone
+ *     can pick it deliberately), and
+ *  2. the signature itself verifies against the transaction hash for the given
+ *     network passphrase.
+ *
+ * The second check is what actually proves ownership, which is why
+ * `networkPassphrase` is required — without it the transaction hash (and
+ * therefore the signed message) cannot be reconstructed.
+ */
+export function verifySignedXdrOwner(
+  signedXdr: string,
+  expectedPublicKey: string,
+  networkPassphrase: string,
+): boolean {
   try {
+    const keypair = Keypair.fromPublicKey(expectedPublicKey);
+    // The hint is the last 4 bytes of the RAW ed25519 key — not the last 4
+    // characters of the StrKey (base32) public key, which encode the trailing
+    // bits of the key plus the CRC16 checksum.
+    const expectedHint = Buffer.from(keypair.rawPublicKey()).subarray(-4).toString('hex');
     const envelope = xdr.TransactionEnvelope.fromXDR(
       signedXdr,
       'base64',
     ) as unknown as EnvelopeLike;
-    const keyTail = expectedPublicKey.slice(-4);
+    const tx = TransactionBuilder.fromXDR(signedXdr, networkPassphrase) as Transaction;
+    const txHash = tx.hash();
     for (const signature of envelopeSignatures(envelope)) {
-      const hint = signature.hint().toString('hex');
-      // The signature hint is the last 4 bytes of the signer's ed25519 key.
-      if (hint.toLowerCase() === keyTail.toLowerCase()) {
+      if (signature.hint().toString('hex') !== expectedHint) {
+        continue;
+      }
+      if (keypair.verify(txHash, signature.signature())) {
         return true;
       }
     }

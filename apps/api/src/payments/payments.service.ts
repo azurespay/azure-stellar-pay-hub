@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Asset, BASE_FEE, Memo, Operation, TransactionBuilder } from '@stellar/stellar-sdk';
 import { Prisma, PrismaService } from '@stellar-pay/database';
 import { createStellarNetwork } from '../infra/stellar';
-import { createId, toStroops } from '@stellar-pay/shared';
+import { createId, fromStroops, toStroops } from '@stellar-pay/shared';
 import { SorobanSubmissionError } from '@stellar-pay/sdk';
 import type {
   CreatePayment,
@@ -30,6 +30,17 @@ const TYPE_TO_KIND: Record<string, string> = {
   INVOICE: 'invoice',
   CROSS_BORDER: 'cross_border',
 };
+
+/**
+ * Sum decimal amount strings exactly.
+ *
+ * Amounts are decimal strings, so summing them as JS numbers accumulates binary
+ * float error into a persisted money total (`0.1 + 0.2` →
+ * `0.30000000000000004`). Add in stroops and convert back once.
+ */
+function sumAmounts(amounts: string[]): string {
+  return fromStroops(amounts.reduce((sum, amount) => sum + toStroops(amount), 0n));
+}
 
 @Injectable()
 export class PaymentsService {
@@ -115,7 +126,7 @@ export class PaymentsService {
     const gateAmount =
       dto.type === 'SCHEDULED' || dto.type === 'RECURRING'
         ? undefined
-        : dto.destinations.reduce((sum, d) => sum + Number(d.amount), 0).toString();
+        : sumAmounts(dto.destinations.map((d) => d.amount));
     await this.assertPaymentAllowed(gateAmount);
     const asset =
       dto.assetCode === 'XLM' ? Asset.native() : new Asset(dto.assetCode, dto.assetIssuer ?? '');
@@ -141,7 +152,7 @@ export class PaymentsService {
 
     const kind = TYPE_TO_KIND[dto.type] ?? 'payment';
     const isBatch = dto.type === 'BATCH' || dto.type === 'SPLIT';
-    const total = dto.destinations.reduce((sum, d) => sum + Number(d.amount), 0).toString();
+    const total = sumAmounts(dto.destinations.map((d) => d.amount));
     const destination = dto.destinations[0];
 
     // Idempotent replay: a retried request with the same key returns the

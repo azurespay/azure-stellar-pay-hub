@@ -9,6 +9,82 @@ This project follows [Semantic Versioning](https://semver.org/) and
 
 ## [Unreleased]
 
+### Security
+
+- **Audit logs no longer store credentials.** The global `AuditInterceptor`
+  journaled the raw request body, so `POST /auth/admin/login` persisted a
+  plaintext admin password and `POST /auth/refresh` a live refresh token into
+  `AuditLog.metadata` (which the admin dashboard renders). Sensitive keys
+  (`password`, `token`/`refreshToken`, `secret`, `apiKey`, `signature`, …) are
+  now replaced by `[REDACTED]` recursively before the row is written.
+- **Webhook delivery is SSRF-guarded.** A merchant-controlled webhook URL was
+  fetched from inside the deployment network with no checks, so a merchant
+  could target `169.254.169.254`, `localhost` or an in-cluster service. URLs are
+  now validated at registration (http(s), FQDN, no credentials, no
+  private/loopback/link-local/`*.svc`/`*.local`/`*.internal` host) **and** every
+  delivery re-resolves the hostname and refuses non-public answers. Deliveries
+  also carry a 10s request timeout instead of hanging forever.
+- **Realtime sockets apply the same authority as HTTP requests.** The Socket.IO
+  gateway trusted any valid JWT; it now also requires the session to be `ACTIVE`
+  and unexpired and the account to be `ACTIVE` before joining a user room, so
+  logout/revocation and suspension close the realtime channel too.
+- **`newNonce`/`newSecret` fail closed.** Both fell back to `Math.random()` when
+  WebCrypto was unavailable — a silent downgrade for the auth challenge nonce
+  and webhook/API secrets. They now throw, like `hashSecret` already did.
+
+### Fixed
+
+- **`verifySignedXdrOwner` could never return `true`.** The helper compared the
+  signature hint against the last 4 characters of the StrKey (base32) address
+  instead of the last 4 bytes of the raw ed25519 key, _and_ called the versioned
+  envelope accessors unbound, which throws inside `xdr`. It verified no
+  signature either — the hint alone proves nothing. It now extracts the hint
+  correctly, verifies the signature against the transaction hash for a given
+  network passphrase, and has positive + negative tests (the old suite only
+  asserted rejections).
+- **Duplicate route registrations removed.** `MerchantsController` and
+  `InvoicesController`/`PaymentLinksController` both declared
+  `GET /merchants/me/invoices` and `GET /merchants/me/payment-links`; Express
+  dispatched to whichever was registered first (module import order), leaving
+  the other handler dead. A route-table test asserts every method+path is
+  registered exactly once.
+- **Auth responses no longer lie about token lifetime.** `expiresInSeconds` was
+  hardcoded to 7 days regardless of `JWT_EXPIRES_IN`, and wallet rows were always
+  stored with `network: 'testnet'`. Both are now derived from configuration.
+- **Sums of decimal amounts are exact.** Payment totals and payment-link
+  `totalCollected` were computed with `Number()` arithmetic, accumulating binary
+  float error into persisted money values; they now use the stroop helpers.
+- **Memo limits are measured in bytes.** `memoSchema` used
+  `z.string().max(28)` with a "28 bytes" message: a 28-character emoji memo
+  passed validation (32 bytes) and then failed on-chain. The limit now counts
+  UTF-8 bytes, matching `isValidMemo` in `@stellar-pay/shared`.
+- **Generated artifacts are no longer tracked.** The Prisma client (27 files,
+  including two platform-specific `libquery_engine-*.so.node` binaries) and
+  Next.js's `next-env.d.ts` files were committed despite being regenerated on
+  every build, dirtying the worktree and bloating the repo (`pnpm db:generate`
+  produces the client; a clean-clone typecheck was verified without either).
+- **Dependency hygiene** — removed the unused, deprecated `soroban-client`
+  dependency and declared `globals`, which six ESLint configs imported without
+  it being a dependency anywhere.
+- **Clean-clone `pnpm typecheck` / `pnpm test` work** — the Nx `typecheck` and
+  `test` targets did not depend on their workspace dependencies' `build`, so a
+  fresh clone failed with ~209 `TS2307 Cannot find module '@stellar-pay/*'`
+  errors until `pnpm build:packages` was run by hand. CI compensated by building
+  first, which hid the problem from developers.
+
+### Changed
+
+- **Docs corrected to match the code**: `docs/database.md` described enums,
+  models and fields that do not exist in the schema (`PaymentStatus`, `Payment`,
+  `fromAccount`, `actorId`, Prisma `Decimal` money, soft deletes);
+  `docs/api.md` now documents the escrow/subscription/treasury/on-chain
+  invoice/merchant-settlement routes that were missing, plus the webhook SSRF
+  rules. `SECURITY.md` and `docs/architecture.md` reflect the audit redaction,
+  realtime authorization and webhook guard.
+- `prisma/schema.prisma` is formatted with `prisma format` (alignment only, no
+  schema changes), and the README's tier-1 verification row now reads
+  446 tests / 46 suites.
+
 ### Removed
 
 - **`multisig` and `rewards` Soroban contracts** — both were contract-level
@@ -17,14 +93,6 @@ This project follows [Semantic Versioning](https://semver.org/) and
   capabilities the product did not have. Their already-deployed testnet
   instances remain on-chain but are no longer part of the repo, the deploy
   scripts, or the docs (`contracts/Cargo.toml`, `scripts/*`).
-
-### Fixed
-
-- **Clean-clone `pnpm typecheck` / `pnpm test` now work** — the Nx `typecheck`
-  and `test` targets did not depend on their workspace dependencies' `build`,
-  so a fresh clone failed with ~209 `TS2307 Cannot find module '@stellar-pay/*'`
-  errors until `pnpm build:packages` was run by hand. CI compensated by building
-  first, which hid the problem from developers.
 
 ## [0.1.0] — 2026-08-10
 

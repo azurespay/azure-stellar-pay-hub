@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@stellar-pay/database';
+import { addAmounts } from '@stellar-pay/shared';
 import { NotificationsService } from '../notifications/notifications.service';
 import { WebhooksService } from '../webhooks/webhooks.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
@@ -212,7 +213,9 @@ export class TransactionReconciliationService {
       where: { id: link.id },
       data: {
         totalPayments: { increment: 1 },
-        totalCollected: String(Number(link.totalCollected) + Number(tx.amount)),
+        // Exact decimal addition: `Number(a) + Number(b)` accumulates binary
+        // float error into a stored money total (0.1 + 0.2 → 0.30000000000000004).
+        totalCollected: addAmounts(link.totalCollected, tx.amount),
       },
     });
     return link.merchantId;

@@ -5,6 +5,7 @@ import { RedisService } from '../infra/redis.service';
 import {
   buildChallenge,
   parseChallengeMessage,
+  parseDurationSeconds,
   signAccessToken,
   signRefreshToken,
   verifyFreighterMessageSignature,
@@ -17,6 +18,9 @@ import { verifyPassword } from '@stellar-pay/authentication';
 import type { User, UserRole } from '@stellar-pay/types';
 
 const CHALLENGE_TTL = 300;
+
+/** Default access-token lifetime when `JWT_EXPIRES_IN` is unset/unparseable. */
+const DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 7 * 24 * 3600;
 
 export interface AuthResult extends TokenPair {
   user: User;
@@ -32,6 +36,19 @@ export class AuthService {
 
   private secret(): string {
     return this.config.get<string>('JWT_SECRET')!;
+  }
+
+  /**
+   * Access-token lifetime, derived from the same `JWT_EXPIRES_IN` used to sign
+   * the token. Previously this was hardcoded to 7 days, so a deployment with
+   * `JWT_EXPIRES_IN=1h` signed 1-hour tokens but told every client they were
+   * good for a week.
+   */
+  private accessTokenTtlSeconds(): number {
+    return parseDurationSeconds(
+      this.config.get<string>('JWT_EXPIRES_IN'),
+      DEFAULT_ACCESS_TOKEN_TTL_SECONDS,
+    );
   }
 
   async createChallenge(publicKey: string) {
@@ -68,7 +85,9 @@ export class AuthService {
       include: { wallets: true },
     });
     const provider = payload.provider ?? 'FREIGHTER';
-    const network = 'testnet';
+    // Wallet rows record the network the wallet authenticated against, so a
+    // testnet deploy reports testnet and a mainnet deploy reports public.
+    const network = this.config.get<string>('STELLAR_NETWORK') ?? 'testnet';
 
     let user = existing;
     if (!user) {
@@ -139,7 +158,12 @@ export class AuthService {
       this.secret(),
     );
 
-    return { accessToken, refreshToken, expiresInSeconds: 7 * 24 * 3600, user: toUserDto(user) };
+    return {
+      accessToken,
+      refreshToken,
+      expiresInSeconds: this.accessTokenTtlSeconds(),
+      user: toUserDto(user),
+    };
   }
 
   async refresh(refreshToken: string): Promise<TokenPair> {
@@ -174,7 +198,7 @@ export class AuthService {
       this.secret(),
       this.config.get<string>('JWT_EXPIRES_IN') ?? '7d',
     );
-    return { accessToken, refreshToken, expiresInSeconds: 7 * 24 * 3600 };
+    return { accessToken, refreshToken, expiresInSeconds: this.accessTokenTtlSeconds() };
   }
 
   async logout(userId: string, sessionId?: string): Promise<void> {
@@ -212,7 +236,12 @@ export class AuthService {
       { sub: user.id, role: user.role as UserRole, sessionId: session.id },
       this.secret(),
     );
-    return { accessToken, refreshToken, expiresInSeconds: 7 * 24 * 3600, user: toUserDto(user) };
+    return {
+      accessToken,
+      refreshToken,
+      expiresInSeconds: this.accessTokenTtlSeconds(),
+      user: toUserDto(user),
+    };
   }
 }
 

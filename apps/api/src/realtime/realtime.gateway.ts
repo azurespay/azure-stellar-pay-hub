@@ -11,6 +11,7 @@ import type { Server, Socket } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { ConfigService } from '@nestjs/config';
 import { verifyAccessToken } from '@stellar-pay/authentication';
+import { PrismaService } from '@stellar-pay/database';
 import Redis from 'ioredis';
 
 /**
@@ -38,7 +39,10 @@ export class RealtimeGateway
   private adapterClients: Redis[] = [];
   private adapterAttached = false;
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   afterInit(server: Server): void {
     const redisUrl = this.config.get<string>('REDIS_URL') ?? 'redis://localhost:6379';
@@ -134,10 +138,37 @@ export class RealtimeGateway
   async handleConnection(client: Socket): Promise<void> {
     try {
       const token = client.handshake.auth?.token as string | undefined;
-      if (!token) {
+      const secret = this.config.get<string>('JWT_SECRET');
+      if (!token || !secret) {
         throw new Error('missing token');
       }
-      const payload = verifyAccessToken(token, this.config.get<string>('JWT_SECRET')!);
+      const payload = verifyAccessToken(token, secret);
+
+      // A socket is an authenticated, server-push channel, so it must apply the
+      // same authority as JwtAuthGuard rather than trusting the JWT alone:
+      // a revoked/expired session or a suspended account must not be able to
+      // connect (a JWT stays cryptographically valid until it expires).
+      if (payload.sessionId) {
+        const session = await this.prisma.session.findUnique({
+          where: { id: payload.sessionId },
+        });
+        if (
+          !session ||
+          session.status !== 'ACTIVE' ||
+          session.expiresAt < new Date() ||
+          session.userId !== payload.sub
+        ) {
+          throw new Error('session is no longer active');
+        }
+      }
+      const account = await this.prisma.user.findUnique({
+        where: { id: payload.sub },
+        select: { status: true },
+      });
+      if (!account || account.status !== 'ACTIVE') {
+        throw new Error('account is not active');
+      }
+
       await client.join(`user:${payload.sub}`);
       this.logger.log(`socket connected: user=${payload.sub} socket=${client.id}`);
     } catch {

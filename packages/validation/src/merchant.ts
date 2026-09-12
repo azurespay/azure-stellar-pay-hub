@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { amountSchema, assetCodeSchema, issuerSchema, publicKeySchema } from './common';
+import { webhookUrlSchema } from './webhook';
 
 export const createMerchantSchema = z
   .object({
@@ -16,7 +17,7 @@ export const createMerchantSchema = z
     settlementAssetCode: assetCodeSchema.optional().default('USDC'),
     settlementAssetIssuer: issuerSchema,
     settlementPublicKey: publicKeySchema,
-    webhookUrl: z.string().url().optional(),
+    webhookUrl: webhookUrlSchema.optional(),
   })
   .strict();
 

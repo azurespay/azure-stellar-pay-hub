@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { publicKeySchema } from './common';
+import { memoSchema, publicKeySchema } from './common';
 
 export const updateProfileSchema = z
   .object({
@@ -16,7 +16,7 @@ export const createContactSchema = z
   .object({
     name: z.string().min(1).max(80),
     publicKey: publicKeySchema,
-    memo: z.string().max(28).optional(),
+    memo: memoSchema,
     memoType: z.enum(['text', 'hash', 'id']).optional().default('text'),
     isFavorite: z.boolean().optional().default(false),
     network: z.enum(['public', 'testnet', 'standalone']).optional().default('testnet'),

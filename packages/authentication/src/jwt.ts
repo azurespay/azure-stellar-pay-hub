@@ -21,6 +21,32 @@ export interface TokenPair {
 
 const REFRESH_PREFIX = 'refresh';
 
+/**
+ * Parse a JWT-style duration (`7d`, `12h`, `30m`, `45s`, or a number meaning
+ * seconds) into seconds. Unparseable or non-positive values return `fallback`,
+ * so a typo in `JWT_EXPIRES_IN` cannot silently produce a zero-lifetime token
+ * or an inflated `expiresInSeconds` reported to clients.
+ */
+export function parseDurationSeconds(
+  value: string | number | undefined | null,
+  fallback: number,
+): number {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+  }
+  if (!value) {
+    return fallback;
+  }
+  const match = /^(\d+)\s*([smhd])?$/.exec(value.trim());
+  if (!match) {
+    return fallback;
+  }
+  const multipliers: Record<string, number> = { s: 1, m: 60, h: 3600, d: 86_400 };
+  const multiplier = multipliers[match[2] ?? 's'] ?? 1;
+  const seconds = Number(match[1]) * multiplier;
+  return seconds > 0 ? seconds : fallback;
+}
+
 /** Sign an access token. */
 export function signAccessToken(
   payload: AuthTokenPayload,

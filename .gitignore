@@ -21,6 +21,16 @@ contracts/**/test_snapshots/
 # npm (project uses pnpm)
 package-lock.json
 
+# Generated at build time, never hand-edited
+# - the Prisma client is produced by `pnpm db:generate` (the database package's
+#   build/typecheck scripts run it, and CI runs it explicitly before linting)
+#   and ships platform-specific query-engine binaries that must not be committed
+# - Next.js rewrites next-env.d.ts on every `next dev` / `next build` (its own
+#   header says not to edit it), so committing it dirties the worktree on every
+#   build; a clean-clone typecheck was verified to pass without them
+packages/database/src/generated/
+apps/*/next-env.d.ts
+
 # Environment
 .env
 .env.*

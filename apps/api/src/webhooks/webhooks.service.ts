@@ -1,14 +1,33 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
+import { lookup } from 'node:dns/promises';
 import { Prisma, PrismaService } from '@stellar-pay/database';
 import { createLogger } from '@stellar-pay/logger';
+import { isPrivateNetworkAddress } from '@stellar-pay/validation';
 import type { WebhookEventType } from '@stellar-pay/types';
+
+/** Injection token for the DNS resolver used by the SSRF guard (test seam). */
+export const WEBHOOK_HOST_RESOLVER = 'WEBHOOK_HOST_RESOLVER';
+
+/** Resolve a hostname to every address it maps to. */
+export type HostResolver = (hostname: string) => Promise<string[]>;
+
+const defaultHostResolver: HostResolver = async (hostname) =>
+  (await lookup(hostname, { all: true })).map((answer) => answer.address);
+
+/** Give a slow merchant endpoint a bounded amount of time to respond. */
+const WEBHOOK_TIMEOUT_MS = 10_000;
 
 @Injectable()
 export class WebhooksService {
   private readonly logger = createLogger('webhooks');
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional()
+    @Inject(WEBHOOK_HOST_RESOLVER)
+    private readonly resolveHost?: HostResolver,
+  ) {}
 
   /** Register (or update) webhook endpoints for the current merchant. */
   async register(merchantId: string, input: { url: string; events: string[]; secret?: string }) {
@@ -87,6 +106,31 @@ export class WebhooksService {
     }
   }
 
+  /**
+   * SSRF guard for outbound deliveries.
+   *
+   * Registration already rejects obviously internal URLs, but the hostname is
+   * merchant-controlled and can be changed to point at a private address after
+   * the fact (or resolve there via DNS). Since the API makes this request from
+   * inside the deployment network, every attempt re-checks the DNS answer and
+   * refuses loopback / private / link-local / CGNAT targets.
+   */
+  private async assertPublicTarget(url: string): Promise<void> {
+    const { hostname } = new URL(url);
+    const host = hostname.replace(/^\[|\]$/g, '');
+    if (isPrivateNetworkAddress(host)) {
+      throw new Error('webhook target is a private or loopback address');
+    }
+    const addresses = await (this.resolveHost ?? defaultHostResolver)(host);
+    if (addresses.length === 0) {
+      throw new Error('webhook target did not resolve');
+    }
+    const blocked = addresses.find((address) => isPrivateNetworkAddress(address));
+    if (blocked) {
+      throw new Error(`webhook target resolves to a non-public address (${blocked})`);
+    }
+  }
+
   /** Single delivery attempt with HMAC signature. */
   private async attemptDelivery(webhookId: string, deliveryId: string): Promise<void> {
     const delivery = await this.prisma.webhookDelivery.findUnique({ where: { id: deliveryId } });
@@ -97,10 +141,32 @@ export class WebhooksService {
     const body = JSON.stringify(delivery.payload);
     const signature = createHmac('sha256', webhook.secret).update(body).digest('hex');
     try {
+      await this.assertPublicTarget(webhook.url);
+    } catch (err) {
+      // Permanently undeliverable, so do not burn the retry budget on it:
+      // `nextRetryAt: null` keeps the row out of the retry window.
+      await this.prisma.webhookDelivery.update({
+        where: { id: deliveryId },
+        data: {
+          status: 'FAILED',
+          attempts: { increment: 1 },
+          lastError: `blocked: ${(err as Error).message}`,
+          nextRetryAt: null,
+        },
+      });
+      this.logger.warn(
+        { webhookId, url: webhook.url, reason: (err as Error).message },
+        'webhook delivery blocked by SSRF guard',
+      );
+      return;
+    }
+    try {
       const response = await fetch(webhook.url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-stellar-pay-signature': signature },
         body,
+        // A hanging merchant endpoint must not hold the attempt open forever.
+        signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
       });
       await this.prisma.webhookDelivery.update({
         where: { id: deliveryId },

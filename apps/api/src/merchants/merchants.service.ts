@@ -141,22 +141,6 @@ export class MerchantsService {
     return { ok: true };
   }
 
-  async invoices(userId: string) {
-    const merchant = await this.activeMerchant(userId);
-    return this.prisma.invoice.findMany({
-      where: { merchantId: merchant.id },
-      orderBy: { createdAt: 'desc' },
-    });
-  }
-
-  async paymentLinks(userId: string) {
-    const merchant = await this.activeMerchant(userId);
-    return this.prisma.paymentLink.findMany({
-      where: { merchantId: merchant.id },
-      orderBy: { createdAt: 'desc' },
-    });
-  }
-
   async settlements(userId: string) {
     const merchant = await this.activeMerchant(userId);
     return this.prisma.settlement.findMany({

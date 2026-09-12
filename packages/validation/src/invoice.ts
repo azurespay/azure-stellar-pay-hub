@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { amountSchema, assetCodeSchema, issuerSchema, publicKeySchema } from './common';
+import { amountSchema, assetCodeSchema, issuerSchema, memoSchema, publicKeySchema } from './common';
 
 const invoiceItemSchema = z
   .object({
@@ -21,7 +21,7 @@ export const createInvoiceSchema = z
     customerEmail: z.string().email().optional(),
     customerName: z.string().max(120).optional(),
     dueDate: z.string().datetime().optional(),
-    memo: z.string().max(28).optional(),
+    memo: memoSchema,
   })
   .strict();
 
