@@ -75,6 +75,26 @@ source**: it is gitignored, and `prisma generate` runs in the database package's
 and `typecheck` scripts (and explicitly in CI before lint/typecheck/tests). Nothing else
 should import from that path directly — always through `@stellar-pay/database`.
 
+## Prisma CLI configuration
+
+`packages/database/prisma.config.ts` is the single source of Prisma CLI configuration
+(schema path, migrations directory, seed command). It replaces the
+`package.json#prisma` field, which Prisma 7 removes — a config file takes precedence
+over it, so the two must not drift.
+
+Two things the config does explicitly, because **the CLI stops loading `.env` on its own
+as soon as a config file exists** (it prints "Prisma config detected, skipping
+environment variable loading"):
+
+1. **Loads the environment** — `packages/database/.env` first, then the repo-root `.env`
+   that `pnpm generate:env` writes. A variable that is already exported wins (dotenv
+   never overrides), which is how CI injects `DATABASE_URL`.
+2. **Pins paths to the config file's directory** (`__dirname`), so the `db:*` scripts
+   behave the same when run from the package directory or the repo root.
+
+`prisma.config.ts` is type-checked separately (`tsconfig.config.json`, wired into the
+package's `typecheck` script) because the CLI transpiles it without type-checking.
+
 ## ERD generation
 
 ```bash

@@ -74,6 +74,14 @@ This project follows [Semantic Versioning](https://semver.org/) and
   realtime client and a dead `getPublicKey` import. Socket/notification payloads are now
   narrowed defensively instead of cast, so a malformed event cannot throw inside the
   service worker.
+- **Prisma CLI config moved out of `package.json`.** The deprecated
+  `package.json#prisma` seed field (removed in Prisma 7) is replaced by
+  `packages/database/prisma.config.ts`, which pins the schema/migrations paths to the
+  config's directory and loads the environment itself — a config file makes the CLI
+  skip `.env` loading. As a side effect `pnpm db:push|seed|migrate` now actually read
+  the repo-root `.env` written by `pnpm generate:env` (Prisma previously only looked in
+  the package directory, so the documented flow silently required an exported
+  `DATABASE_URL`). The config is type-checked via `tsconfig.config.json`.
 - **Clean-clone `pnpm typecheck` / `pnpm test` work** — the Nx `typecheck` and
   `test` targets did not depend on their workspace dependencies' `build`, so a
   fresh clone failed with ~209 `TS2307 Cannot find module '@stellar-pay/*'`

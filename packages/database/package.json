@@ -11,7 +11,7 @@
   ],
   "scripts": {
     "build": "prisma generate && tsc -p tsconfig.json && cp -r src/generated dist/",
-    "typecheck": "prisma generate && tsc --noEmit -p tsconfig.json",
+    "typecheck": "prisma generate && tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.config.json",
     "lint": "eslint .",
     "test": "jest --passWithNoTests",
     "db:migrate": "prisma migrate dev",
@@ -20,11 +20,9 @@
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset"
   },
-  "prisma": {
-    "seed": "tsx scripts/seed.ts"
-  },
   "dependencies": {
     "@prisma/client": "^6.19.3",
+    "dotenv": "^16.6.1",
     "prisma": "^6.19.3"
   },
   "devDependencies": {
