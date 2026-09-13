@@ -28,6 +28,17 @@ built toward real-world commerce, not a mainnet deployment.
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-818cf8.svg)](CONTRIBUTING.md)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Rust](https://img.shields.io/badge/Rust-stable-db5a3b?logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Pitch video](https://img.shields.io/badge/%E2%96%B6_pitch_video-5_min-8B5CF6)](video/stellar-pay-hub-pitch.mp4)
+
+---
+
+[![Watch the 5-minute Stellar Pay Hub product pitch](video/thumbnail.jpg)](video/stellar-pay-hub-pitch.mp4)
+
+**▶︎ [Watch the 5-minute pitch](video/stellar-pay-hub-pitch.mp4)** — the problem, the
+product, the on-chain layer, the architecture, the security posture and the proof,
+told over the real UI, the real contracts and the real test output. Caption track:
+[`stellar-pay-hub-pitch.srt`](video/stellar-pay-hub-pitch.srt) · how it is built:
+[`video/README.md`](video/README.md).
 
 ---
 
@@ -152,6 +163,45 @@ off by default / not the live path · **SCAFFOLD** = placeholder behavior.
 
 Nothing is marked **PRODUCTION**: the platform runs on Stellar **testnet**
 with demo data and is not deployed to mainnet.
+
+## Watch the pitch
+
+**▶︎ [stellar-pay-hub-pitch.mp4](video/stellar-pay-hub-pitch.mp4)** — covering the
+problem, the product surface, the six Soroban contracts, the event
+indexer, the architecture, the security posture, the verification evidence and
+the value, and closing on what is already deployed: the frontends on Vercel and
+the six contracts on testnet. Nothing in it is a mock-up: the UI shots are real
+captures of the running
+apps, the contract source is the deployed code, and the numbers are the numbers CI
+prints. The pipeline that produces it is documented in
+[`video/README.md`](video/README.md).
+
+[![Silent preview of the Stellar Pay Hub product pitch](video/preview.webp)](video/stellar-pay-hub-pitch.mp4)
+
+_Silent preview — click through for the narrated version._
+
+| Time | Chapter                                                         |
+| ---- | --------------------------------------------------------------- |
+| 0:00 | Stellar Pay Hub — the promise                                   |
+| 0:14 | The problem — the rails are fast, everything above them is not  |
+| 0:39 | The solution — one platform for payers, merchants and the chain |
+| 1:05 | Payer experience — payment link and invoice checkout            |
+| 1:37 | Merchant workspace — products, customers, settlement            |
+| 1:50 | Operations — transaction history, confirmed only on-chain       |
+| 2:04 | Operator console — analytics, monitoring, audit log             |
+| 2:23 | On-chain layer — six Soroban contracts on testnet               |
+| 2:49 | On-chain escrow — the contract's `release` path in Rust         |
+| 3:08 | No optimistic state — what the event indexer will not do        |
+| 3:28 | Architecture — one typed monorepo, end to end                   |
+| 3:56 | Trust and operations — wallets, sessions, webhooks, audit       |
+| 4:20 | Verification — 446 unit/integration tests, 76 contract tests    |
+| 4:43 | Why it matters — settlement in seconds, not days                |
+| 5:11 | Get started — clone it, run it, watch it settle                 |
+
+These timestamps are taken from the build's own chapter output, so they match the
+video. Captions ship as [`stellar-pay-hub-pitch.srt`](video/stellar-pay-hub-pitch.srt),
+timed to the video's own clock. Rebuilding the video, the captions, the thumbnail
+and the preview is documented in [`video/README.md`](video/README.md).
 
 ## Live Demos
 
