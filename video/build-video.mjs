@@ -65,7 +65,10 @@ const VIDEO_DIR = path.join(ROOT, 'video');
 const OUT_MP4 = path.join(VIDEO_DIR, 'stellar-pay-hub-pitch.mp4');
 const OUT_SRT = path.join(VIDEO_DIR, 'stellar-pay-hub-pitch.srt');
 const OUT_PREVIEW = path.join(VIDEO_DIR, 'preview.webp');
-const CRF = process.env.VIDEO_CRF ?? '23';
+// CRF 25 keeps a five-minute 1080p deliverable under GitHub's 50 MB file
+// guidance (~35 MB here) while staying visually transparent for UI stills with
+// slow camera moves. CRF 23 landed at ~51 MB and tripped the warning.
+const CRF = process.env.VIDEO_CRF ?? '25';
 
 const timing = JSON.parse(fs.readFileSync(path.join(WORK, 'timing.json'), 'utf8'));
 const skipSegments = process.argv.includes('--skip-segments');

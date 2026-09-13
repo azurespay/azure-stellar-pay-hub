@@ -94,13 +94,13 @@ node video/capture.mjs
 | `build-video.mjs --skip-segments` | Reuse the per-scene segments (each is validated against the plan first) |
 | `build-video.mjs --reuse-video`   | Skip the expensive visuals pass when `final-video.mp4` already matches  |
 
-| Variable       | Effect                                                            |
-| -------------- | ----------------------------------------------------------------- |
-| `FFMPEG`       | Use a specific ffmpeg binary instead of the provisioned one       |
-| `FFPROBE`      | Same, for ffprobe                                                 |
-| `VIDEO_CRF`    | Final quality (default `23`; lower is larger and better)          |
-| `VIDEO_PRESET` | Final x264 preset (default `medium`)                              |
-| `VIDEO_LIMIT`  | Encode only the first N seconds — a smoke test of the whole graph |
+| Variable       | Effect                                                                                                         |
+| -------------- | -------------------------------------------------------------------------------------------------------------- |
+| `FFMPEG`       | Use a specific ffmpeg binary instead of the provisioned one                                                    |
+| `FFPROBE`      | Same, for ffprobe                                                                                              |
+| `VIDEO_CRF`    | Final quality (default `25`; lower is larger and better — 25 keeps the mp4 under GitHub's 50 MB file guidance) |
+| `VIDEO_PRESET` | Final x264 preset (default `medium`)                                                                           |
+| `VIDEO_LIMIT`  | Encode only the first N seconds — a smoke test of the whole graph                                              |
 
 ### Why the deliverable is encoded in three stages
 
