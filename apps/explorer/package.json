@@ -17,8 +17,8 @@
     "@stellar-pay/shared": "workspace:*",
     "@stellar-pay/types": "workspace:*",
     "@stellar-pay/ui": "workspace:*",
-    "lucide-react": "^1.28.0",
-    "next": "^16.3.0",
+    "lucide-react": "^1.41.0",
+    "next": "^16.3.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
