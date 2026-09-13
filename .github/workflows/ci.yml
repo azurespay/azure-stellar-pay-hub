@@ -74,7 +74,9 @@ jobs:
       # these steps its ~600 lines of TypeScript were the only unverified code in
       # the repo. `eslint`/`tsc` resolve from the workspace root node_modules;
       # the extra npm install only provides `@types/chrome`.
-      - name: Install extension dependencies (not in the pnpm workspace)
+      - name: Install extension dependencies (not in the pnpm workspace) # zizmor: ignore[adhoc-packages]
+        # Deliberate: the extension ships its own bundled deps outside the pnpm
+        # workspace, so there is no lockfile to pin — reviewed low-risk.
         run: npm install --prefix apps/extension --no-audit --no-fund
 
       - name: Lint & typecheck (Chrome extension)
@@ -84,7 +86,14 @@ jobs:
           npm run typecheck
 
       - name: Unit & integration tests
+        # The contracts are fully verified (wasm build + tests) in the dedicated
+        # `build-contracts` job, which installs the wasm32v1-none target. The
+        # runner's preinstalled Rust lacks that target, so running the verifier
+        # here would only re-fail on setup, not on code. Skipping it locally in
+        # this job is the script's own supported path (SKIP_CONTRACTS=1).
         run: pnpm test
+        env:
+          SKIP_CONTRACTS: '1'
 
       - name: API integration tests (tier 3, needs Postgres + Redis)
         run: pnpm db:push && pnpm --filter @stellar-pay/api test:e2e
