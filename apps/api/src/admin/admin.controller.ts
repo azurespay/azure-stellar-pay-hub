@@ -76,9 +76,11 @@ export class AdminController {
     });
   }
 
+  // The SDK types this as `ApiResponse<Asset[]>`; the admin assets page reads
+  // `res.data`, so a bare array crashed it on `assets.map`.
   @Get('assets')
-  assets() {
-    return this.admin.assets();
+  async assets() {
+    return { data: await this.admin.assets() };
   }
 
   @Post('assets')

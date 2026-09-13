@@ -179,11 +179,13 @@ export class ApiClient {
 
     devices: () =>
       this.request<ApiResponse<Array<{ id: string; name: string; lastActiveAt: string }>>>({
-        path: '/users/me/devices',
+        // Devices are served by the auth module (GET /auth/devices); the old
+        // '/users/me/devices' path did not exist and returned 404.
+        path: '/auth/devices',
       }),
 
     revokeDevice: (id: string) =>
-      this.request<{ ok: true }>({ method: 'DELETE', path: `/users/me/devices/${id}` }),
+      this.request<{ ok: true }>({ method: 'DELETE', path: `/auth/devices/${id}` }),
   };
 
   // ---------------------------------------------------------------- Wallets

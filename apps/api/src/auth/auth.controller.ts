@@ -60,9 +60,12 @@ export class AuthController {
     await this.auth.logout(user.userId, user.sessionId);
   }
 
+  // The SDK types this as `ApiResponse<Session[]>`, so the list is wrapped in a
+  // `data` envelope like every other collection endpoint. Returning a bare array
+  // here made the settings page crash on `res.data.map`.
   @Get('sessions')
-  listSessions(@CurrentUser() user: AuthenticatedUser) {
-    return this.sessions.listSessions(user.userId);
+  async listSessions(@CurrentUser() user: AuthenticatedUser) {
+    return { data: await this.sessions.listSessions(user.userId) };
   }
 
   @Delete('sessions/:id')
@@ -72,8 +75,8 @@ export class AuthController {
   }
 
   @Get('devices')
-  devices(@CurrentUser() user: AuthenticatedUser) {
-    return this.sessions.listDevices(user.userId);
+  async devices(@CurrentUser() user: AuthenticatedUser) {
+    return { data: await this.sessions.listDevices(user.userId) };
   }
 
   @Delete('devices/:id')

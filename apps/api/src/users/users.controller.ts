@@ -65,9 +65,11 @@ export class UsersController {
     return this.users.deleteContact(user.userId, id);
   }
 
+  // Wrapped in a `data` envelope to match the SDK's `ApiResponse<Beneficiary[]>`
+  // type, consistent with the other collection endpoints.
   @Get('me/beneficiaries')
-  beneficiaries(@CurrentUser() user: AuthenticatedUser) {
-    return this.users.beneficiaries(user.userId);
+  async beneficiaries(@CurrentUser() user: AuthenticatedUser) {
+    return { data: await this.users.beneficiaries(user.userId) };
   }
 
   @Post('me/beneficiaries')
