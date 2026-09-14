@@ -1,6 +1,22 @@
 import { z } from 'zod';
 
 /**
+ * `dotenv` (and Docker/Kubernetes env blocks) surface a declared-but-empty key
+ * as `''`, not `undefined`. For optional settings an empty value means "not
+ * configured" rather than "invalid", so normalise it to `undefined` before
+ * validation. Without this, copying `.env.example` verbatim (where
+ * `IPFS_API_URL=` is intentionally blank) fails API boot with a URL error.
+ */
+const emptyToUndefined = (value: unknown): unknown => (value === '' ? undefined : value);
+
+/** Optional URL: absent or blank both mean "unset"; a present value must be a URL. */
+const optionalUrl = () => z.preprocess(emptyToUndefined, z.string().url().optional());
+
+/** URL with a fallback: absent or blank both take the default. */
+const urlWithDefault = (fallback: string) =>
+  z.preprocess(emptyToUndefined, z.string().url().default(fallback));
+
+/**
  * Source of truth for every environment variable used by the platform.
  * The API validates its process.env against this schema at boot so that
  * misconfigured deployments fail fast.
@@ -11,7 +27,7 @@ export const envSchema = z
 
     // API
     API_PORT: z.coerce.number().int().positive().default(4000),
-    API_PUBLIC_URL: z.string().url().optional(),
+    API_PUBLIC_URL: optionalUrl(),
     METRICS_ENABLED: z.string().default('false'),
     CORS_ORIGINS: z
       .string()
@@ -37,8 +53,8 @@ export const envSchema = z
 
     // Stellar
     STELLAR_NETWORK: z.enum(['public', 'testnet', 'standalone']).default('testnet'),
-    HORIZON_URL: z.string().url().default('https://horizon-testnet.stellar.org'),
-    SOROBAN_RPC_URL: z.string().url().optional(),
+    HORIZON_URL: urlWithDefault('https://horizon-testnet.stellar.org'),
+    SOROBAN_RPC_URL: optionalUrl(),
     NETWORK_PASSPHRASE: z.string().optional(),
 
     // Soroban payment route (experimental). `classic` builds Stellar
@@ -85,8 +101,8 @@ export const envSchema = z
 
     // IPFS
     IPFS_PROVIDER: z.enum(['local', 'pinata', 'web3']).default('local'),
-    IPFS_GATEWAY: z.string().url().default('https://ipfs.io/ipfs/'),
-    IPFS_API_URL: z.string().url().optional(),
+    IPFS_GATEWAY: urlWithDefault('https://ipfs.io/ipfs/'),
+    IPFS_API_URL: optionalUrl(),
     IPFS_API_KEY: z.string().optional(),
     PINATA_JWT: z.string().optional(),
     WEB3_STORAGE_TOKEN: z.string().optional(),
@@ -94,10 +110,10 @@ export const envSchema = z
     ANALYTICS_PROVIDER: z.enum(['console', 'posthog']).default('console'),
 
     // Public app URLs
-    WEB_APP_URL: z.string().url().default('http://localhost:3000'),
-    ADMIN_APP_URL: z.string().url().default('http://localhost:3001'),
-    EXPLORER_APP_URL: z.string().url().default('http://localhost:3002'),
-    DOCS_APP_URL: z.string().url().default('http://localhost:3003'),
+    WEB_APP_URL: urlWithDefault('http://localhost:3000'),
+    ADMIN_APP_URL: urlWithDefault('http://localhost:3001'),
+    EXPLORER_APP_URL: urlWithDefault('http://localhost:3002'),
+    DOCS_APP_URL: urlWithDefault('http://localhost:3003'),
   })
   .passthrough();
 

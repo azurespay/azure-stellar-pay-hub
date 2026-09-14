@@ -13,7 +13,7 @@ members = [
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/azure-stellar-pay-hub/stellar-pay"
+repository = "https://github.com/azurespay/azure-stellar-pay-hub"
 
 [workspace.dependencies]
 soroban-sdk = "21.7.1"

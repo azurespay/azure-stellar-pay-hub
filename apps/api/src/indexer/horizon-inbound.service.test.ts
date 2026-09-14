@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import { StrKey } from '@stellar/stellar-sdk';
 import { HorizonInboundService } from './horizon-inbound.service';
 
 function keyedConfig(map: Record<string, unknown>) {
@@ -9,6 +10,13 @@ function jsonResponse(payload: unknown) {
   return { ok: true, json: async () => payload };
 }
 
+function statusResponse(status: number) {
+  return { ok: false, status, json: async () => ({}) };
+}
+
+/** Deterministic but *valid* Stellar account ids — the service StrKey-validates them. */
+const accountId = (fill: number) => StrKey.encodeEd25519PublicKey(Buffer.alloc(32, fill));
+
 describe('HorizonInboundService', () => {
   let service: HorizonInboundService;
   let mockPrisma: Record<string, any>;
@@ -16,8 +24,8 @@ describe('HorizonInboundService', () => {
   let mockInbound: Record<string, jest.Mock>;
   let fetchMock: jest.Mock;
 
-  const MERCHANT_ADDRESS = 'GAMERCHANTADDRESS123456789012345678901234567890';
-  const FROM = 'GPAYERADDRESS987654321098765432109876543210987654';
+  const MERCHANT_ADDRESS = accountId(1);
+  const FROM = accountId(2);
 
   function paymentRecord(overrides: Record<string, unknown>) {
     return {
@@ -156,8 +164,8 @@ describe('HorizonInboundService', () => {
 
   it('continues when a merchant feed is unreachable', async () => {
     mockPrisma.merchant.findMany.mockResolvedValue([
-      { settlementPublicKey: 'MERCHANT-A' },
-      { settlementPublicKey: 'MERCHANT-B' },
+      { settlementPublicKey: accountId(3) },
+      { settlementPublicKey: accountId(4) },
     ]);
     fetchMock
       .mockRejectedValueOnce(new Error('timeout'))
@@ -165,5 +173,26 @@ describe('HorizonInboundService', () => {
 
     await expect(service.syncOnce()).resolves.toBeUndefined();
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('treats a Horizon 404 (unfunded account) as "no history yet", not a failure', async () => {
+    fetchMock.mockResolvedValue(statusResponse(404));
+
+    await expect(service.syncOnce()).resolves.toBeUndefined();
+    expect(mockInbound.handle).not.toHaveBeenCalled();
+    // Nothing to resume from, so no cursor is written.
+    expect(mockRedis.set).not.toHaveBeenCalled();
+  });
+
+  it('skips a settlement key that is not a valid Stellar account without polling Horizon', async () => {
+    mockPrisma.merchant.findMany.mockResolvedValue([
+      { settlementPublicKey: 'GAMERCHANTADDRESS123456789012345678901234567890' },
+    ]);
+
+    await service.syncOnce();
+
+    // The demo/placeholder address can never exist on-chain: polling it would
+    // 400 on every cycle. It must be skipped, not retried forever.
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

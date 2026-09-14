@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { StrKey } from '@stellar/stellar-sdk';
 import { PrismaService } from '@stellar-pay/database';
 import { RedisService } from '../infra/redis.service';
 import { InboundReconciliationService } from './inbound.service';
@@ -34,6 +35,8 @@ interface HorizonPaymentRecord {
 @Injectable()
 export class HorizonInboundService {
   private readonly logger = new Logger('HorizonInboundService');
+  /** Settlement keys already reported as unusable, so the warning is logged once. */
+  private readonly invalidKeysReported = new Set<string>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -52,11 +55,26 @@ export class HorizonInboundService {
       select: { settlementPublicKey: true },
     });
     for (const merchant of merchants) {
+      const address = merchant.settlementPublicKey;
+      // A settlement key that is not a valid Stellar account (demo/placeholder
+      // data, or a mistyped value) can never appear on the network. Polling it
+      // only earns a Horizon 400 on every cycle, so skip it — and record the
+      // reason once rather than once per poll.
+      if (!StrKey.isValidEd25519PublicKey(address)) {
+        if (!this.invalidKeysReported.has(address)) {
+          this.invalidKeysReported.add(address);
+          this.logger.warn(
+            { address },
+            'skipping inbound poll: settlement key is not a valid Stellar account',
+          );
+        }
+        continue;
+      }
       try {
-        await this.pollMerchant(merchant.settlementPublicKey);
+        await this.pollMerchant(address);
       } catch (err) {
         this.logger.warn(
-          { err: (err as Error).message, address: merchant.settlementPublicKey },
+          { err: (err as Error).message, address },
           'horizon poll failed for merchant',
         );
       }
@@ -70,6 +88,12 @@ export class HorizonInboundService {
     const url = `${this.horizonUrl()}/accounts/${encodeURIComponent(publicKey)}/payments?${query}`;
 
     const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+    if (response.status === 404) {
+      // Horizon returns 404 for an account that has not been funded yet: there
+      // is no payment history to reconcile. That is a normal state for a
+      // freshly-configured merchant, not a poll failure.
+      return;
+    }
     if (!response.ok) {
       throw new Error(`horizon payments HTTP ${response.status}`);
     }

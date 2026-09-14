@@ -47,6 +47,19 @@ async function bootstrap(): Promise<void> {
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
 
+  // Soft dependencies (Redis rate-limit state, socket fan-out) reject their
+  // pending commands while they are briefly unreachable. Node's default is to
+  // turn an unhandled rejection into a fatal exception, which turns a Redis
+  // blip into a full API outage — the process exits and every in-flight request
+  // dies with it. Log it and keep serving: `/api/health/ready` reports the
+  // degraded dependency, so the platform can still act on it.
+  //
+  // Only rejections are intercepted. A synchronous `uncaughtException` still
+  // crashes as it should, so genuine bugs are not masked.
+  process.on('unhandledRejection', (reason) => {
+    logger.error('unhandled promise rejection (process kept alive)', reason);
+  });
+
   const port = config.get<number>('API_PORT') ?? 4000;
   await app.listen(port);
   logger.info(`API listening on :${port} (network=${config.get('STELLAR_NETWORK')})`);

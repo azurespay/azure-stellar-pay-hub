@@ -51,6 +51,32 @@ docker build -f infrastructure/docker/api.Dockerfile -t stellar-pay/api .
 docker build -f infrastructure/docker/web.Dockerfile -t stellar-pay/web .
 ```
 
+The API image's entrypoint (`infrastructure/docker/start.sh`) validates the required
+environment variables and then runs **`prisma migrate deploy`** before starting the
+server.
+
+> ⚠️ **The container needs a database that has Prisma migration history.** The
+> local dev setup in the README uses `pnpm db:push`, which creates the schema
+> _without_ recording any migrations. Pointing the container at such a database
+> fails with Prisma `P3005` (_"The database schema is not empty"_) and the
+> container exits — by design, because `migrate deploy` will not guess whether an
+> unmanaged schema matches the migrations. Use one of:
+>
+> - **a fresh database** for the deployed environment (the container migrates it), or
+> - **baseline** the existing one once, then redeploy:
+>
+>   ```bash
+>   npx prisma migrate resolve --applied 20260811000000_initial
+>   npx prisma migrate resolve --applied 20260812000000_add_transaction_confirmed_status
+>   npx prisma migrate resolve --applied 20260813000000_add_chain_event_dedupe
+>   npx prisma migrate resolve --applied 20260813010000_add_transaction_idempotency_key
+>   npx prisma migrate resolve --applied 20260912000000_add_escrow_subscription_treasury
+>   ```
+>
+> The entrypoint detects `P3005` and prints this remediation instead of retrying.
+> `prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel packages/database/prisma/schema.prisma`
+> reports whether an existing database has drifted from the schema.
+
 ## 3. Kubernetes
 
 `infrastructure/kubernetes/` is a Kustomize bundle: namespace, ConfigMap, Secret (example),

@@ -194,7 +194,7 @@ _Silent preview — click through for the narrated version._
 | 3:08 | No optimistic state — what the event indexer will not do        |
 | 3:28 | Architecture — one typed monorepo, end to end                   |
 | 3:56 | Trust and operations — wallets, sessions, webhooks, audit       |
-| 4:20 | Verification — 446 unit/integration tests, 76 contract tests    |
+| 4:20 | Verification — 453 unit/integration tests, 76 contract tests    |
 | 4:43 | Why it matters — settlement in seconds, not days                |
 | 5:11 | Get started — clone it, run it, watch it settle                 |
 
@@ -521,9 +521,13 @@ pnpm test:e2e:flow     # Full payment-lifecycle E2E (see below — needs testnet
 
 Test categories — see [`tests/README.md`](tests/README.md) for the full tier breakdown:
 
-- **Deterministic unit/integration tests (CI)**: every package and API service has
-  `*.test.ts` files; includes the checkout submission → invoice/payment-link
-  reconciliation tests
+- **Deterministic unit/integration tests (CI)**: the API and the `shared`,
+  `validation`, `ui`, `sdk`, `authentication`, `wallet`, `database` and `config`
+  packages carry `*.test.ts` files; includes the checkout submission →
+  invoice/payment-link reconciliation tests. The `analytics`, `logger`,
+  `notifications` and `types` packages, and the frontend apps, have **no test
+  files yet** — their `jest --passWithNoTests` targets pass trivially, so a green
+  run does not mean they are covered
 - **Regression tests (CI)**: `payments.history` filter/count parity and the public
   `/transactions` query validation (`transactionQuerySchema`), asserted at both the unit
   and HTTP level
@@ -559,18 +563,19 @@ Postgres + Redis from `pnpm docker:up`. Every row is a command that was actually
 executed, not a claim. `pnpm test` chains the Jest suite and the contract
 verification (`pnpm test:unit && pnpm contracts:verify`), matching what CI runs.
 
-| Check                                   | Command                                               | Result                                                                                                                        |
-| --------------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Typecheck (clean clone, no prior build) | `pnpm typecheck`                                      | **PASS** — 0 errors across 17 projects; builds its workspace dependencies itself, so no `build:packages` step is needed first |
-| Lint                                    | `pnpm lint`                                           | **PASS** — 17 projects                                                                                                        |
-| Unit / integration (tier 1)             | `pnpm test:unit`                                      | **PASS** — 446 tests in 46 suites (re-run 2026-09-12)                                                                         |
-| API integration (tier 3)                | `pnpm --filter @stellar-pay/api test:e2e`             | **PASS** — 19 tests in 3 suites                                                                                               |
-| Local-stack smoke (tier 4)              | `pnpm test:e2e`                                       | **PASS** — health `ok` (database up), `/assets`, `/health/ready`                                                              |
-| Live testnet E2E — classic (tier 5)     | `node tests/e2e/auth-payment-flow.mjs`                | **PASS** — 22/22; tx `393cc465…` confirmed in ledger 4_622_888                                                                |
-| Live testnet E2E — Soroban (tier 5)     | `E2E_CONTRACT=1 node tests/e2e/auth-payment-flow.mjs` | **PASS** — 22/22; `send` invoked, `CONFIRMED`, tx `cb8db1b8…` in ledger 4_622_907                                             |
-| Deployed contracts exist on testnet     | Soroban RPC `getLedgerEntries`                        | **PASS** — all 6 contract instances live                                                                                      |
-| Payment contract initialized            | Soroban RPC simulate `admin()/paused()/is_allowed()`  | **PASS** — admin set, not paused, XLM SAC allowlisted                                                                         |
-| Contract integrations E2E (live)        | `node tests/e2e/contracts-flow.mjs`                   | **PASS** — 28/28: escrow fund+release, treasury deposit, invoice issue+pay, merchant register, subscription, settlement       |     | Soroban contracts (tier 2) | `pnpm contracts:verify` | **PASS** — `wasm32v1-none` release build emits all 6 `.wasm`; 76 tests, 0 failed (escrow 13, invoices 17, merchant 9, payment 12, subscriptions 5, treasury 20) |
+| Check                                   | Command                                               | Result                                                                                                                             |
+| --------------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Typecheck (clean clone, no prior build) | `pnpm typecheck`                                      | **PASS** — 0 errors across 17 projects; builds its workspace dependencies itself, so no `build:packages` step is needed first      |
+| Build (17 projects)                     | `pnpm build`                                          | **PASS** — re-run 2026-09-14 after fixing the root `.env` `NODE_ENV` leak that broke all 4 Next.js builds (see below)              |
+| Lint                                    | `pnpm lint`                                           | **PASS** — 17 projects                                                                                                             |
+| Unit / integration (tier 1)             | `pnpm test:unit`                                      | **PASS** — 453 tests in 47 suites, 0 failed (re-run 2026-09-14; +5 env-schema and +2 inbound-indexer tests added in that revision) |
+| API integration (tier 3)                | `pnpm --filter @stellar-pay/api test:e2e`             | **PASS** — 19 tests in 3 suites                                                                                                    |
+| Local-stack smoke (tier 4)              | `pnpm test:e2e`                                       | **PASS** — health `ok` (database up), `/assets`, `/health/ready`                                                                   |
+| Live testnet E2E — classic (tier 5)     | `node tests/e2e/auth-payment-flow.mjs`                | **PASS** — 22/22; tx `393cc465…` confirmed in ledger 4_622_888                                                                     |
+| Live testnet E2E — Soroban (tier 5)     | `E2E_CONTRACT=1 node tests/e2e/auth-payment-flow.mjs` | **PASS** — 22/22; `send` invoked, `CONFIRMED`, tx `cb8db1b8…` in ledger 4_622_907                                                  |
+| Deployed contracts exist on testnet     | Soroban RPC `getLedgerEntries`                        | **PASS** — all 6 contract instances live                                                                                           |
+| Payment contract initialized            | Soroban RPC simulate `admin()/paused()/is_allowed()`  | **PASS** — admin set, not paused, XLM SAC allowlisted                                                                              |
+| Contract integrations E2E (live)        | `node tests/e2e/contracts-flow.mjs`                   | **PASS** — 28/28: escrow fund+release, treasury deposit, invoice issue+pay, merchant register, subscription, settlement            |     | Soroban contracts (tier 2) | `pnpm contracts:verify` | **PASS** — `wasm32v1-none` release build emits all 6 `.wasm`; 76 tests, 0 failed (escrow 13, invoices 17, merchant 9, payment 12, subscriptions 5, treasury 20) |
 
 The Soroban rows were verified on 2026-09-12 after installing the Rust toolchain
 locally (rustc 1.98.1, target `wasm32v1-none`).
@@ -613,7 +618,7 @@ deployed to Stellar mainnet.
 > illustrative UI mockups, not live metrics.
 
 - **Docker Compose**: `pnpm docker:up` + `pnpm dev`
-- **Production Docker**: `infrastructure/docker/api.Dockerfile` and `web.Dockerfile`
+- **Production Docker**: `infrastructure/docker/api.Dockerfile` and `web.Dockerfile` — the API image runs `prisma migrate deploy` on start, so it needs a database with **migration history**. A database created with the local `pnpm db:push` flow has none and the container will exit with Prisma `P3005`; see [`docs/deployment.md`](docs/deployment.md#2-production-images) for the one-time baseline step.
 - **Railway (API)**: Auto-deploys on push to `main` via `deploy-railway.yml` — uses `infrastructure/docker/api.Dockerfile`. **Currently offline** (the service returns 404); the workflow skips the deploy when `RAILWAY_TOKEN` is unset.
 - **Kubernetes**: `infrastructure/kubernetes/` — Kustomize bundle with Postgres, Redis, API, Web, Ingress
 - **Terraform (Azure)**: `infrastructure/terraform/` — provisions AKS, managed Postgres, Redis, Key Vault

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type { ThrottlerStorage } from '@nestjs/throttler';
 import type Redis from 'ioredis';
 
@@ -75,6 +75,10 @@ end
 return { hits, timeToExpire, blocked, timeToBlockExpire }
 `;
 
+  private readonly logger = new Logger('RedisThrottlerStorage');
+  /** True while Redis is unavailable, so the outage is logged once, not per request. */
+  private degraded = false;
+
   constructor(private readonly redis: Redis) {}
 
   async increment(
@@ -84,21 +88,41 @@ return { hits, timeToExpire, blocked, timeToBlockExpire }
     blockDuration: number,
     throttlerName: string,
   ): Promise<ThrottlerStorageRecord> {
-    const result = (await this.redis.eval(
-      this.script,
-      1,
-      `throttle:${throttlerName}:${key}`,
-      Date.now(),
-      ttl,
-      limit,
-      blockDuration,
-    )) as unknown[];
+    try {
+      const result = (await this.redis.eval(
+        this.script,
+        1,
+        `throttle:${throttlerName}:${key}`,
+        Date.now(),
+        ttl,
+        limit,
+        blockDuration,
+      )) as unknown[];
 
-    return {
-      totalHits: Number(result[0]),
-      timeToExpire: Number(result[1]),
-      isBlocked: Number(result[2]) === 1,
-      timeToBlockExpire: Number(result[3]),
-    };
+      if (this.degraded) {
+        this.degraded = false;
+        this.logger.log('rate-limiter Redis storage recovered');
+      }
+
+      return {
+        totalHits: Number(result[0]),
+        timeToExpire: Number(result[1]),
+        isBlocked: Number(result[2]) === 1,
+        timeToBlockExpire: Number(result[3]),
+      };
+    } catch (err) {
+      // The throttler runs *before* every controller, so letting this reject
+      // turns a Redis outage into "every endpoint returns 500". Fail open
+      // instead: the request is allowed through unthrottled and the outage is
+      // reported once. Redis is a protective dependency, not a correctness one.
+      if (!this.degraded) {
+        this.degraded = true;
+        this.logger.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          'rate-limiter storage unavailable — failing open until Redis returns',
+        );
+      }
+      return { totalHits: 1, timeToExpire: ttl, isBlocked: false, timeToBlockExpire: 0 };
+    }
   }
 }
