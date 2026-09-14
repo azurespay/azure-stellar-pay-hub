@@ -11,7 +11,14 @@ export interface Logger {
   child(bindings: Record<string, unknown>): Logger;
 }
 
-const isDevelopment = (process.env.NODE_ENV ?? 'development') !== 'production';
+/**
+ * Only an explicit `development` (or unset `NODE_ENV`) gets the human-readable
+ * pretty transport. `NODE_ENV=test` deliberately does not: the transport starts
+ * a pino-pretty worker thread, so treating test as development spun one up in
+ * every consumer's Jest run for no benefit.
+ */
+const nodeEnv = process.env.NODE_ENV ?? 'development';
+const isDevelopment = nodeEnv === 'development';
 
 function buildOptions(name: string): LoggerOptions {
   return {

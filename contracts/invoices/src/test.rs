@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::{InvoicesContract, InvoicesContractClient, InvoiceError};
+use super::{InvoicesContract, InvoicesContractClient, InvoiceError, DataKey};
 use soroban_sdk::testutils::{Address as AddressUtils, Ledger};
 use soroban_sdk::{token, Address, Env, String};
 
@@ -233,7 +233,7 @@ fn test_invoices_of_returns_merchant_invoices() {
     let id1 = create_invoice(&env, &client, &merchant, &customer, &token_id, 100, 0);
     let id2 = create_invoice(&env, &client, &merchant, &customer, &token_id, 200, 0);
 
-    let list = client.invoices_of(&merchant);
+    let list = client.invoices_of(&merchant, &1, &10);
     assert_eq!(list.len(), 2);
     assert!(list.contains(id1));
     assert!(list.contains(id2));
@@ -245,7 +245,7 @@ fn test_invoices_of_empty_for_unknown() {
     let (_merchant, _customer, _token, _token_id, client) = setup(&env);
     let stranger = Address::generate(&env);
 
-    let list = client.invoices_of(&stranger);
+    let list = client.invoices_of(&stranger, &1, &10);
     assert_eq!(list.len(), 0);
 }
 
@@ -255,4 +255,112 @@ fn test_get_invoice_returns_none_for_unknown() {
     let (_merchant, _customer, _token, _token_id, client) = setup(&env);
 
     assert!(client.get_invoice(&999).is_none());
+}
+
+// ─── storage layout, pagination and TTL maintenance ──────────────────────────
+
+#[test]
+fn test_invoices_are_per_key_persistent_entries() {
+    let env = Env::default();
+    let (merchant, customer, _token, token_id, client) = setup(&env);
+    let id = create_invoice(&env, &client, &merchant, &customer, &token_id, 500, 0);
+
+    env.as_contract(&client.address, || {
+        assert!(env.storage().persistent().has(&DataKey::Invoice(id)));
+    });
+}
+
+#[test]
+fn test_count_tracks_invoices_issued() {
+    let env = Env::default();
+    let (merchant, customer, _token, token_id, client) = setup(&env);
+
+    assert_eq!(client.count(), 0);
+    create_invoice(&env, &client, &merchant, &customer, &token_id, 100, 0);
+    create_invoice(&env, &client, &merchant, &customer, &token_id, 200, 0);
+    assert_eq!(client.count(), 2);
+}
+
+#[test]
+fn test_list_ids_paginates() {
+    let env = Env::default();
+    let (merchant, customer, _token, token_id, client) = setup(&env);
+    for _ in 0..3 {
+        create_invoice(&env, &client, &merchant, &customer, &token_id, 100, 0);
+    }
+
+    let first = client.list_ids(&1, &2);
+    assert_eq!(first.len(), 2);
+    assert_eq!(first.get(0), Some(1));
+    assert_eq!(first.get(1), Some(2));
+
+    let second = client.list_ids(&3, &2);
+    assert_eq!(second.len(), 1);
+    assert_eq!(second.get(0), Some(3));
+    assert_eq!(client.list_ids(&4, &2).len(), 0);
+}
+
+/// The previous per-merchant index was a `Map<Address, Vec<u64>>` that grew
+/// without bound. It is now a key per position, so a page costs O(page) and the
+/// merchant owns an explicit count to paginate against.
+#[test]
+fn test_invoices_of_paginates_with_a_per_merchant_count() {
+    let env = Env::default();
+    let (merchant, customer, _token, token_id, client) = setup(&env);
+    for _ in 0..3 {
+        create_invoice(&env, &client, &merchant, &customer, &token_id, 100, 0);
+    }
+
+    assert_eq!(client.invoices_of_count(&merchant), 3);
+
+    let first = client.invoices_of(&merchant, &1, &2);
+    assert_eq!(first.len(), 2);
+    assert_eq!(first.get(0), Some(1));
+
+    let second = client.invoices_of(&merchant, &3, &2);
+    assert_eq!(second.len(), 1);
+    assert_eq!(second.get(0), Some(3));
+
+    // A page past the end is empty, not an error.
+    assert_eq!(client.invoices_of(&merchant, &4, &2).len(), 0);
+}
+
+#[test]
+fn test_merchant_index_is_isolated_per_merchant() {
+    let env = Env::default();
+    let (merchant, customer, _token, token_id, client) = setup(&env);
+    let other = Address::generate(&env);
+
+    let mine = create_invoice(&env, &client, &merchant, &customer, &token_id, 100, 0);
+    create_invoice(&env, &client, &other, &customer, &token_id, 200, 0);
+
+    assert_eq!(client.invoices_of_count(&merchant), 1);
+    assert_eq!(client.invoices_of_count(&other), 1);
+    assert_eq!(client.invoices_of(&merchant, &1, &10).get(0), Some(mine));
+
+    let theirs = client.invoices_of(&other, &1, &10);
+    assert_ne!(theirs.get(0), Some(mine));
+}
+
+#[test]
+fn test_bump_helpers_restore_an_idle_contract() {
+    let env = Env::default();
+    let (merchant, customer, _token, token_id, client) = setup(&env);
+    let id = create_invoice(&env, &client, &merchant, &customer, &token_id, 500, 0);
+
+    // Permissionless: no require_auth on any of these.
+    client.bump_instance_ttl();
+    client.bump_invoice_ttl(&id);
+    assert_eq!(client.bump_merchant_index_ttl(&merchant, &1, &10), 1);
+
+    assert!(client.get_invoice(&id).is_some());
+}
+
+#[test]
+fn test_bump_invoice_ttl_rejects_unknown_id() {
+    let env = Env::default();
+    let (_merchant, _customer, _token, _token_id, client) = setup(&env);
+
+    let result = client.try_bump_invoice_ttl(&999);
+    assert_eq!(result, Err(Ok(InvoiceError::InvoiceNotFound)));
 }

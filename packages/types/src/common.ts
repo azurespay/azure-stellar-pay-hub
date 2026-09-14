@@ -46,6 +46,8 @@ export enum SessionStatus {
 export enum TransactionStatus {
   PENDING = 'PENDING',
   SUBMITTED = 'SUBMITTED',
+  /** Contract-route settlement confirmed on-chain by the event indexer. */
+  CONFIRMED = 'CONFIRMED',
   SUCCEEDED = 'SUCCEEDED',
   FAILED = 'FAILED',
   CANCELED = 'CANCELED',

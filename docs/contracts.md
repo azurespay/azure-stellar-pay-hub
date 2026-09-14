@@ -54,9 +54,22 @@ write. The remaining gap is **unit** (not integration) coverage: `treasury` and
   `EscrowReleased`, `SubscriptionRenewed`).
 - **Errors** — each contract defines an `Error` enum with descriptive variants
   (`Unauthorized`, `InsufficientBalance`, `AlreadyExists`, …).
-- **Storage** — `DataKey` enums + `Persistent` storage; accessor patterns are public.
+- **Storage** — `DataKey` enums with **one persistent entry per record** (an
+  escrow, invoice, plan, proposal, merchant profile, held balance, …), never a
+  collection inside a single instance-storage `Map`. Instance storage holds only
+  small, bounded state: admin, pause flag, id counters and governance config.
+  See [Contract storage migration](contract-storage-migration.md).
+- **Listing** — collections are listed through **paginated** entry points
+  (`list_ids(start, limit)`, `invoices_of(merchant, start, limit)`, …) with the
+  page size clamped to `MAX_PAGE_SIZE` (100). There is no unbounded `all_ids`.
+- **TTL** — each contract declares its own budget (instance and per-record
+  thresholds), bumped on both read and write, plus permissionless `bump_*`
+  helpers so anyone can pay the rent to keep a contract or record from being
+  archived. Details in [Contract storage migration](contract-storage-migration.md).
 - **Upgrades** — contracts read configuration via `upgrade` entry points and use
   `env.current_contract_address()` for authorization, making deployments auditable.
+- **Redeploys** — a storage-format change is not readable by older instances, so
+  it requires a fresh deployment rather than an in-place upgrade.
 
 ## Build
 
@@ -158,6 +171,24 @@ classic Stellar `Operation.payment`. Status as of 2026-09:
   `deploy-contracts.mjs`. Until it has been run against the 2026-08-10
   deployment, the deployed contracts remain inert (verified: zero events,
   uninitialized storage).
+
+## Storage & lifecycle
+
+The suite was reorganised on 2026-09-14 to remove the unbounded instance-storage
+collections flagged by the clean-room audit. In short:
+
+| Concern               | Current behaviour                                                     |
+| --------------------- | --------------------------------------------------------------------- |
+| Record layout         | one persistent entry per record; ids assigned from 1 and never reused |
+| Listing               | paginated, page size capped at 100                                    |
+| Duplicate detection   | indexed (`ActiveSub(plan, subscriber)`), not a full scan              |
+| TTL budget            | 17,280 ledgers threshold → 518,400 extend-to (≈1 day → ≈30 days)      |
+| Restore               | permissionless `bump_*` helpers per contract and per record           |
+| Escrow with no expiry | bounded 30-day refund window after `release_time`                     |
+
+The full old→new layout table, the breaking entry-point changes, the migration
+procedure and the rollback story are in
+[**Contract storage migration**](contract-storage-migration.md).
 
 ## Security considerations
 

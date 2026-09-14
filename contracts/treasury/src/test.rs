@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::{TreasuryContract, TreasuryContractClient, TreasuryError};
+use super::{TreasuryContract, TreasuryContractClient, TreasuryError, DataKey};
 use soroban_sdk::testutils::Address as AddressUtils;
 use soroban_sdk::{token, Address, Env};
 
@@ -332,4 +332,98 @@ fn test_governance_invalid_threshold_rejected() {
     assert_eq!(result, Err(Ok(TreasuryError::InvalidGovernance)));
     let result = client.try_set_governance(&admin, &members, &5);
     assert_eq!(result, Err(Ok(TreasuryError::InvalidGovernance)));
+}
+
+// ─── storage layout, pagination and TTL maintenance ──────────────────────────
+
+/// Proposals were members of one instance-storage Map, so approving one
+/// rewrote all of them. Each is now its own persistent entry.
+#[test]
+fn test_withdrawal_proposals_are_per_key_persistent_entries() {
+    let env = Env::default();
+    let (_admin, alice, _bob, _token, token_id, contract_id, client) = governance_setup(&env, 1);
+    let recipient = Address::generate(&env);
+    let id = client.propose_withdraw(&alice, &token_id, &recipient, &100);
+
+    env.as_contract(&contract_id, || {
+        assert!(env.storage().persistent().has(&DataKey::Withdrawal(id)));
+    });
+}
+
+#[test]
+fn test_count_and_paginated_listing_of_proposals() {
+    let env = Env::default();
+    let (_admin, alice, _bob, _token, token_id, _contract_id, client) = governance_setup(&env, 1);
+    let recipient = Address::generate(&env);
+
+    assert_eq!(client.count_withdrawals(), 0);
+    let first = client.propose_withdraw(&alice, &token_id, &recipient, &100);
+    let second = client.propose_withdraw(&alice, &token_id, &recipient, &100);
+    assert_eq!(client.count_withdrawals(), 2);
+
+    let page = client.list_withdrawal_ids(&1, &1);
+    assert_eq!(page.len(), 1);
+    assert_eq!(page.get(0), Some(first));
+
+    let rest = client.list_withdrawal_ids(&2, &10);
+    assert_eq!(rest.len(), 1);
+    assert_eq!(rest.get(0), Some(second));
+    assert_eq!(client.list_withdrawal_ids(&3, &10).len(), 0);
+}
+
+/// Reconfiguring governance previously reset the withdrawal counter and
+/// discarded every outstanding proposal. With per-key entries those ids must
+/// stay monotonic — reusing an id would overwrite a live proposal.
+#[test]
+fn test_governance_reconfiguration_does_not_reuse_proposal_ids() {
+    let env = Env::default();
+    let (admin, alice, bob, _token, token_id, _contract_id, client) = governance_setup(&env, 2);
+    let recipient = Address::generate(&env);
+
+    let first = client.propose_withdraw(&alice, &token_id, &recipient, &100);
+    assert_eq!(first, 1);
+
+    // Change the membership; the outstanding proposal must survive.
+    let members = soroban_sdk::vec![&env, alice.clone(), bob.clone()];
+    client.set_governance(&admin, &members, &2);
+
+    let second = client.propose_withdraw(&alice, &token_id, &recipient, &100);
+    assert_eq!(second, 2, "ids must keep advancing across a governance change");
+
+    let original = client.get_withdrawal(&first).unwrap();
+    assert_eq!(original.amount, 100);
+    assert!(!original.executed);
+}
+
+#[test]
+fn test_bump_helpers_cover_proposals_and_token_config() {
+    let env = Env::default();
+    let (_admin, alice, _bob, _token, token_id, _contract_id, client) = governance_setup(&env, 1);
+    let recipient = Address::generate(&env);
+    let id = client.propose_withdraw(&alice, &token_id, &recipient, &100);
+
+    // Permissionless: none of these call require_auth.
+    client.bump_instance_ttl();
+    client.bump_withdrawal_ttl(&id);
+    client.bump_token_ttl(&token_id);
+
+    assert_eq!(client.get_withdrawal(&id).unwrap().amount, 100);
+    assert!(client.allowlisted(&token_id));
+}
+
+#[test]
+fn test_bump_helpers_reject_unknown_targets() {
+    let env = Env::default();
+    let (_admin, _depositor, _token, token_id, _contract_id, client) = setup(&env);
+    let admin = Address::generate(&env);
+    let (_unlisted, unlisted_id) = create_token(&env, &admin);
+
+    let result = client.try_bump_withdrawal_ttl(&999);
+    assert_eq!(result, Err(Ok(TreasuryError::WithdrawalNotFound)));
+
+    let result = client.try_bump_token_ttl(&unlisted_id);
+    assert_eq!(result, Err(Ok(TreasuryError::TokenNotAllowed)));
+
+    // The configured token is accepted.
+    client.bump_token_ttl(&token_id);
 }

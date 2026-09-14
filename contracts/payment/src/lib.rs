@@ -14,6 +14,18 @@ pub enum PaymentError {
     AlreadyInitialized = 7,
 }
 
+// ─── TTL budget ──────────────────────────────────────────────────────────────
+// Ledgers close roughly every 5 seconds, so 17_280 ledgers ≈ 1 day and
+// 518_400 ledgers ≈ 30 days. The instance entry holds the admin and the pause
+// flag; each allowlist entry is its own persistent row (previously they all
+// shared the instance entry — `Allowed(token)` was already per key, but stored
+// in instance storage). Both are bumped on access and by the permissionless
+// `bump_instance_ttl` / `bump_token_ttl` helpers.
+const INSTANCE_TTL_THRESHOLD: u32 = 17_280;
+const INSTANCE_TTL_EXTEND_TO: u32 = 518_400;
+const ALLOWED_TTL_THRESHOLD: u32 = 17_280;
+const ALLOWED_TTL_EXTEND_TO: u32 = 518_400;
+
 #[contracttype]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DataKey {
@@ -64,7 +76,7 @@ impl PaymentContract {
         }
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::Paused, &false);
-        env.storage().instance().extend_ttl(5000, 5000);
+        Self::bump_instance(&env);
         Ok(())
     }
 
@@ -78,18 +90,28 @@ impl PaymentContract {
 
     pub fn set_allowed(env: Env, admin: Address, token: Address, allowed: bool) -> Result<(), PaymentError> {
         Self::require_admin(&env, &admin)?;
-        env.storage().instance().set(&DataKey::Allowed(token.clone()), &allowed);
-        env.storage().instance().extend_ttl(5000, 5000);
+        env.storage().persistent().set(&DataKey::Allowed(token.clone()), &allowed);
+        Self::bump_allowed(&env, &token);
+        Self::bump_instance(&env);
         Ok(())
     }
 
+    /// Read whether a token is allowlisted. Extends the entry's TTL so an
+    /// actively-used allowlist entry can never be archived out from under a
+    /// payment; if it had been archived, including it in the footprint lets the
+    /// host restore it.
     pub fn is_allowed(env: Env, token: Address) -> bool {
-        env.storage().instance().get(&DataKey::Allowed(token)).unwrap_or(false)
+        let allowed = env.storage().persistent().get(&DataKey::Allowed(token.clone())).unwrap_or(false);
+        if env.storage().persistent().has(&DataKey::Allowed(token.clone())) {
+            Self::bump_allowed(&env, &token);
+        }
+        allowed
     }
 
     pub fn pause(env: Env, admin: Address) -> Result<(), PaymentError> {
         Self::require_admin(&env, &admin)?;
         env.storage().instance().set(&DataKey::Paused, &true);
+        Self::bump_instance(&env);
         env.events().publish((symbol_short!("paused"),), PausedData { by: admin });
         Ok(())
     }
@@ -97,6 +119,7 @@ impl PaymentContract {
     pub fn unpause(env: Env, admin: Address) -> Result<(), PaymentError> {
         Self::require_admin(&env, &admin)?;
         env.storage().instance().set(&DataKey::Paused, &false);
+        Self::bump_instance(&env);
         env.events().publish((symbol_short!("unpaused"),), UnpausedData { by: admin });
         Ok(())
     }
@@ -112,7 +135,7 @@ impl PaymentContract {
         Self::check_send(&env, &from, &token, amount)?;
         from.require_auth();
         token::Client::new(&env, &token).transfer(&from, &to, &amount);
-        env.storage().instance().extend_ttl(5000, 5000);
+        Self::bump_instance(&env);
         env.events().publish((symbol_short!("payment"),), PaymentEventData {
             from,
             to,
@@ -142,7 +165,7 @@ impl PaymentContract {
             total += amount;
             token::Client::new(&env, &token).transfer(&from, &to, &amount);
         }
-        env.storage().instance().extend_ttl(5000, 5000);
+        Self::bump_instance(&env);
         env.events().publish((symbol_short!("batch"),), BatchPaymentData {
             from,
             token,
@@ -156,6 +179,27 @@ impl PaymentContract {
         token::Client::new(&env, &token).balance(&account)
     }
 
+    // ─── Permissionless TTL maintenance ──────────────────────────────────────
+
+    /// Extend the contract's instance entry (admin + pause flag). Anyone may
+    /// call this and pay the rent, so an idle contract is never silently
+    /// archived.
+    pub fn bump_instance_ttl(env: Env) {
+        Self::bump_instance(&env);
+    }
+
+    /// Extend one allowlist entry's TTL, restoring it if it was archived. Fails
+    /// with `TokenNotAllowed` when the token was never configured.
+    pub fn bump_token_ttl(env: Env, token: Address) -> Result<(), PaymentError> {
+        if !env.storage().persistent().has(&DataKey::Allowed(token.clone())) {
+            return Err(PaymentError::TokenNotAllowed);
+        }
+        Self::bump_allowed(&env, &token);
+        Ok(())
+    }
+
+    // ─── internal ────────────────────────────────────────────────────────────
+
     fn require_admin(env: &Env, admin: &Address) -> Result<(), PaymentError> {
         let stored: Address = env.storage().instance().get(&DataKey::Admin).ok_or(PaymentError::NotInitialized)?;
         stored.require_auth();
@@ -166,10 +210,18 @@ impl PaymentContract {
     fn check_send(env: &Env, _from: &Address, token: &Address, amount: i128) -> Result<(), PaymentError> {
         if amount <= 0 { return Err(PaymentError::InvalidAmount); }
         if env.storage().instance().get::<_, bool>(&DataKey::Paused).unwrap_or(false) { return Err(PaymentError::Paused); }
-        if !env.storage().instance().get::<_, bool>(&DataKey::Allowed(token.clone())).unwrap_or(false) {
+        if !env.storage().persistent().get::<_, bool>(&DataKey::Allowed(token.clone())).unwrap_or(false) {
             return Err(PaymentError::TokenNotAllowed);
         }
         Ok(())
+    }
+
+    fn bump_instance(env: &Env) {
+        env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
+    }
+
+    fn bump_allowed(env: &Env, token: &Address) {
+        env.storage().persistent().extend_ttl(&DataKey::Allowed(token.clone()), ALLOWED_TTL_THRESHOLD, ALLOWED_TTL_EXTEND_TO);
     }
 }
 
