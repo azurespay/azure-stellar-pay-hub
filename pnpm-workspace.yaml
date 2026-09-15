@@ -27,3 +27,14 @@ overrides:
   deepmerge-ts: ^8.0.0 # GHSA-ggr8-5vv4-36mx (prisma > @prisma/config)
   qs: ^6.16.0 # qs bracket-key / isBuffer advisories (dev-only; patched >=6.16.0)
   toml: ^4.2.0 # toml-node recursion / prototype-pollution advisories (patched >=4.2.0)
+  # @nestjs/platform-express pins multer to an exact 2.2.0, so the patched
+  # release can only be reached through an override (advisories
+  # GHSA-535w-7cp7-47q4, GHSA-wc9g-mqfw-jrwm, GHSA-qfvm-cv95-jqjf,
+  # GHSA-qvfw-j98x-7q72; patched >=2.3.0).
+  multer: ^2.3.0
+  # nx pins smol-toml to an exact 1.6.1 (GHSA-7w5x-hrqm-74c2; patched >=1.7.1).
+  smol-toml: ^1.7.1
+  # js-yaml is pulled at two majors (jest and eslint chains) and each needs its
+  # own patched floor (GHSA-2883-xcg3-v3hh).
+  'js-yaml@<4': ^3.15.2
+  'js-yaml@>=4': ^4.3.2

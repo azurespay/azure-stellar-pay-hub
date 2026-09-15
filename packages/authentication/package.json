@@ -2,6 +2,7 @@
   "name": "@stellar-pay/authentication",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Wallet authentication primitives: JWT, signature verification, RBAC, password hashing",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

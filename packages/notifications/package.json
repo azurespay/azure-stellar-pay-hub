@@ -2,6 +2,7 @@
   "name": "@stellar-pay/notifications",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Multi-channel notification service: email, SMS, push, in-app, webhook",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

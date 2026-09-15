@@ -2,6 +2,7 @@
   "name": "@stellar-pay/validation",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Zod schemas for every API input: payments, auth, merchants, invoices, webhooks",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

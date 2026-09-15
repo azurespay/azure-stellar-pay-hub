@@ -4,13 +4,16 @@ on:
   pull_request:
     types: [opened, edited, reopened, synchronize]
 
-permissions:
-  pull-requests: write
-
 jobs:
   label:
     name: Label PR from conventional commit prefix
     runs-on: ubuntu-latest
+    # Scoped to the job: a workflow-level write grant makes every job in the file
+    # write-capable as far as OpenSSF Scorecard's Token-Permissions check is
+    # concerned. `contents: read` is still required for actions/checkout.
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

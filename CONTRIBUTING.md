@@ -13,6 +13,10 @@ Soroban contract, your help is welcome.
 - Every PR must pass `pnpm lint`, `pnpm typecheck`, and `pnpm test`.
 - Rust contracts need unit tests for every public entry point.
 - **No secrets in code** — use environment variables or a secret store.
+- Sign off every commit under the [Developer Certificate of Origin](#developer-certificate-of-origin)
+  (`git commit -s`) — CI enforces it on every commit in a pull request.
+- How the project is run: [GOVERNANCE.md](GOVERNANCE.md) · who reviews what:
+  [MAINTAINERS.md](MAINTAINERS.md).
 
 ## Getting Started
 
@@ -63,7 +67,8 @@ main            ← production-ready only
    pnpm format:check
    ```
 
-6. Once CI is green and a maintainer has reviewed, your PR will be merged.
+6. Sign off your commits (see [Developer Certificate of Origin](#developer-certificate-of-origin)).
+7. Once CI is green and a maintainer has reviewed, your PR will be merged.
 
 ## Commit Conventions
 
@@ -97,6 +102,42 @@ docs/            architecture · api · sdk · contracts · database · deployme
 - **TypeScript**: ESLint + Prettier (configured at the root). Run `pnpm format` before committing.
 - **Rust**: Standard `rustfmt`. All contracts use `#[contracterror]` for typed errors and emit events for state changes.
 - **Naming**: `camelCase` for JS/TS, `snake_case` for Rust. Use descriptive names — `buildPaymentTransaction`, not `buildTx`.
+
+## Developer Certificate of Origin
+
+This project uses the [Developer Certificate of Origin](https://developercertificate.org/)
+(DCO) instead of a Contributor License Agreement. By signing off a commit you
+certify that you wrote the contribution, or that it is based on work you are
+allowed to submit under the project's [MIT License](LICENSE).
+
+Add the sign-off to every commit with `git commit -s`, which appends a trailer
+to the commit message:
+
+```text
+feat: add invoice expiry to the Soroban contract
+
+Signed-off-by: Your Name <your.email@example.com>
+```
+
+Use a real name and a reachable email address; anonymous sign-offs are not
+accepted. To sign off a whole branch after the fact, use
+`git rebase --signoff main`.
+
+[`.github/workflows/dco.yml`](.github/workflows/dco.yml) enforces the trailer on
+every commit in a pull request — the check fails and lists each offending commit
+when a sign-off is missing or its address does not match the commit author. The
+same check runs locally, against `origin/main..HEAD` by default:
+
+```bash
+pnpm dco                        # origin/main..HEAD
+pnpm dco origin/main..HEAD      # an explicit range
+```
+
+Two details worth knowing. Merge commits are skipped (GitHub creates them
+unsigned), and commits authored by dependency bots are exempt because they
+cannot sign off. A squash merge rewrites the message, so `main` will not carry
+the trailer even when every commit in the PR did — the PR's commits are the
+record of certification.
 
 ## Security
 

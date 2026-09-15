@@ -1,0 +1,54 @@
+name: DCO
+
+# Every commit in a pull request must certify the Developer Certificate of
+# Origin (https://developercertificate.org/) with a `Signed-off-by:` trailer —
+# the policy is documented in CONTRIBUTING.md.
+#
+# This runs the repository's own script (scripts/check-dco.mjs) rather than a
+# third-party action, so the check adds nothing to the supply chain and its
+# behaviour is auditable and testable locally (`pnpm dco`).
+#
+# Scope note: this deliberately runs on `pull_request` only. A squash merge
+# rewrites the message, so `main` will not carry the trailer even when every
+# commit in the PR did; the PR's commits are the record of certification. Merge
+# commits are skipped by the script (GitHub creates them unsigned), and commits
+# authored by dependency bots are exempt because they cannot sign off.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: dco-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 22
+
+jobs:
+  sign-off:
+    name: Every commit is signed off
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          # The range is built from the PR's base and head SHAs, so the base
+          # history must be present — a shallow clone cannot resolve it.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # The SHAs are passed through the environment, never interpolated into the
+      # script body, so their values cannot be read as shell syntax.
+      - name: Check DCO sign-off
+        env:
+          DCO_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          DCO_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/check-dco.mjs

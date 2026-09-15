@@ -1,0 +1,57 @@
+name: CodeQL
+
+# Static analysis for the TypeScript/JavaScript surface: the NestJS API, the four
+# Next.js apps and the shared packages. Alerts land in the code-scanning
+# dashboard; this workflow does not gate a pull request.
+#
+# The Soroban contracts are Rust, which CodeQL does not analyse. They are covered
+# by the Rust host test suite (`pnpm contracts:verify`, 116 tests) and the live
+# testnet integration flows instead — see SECURITY.md.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, so a query published after the last push still gets a chance to
+    # surface something in code that has not changed since.
+    - cron: '31 5 * * 2'
+  workflow_dispatch:
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze JavaScript & TypeScript
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # SARIF upload needs `security-events: write`, which a pull request from a
+    # fork cannot be granted — those runs are skipped rather than left to fail.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+          # Deliberately no `autobuild`: CodeQL extracts JavaScript and
+          # TypeScript from source, so building this pnpm monorepo would only add
+          # install steps and failure modes to the job.
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        with:
+          category: '/language:javascript-typescript'

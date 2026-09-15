@@ -2,6 +2,7 @@
   "name": "@stellar-pay/extension",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "StellarPay Hub Chrome extension — payment companion with quick-send and notifications",
   "scripts": {
     "build": "npx esbuild popup.ts background.ts options.ts --bundle --outdir=. --format=esm --target=es2022",

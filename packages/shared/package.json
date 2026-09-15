@@ -2,6 +2,7 @@
   "name": "@stellar-pay/shared",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Shared utilities: Stellar address/memo validation, money math, payment URIs",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

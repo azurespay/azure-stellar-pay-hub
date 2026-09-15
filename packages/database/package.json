@@ -2,6 +2,7 @@
   "name": "@stellar-pay/database",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Prisma schema, generated client and PrismaService for PostgreSQL",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

@@ -35,6 +35,7 @@ contributors are not blocked; CI's `build-contracts` job sets
 | Contract integrations E2E | `tests/e2e/contracts-flow.mjs` | `pnpm test:e2e:contracts`                 |
 | Load test (k6)            | `tests/load/payment-load.js`   | `k6 run tests/load/payment-load.js`       |
 | Security checks           | `.github/workflows/ci.yml`     | zizmor + npm audit (CI)                   |
+| Commit sign-off (DCO)     | `.github/workflows/dco.yml`    | `pnpm dco`                                |
 
 ## What each tier actually verifies
 
@@ -59,6 +60,14 @@ contributors are not blocked; CI's `build-contracts` job sets
   guarded invoice `PAID` transitions, and a stable `deliveryId` embedded in
   signed webhook payloads so merchants can dedupe retried deliveries.
 
+  The four Next.js apps are covered in the same tier: `next/jest` plus React
+  Testing Library in jsdom, asserting real behaviour — the wallet
+  connect/switch/disconnect menu including the realtime token handshake, the
+  header's active-route highlighting, the explorer's account-vs-transaction
+  routing, the docs loader and its 404 path — alongside the shared formatting
+  helpers. Their `test` targets no longer pass with `--passWithNoTests`, so an
+  empty suite fails instead of passing trivially.
+
 - **Contract tests (2)** — every Soroban entry point in `test.rs` runs against
   the Soroban test host (no network).
 - **API integration (3)** — boots the NestJS `AppModule` with supertest and
@@ -77,6 +86,15 @@ contributors are not blocked; CI's `build-contracts` job sets
   auth-challenge state from one suite cannot throttle the next — or a repeated
   local run.
 
+  The **scheduled + split spec** (`apps/api/test/scheduled-split.e2e-spec.ts`)
+  covers the two create paths the live suite does not: a scheduled/recurring
+  intent is stored `ACTIVE` with its next run (no XDR is built and no
+  `Transaction` row is written) and its list/cancel routes are scoped to the
+  owner; a 3-recipient split produces one `Operation.payment` per recipient with
+  the exact amounts, a `type: text` memo, and a recorded intent holding the
+  summed total with no single recipient. The batch builder's Horizon account
+  load is stubbed so this tier stays deterministic and network-free.
+
   Failure-path and duplicate coverage across tiers:
 
   | Scenario                             | Covered where                                                                                                                                              |
@@ -93,6 +111,8 @@ contributors are not blocked; CI's `build-contracts` job sets
   | Duplicate webhook delivery           | Unit tests — stable `deliveryId` in the signed payload; retries reuse the row                                                                              |
   | Amount/recipient/asset tampering     | Unit tests — signed-XDR intent verification rejects a mismatched XDR pre-submit                                                                            |
   | Escrow create/release/refund auth    | Unit tests (`escrows.service.test.ts`) — wallet ownership, party authorization, atomic submit claim                                                        |
+  | Scheduled intent create/cancel       | Tier 3 `scheduled-split.e2e-spec.ts` (owner-scoped list/cancel, malformed recipient → 400) + tier 5 live create→list→cancel                                |
+  | Split/batch multi-recipient XDR      | Tier 3 `scheduled-split.e2e-spec.ts` (op count + exact amounts) + unit `payments.service.batch.test.ts` (route selection) + tier 5 (signed and submitted)  |
   | Treasury on-chain lifecycle          | E2E only (`tests/e2e/contracts-flow.mjs`, live testnet) — **no unit tests**                                                                                |
   | Subscriptions on-chain lifecycle     | E2E only (`tests/e2e/contracts-flow.mjs`, live testnet) — **no unit tests**                                                                                |
   | Fixed-amount link underpayment       | Unit tests — server ignores a customer amount on `fixedAmount` links                                                                                       |
@@ -112,7 +132,12 @@ contributors are not blocked; CI's `build-contracts` job sets
   the scheduler-driven indexer confirms it on-chain (`CONFIRMED`). Contract mode
   requires the deployed contract's XLM SAC to be allowlisted (`set_allowed` by
   the admin/deployer) — until that ops step is done, `send` reverts with
-  `TokenNotAllowed` and contract mode cannot pass.
+  `TokenNotAllowed` and contract mode cannot pass. The same script then drives
+  two further flows: a scheduled/recurring intent (create → listed `ACTIVE` with
+  its next run → cancel → `CANCELED`) and a 3-recipient split (create → one
+  payment op per recipient with the exact amounts → sign → submit → `SUCCEEDED`
+  with the on-chain hash). Split/batch intents always take the classic
+  multi-operation path, so those legs run in both classic and contract mode.
 - **Load (6)** — Artillery/k6-based synthetic traffic.
 
 ## Running everything

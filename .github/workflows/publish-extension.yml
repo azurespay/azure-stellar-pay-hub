@@ -9,22 +9,25 @@ on:
       - 'extension-v*'
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   release:
     name: Build & release extension ZIP
     runs-on: ubuntu-latest
+    # Scoped to the job (Token-Permissions): only the release step needs write,
+    # and publication is the only reason this workflow exists.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
 
       - name: Install dependencies (extension-only, not in pnpm workspace)
+        # `npm ci` against the extension's committed lockfile — this job attaches
+        # a released ZIP, so the dependency graph must not float.
         run: |
           cd apps/extension
-          npm install
+          npm ci --no-audit --no-fund
 
       - name: Build extension
         run: |

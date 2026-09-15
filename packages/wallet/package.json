@@ -2,6 +2,7 @@
   "name": "@stellar-pay/wallet",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Multi-wallet React provider: Freighter, xBull and Albedo",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

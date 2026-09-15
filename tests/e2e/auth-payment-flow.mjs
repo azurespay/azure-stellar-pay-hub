@@ -14,7 +14,11 @@
  *   6. poll until the persisted transaction reaches its final state
  *   7. assert the Socket.IO realtime channel delivered the `transaction.updated`
  *      event to the authenticated user
- *   8. logout and verify the JWT is invalidated
+ *   8. create → list → cancel a scheduled/recurring intent (stored for the
+ *      scheduler; no XDR is built and no Transaction row is written)
+ *   9. build a 3-recipient split, assert one payment op per recipient with the
+ *      exact amounts, then sign and submit it on-chain
+ *  10. logout and verify the JWT is invalidated
  *
  * By default the payment goes through the **classic** Stellar path (final
  * state SUCCEEDED). Set E2E_CONTRACT=1 to route the same payment through the
@@ -448,8 +452,120 @@ async function run() {
       socket.close();
     }
 
-    // -- Step 13: Logout ---------------------------------------------------------
-    console.log('\n13. Logout');
+    // -- Step 13: Scheduled/recurring intent (persisted, no XDR) ----------------
+    // A schedule is not a payment: the API stores it ACTIVE for the scheduler
+    // and returns no signable payload. The owner-gated list/cancel routes are
+    // exercised here because the lifecycle only becomes a payment once the
+    // scheduler creates an occurrence the owner approves (`/payments/:id/approve`).
+    console.log('\n13. Scheduled payment (create → next run → cancel)');
+    const scheduledFor = new Date(Date.now() + 3_600_000).toISOString();
+    let scheduleId = null;
+    try {
+      const schedule = await authClient.request({
+        method: 'POST',
+        path: '/payments',
+        body: {
+          type: 'RECURRING',
+          fromPublicKey: payerKp.publicKey(),
+          destinations: [{ publicKey: destKp.publicKey(), amount: '1' }],
+          assetCode: 'XLM',
+          scheduledFor,
+          recurring: { interval: 'monthly', count: 3 },
+        },
+      });
+      scheduleId = schedule?.id ?? null;
+      check(
+        'Schedule created without an XDR',
+        schedule?.kind === 'scheduled' && !schedule?.unsignedXdr,
+        `id=${schedule?.id?.slice(0, 8)}…`,
+      );
+    } catch (err) {
+      check('Schedule created without an XDR', false, describeError(err));
+    }
+
+    try {
+      const schedules = await authClient.request({ method: 'GET', path: '/payments/scheduled' });
+      const row = (Array.isArray(schedules) ? schedules : []).find((s) => s.id === scheduleId);
+      check(
+        'Schedule listed ACTIVE with its next run',
+        !!row && row.status === 'ACTIVE' && new Date(row.nextRunAt).toISOString() === scheduledFor,
+        row ? `status=${row.status} nextRunAt=${row.nextRunAt}` : 'not listed',
+      );
+    } catch (err) {
+      check('Schedule listed ACTIVE with its next run', false, describeError(err));
+    }
+
+    try {
+      await authClient.request({ method: 'DELETE', path: `/payments/scheduled/${scheduleId}` });
+      const after = await authClient.request({ method: 'GET', path: '/payments/scheduled' });
+      const canceled = (Array.isArray(after) ? after : []).find((s) => s.id === scheduleId);
+      check('Schedule canceled', canceled?.status === 'CANCELED', `status=${canceled?.status}`);
+    } catch (err) {
+      check('Schedule canceled', false, describeError(err));
+    }
+
+    // -- Step 14: Split payment (one op per recipient, submitted on-chain) ------
+    // SPLIT/BATCH intents are always the classic multi-operation path (they never
+    // route through the Soroban payment contract), so this holds in both modes.
+    console.log('\n14. Split payment (3 recipients → sign → submit)');
+    const splitAmounts = ['1', '2', '3'];
+    const splitKeypairs = splitAmounts.map(() => Keypair.random());
+    const splitRecipients = splitKeypairs.map((kp) => kp.publicKey());
+    // Each recipient must already exist on-chain: `Operation.payment` to an
+    // unfunded account is rejected by Horizon with `op_no_destination`.
+    for (const [i, kp] of splitKeypairs.entries()) {
+      await fundAccount(kp.publicKey(), `split-recipient-${i + 1}`);
+    }
+    try {
+      const split = await authClient.request({
+        method: 'POST',
+        path: '/payments',
+        body: {
+          type: 'SPLIT',
+          fromPublicKey: payerKp.publicKey(),
+          destinations: splitRecipients.map((publicKey, i) => ({
+            publicKey,
+            amount: splitAmounts[i],
+          })),
+          assetCode: 'XLM',
+          memo: 'e2e-split',
+        },
+      });
+      check('Split intent created', !!split?.unsignedXdr, `id=${split?.id?.slice(0, 8)}…`);
+
+      const splitTx = TransactionBuilder.fromXDR(split.unsignedXdr, Networks.TESTNET);
+      const ops = splitTx.operations;
+      check(
+        'One payment op per recipient',
+        ops.length === splitRecipients.length,
+        `ops=${ops.length}`,
+      );
+      check(
+        'Amounts and recipients match the intent',
+        ops.every(
+          (op, i) =>
+            op.destination === splitRecipients[i] && op.amount === `${splitAmounts[i]}.0000000`,
+        ),
+        ops.map((op) => `${op.amount}→${op.destination.slice(0, 4)}…`).join(', '),
+      );
+
+      splitTx.sign(payerKp);
+      const splitResult = await authClient.request({
+        method: 'POST',
+        path: `/payments/${split.id}/submit`,
+        body: { signedXdr: splitTx.toXDR() },
+      });
+      check(
+        'Split submitted and confirmed on-chain',
+        splitResult?.status === 'SUCCEEDED' && !!splitResult?.hash,
+        `status=${splitResult?.status} hash=${splitResult?.hash?.slice(0, 8)}…`,
+      );
+    } catch (err) {
+      check('Split intent created', false, describeError(err));
+    }
+
+    // -- Step 15: Logout ---------------------------------------------------------
+    console.log('\n15. Logout');
     try {
       const logoutResp = await fetchWithTimeout(`${apiUrl}/auth/logout`, {
         method: 'POST',
@@ -464,8 +580,8 @@ async function run() {
       check('Logout succeeded', false, describeError(err));
     }
 
-    // -- Step 14: Verify JWT is invalidated --------------------------------------
-    console.log('\n14. Verify JWT is invalidated');
+    // -- Step 16: Verify JWT is invalidated --------------------------------------
+    console.log('\n16. Verify JWT is invalidated');
     try {
       await authClient.payments.list({ page: 1, pageSize: 1 });
       check('JWT invalidated (401 expected)', false, 'still accepted');
@@ -477,8 +593,8 @@ async function run() {
       }
     }
 
-    // -- Step 15: Stellar network connectivity test ------------------------------
-    console.log('\n15. Stellar testnet connectivity');
+    // -- Step 17: Stellar network connectivity test ------------------------------
+    console.log('\n17. Stellar testnet connectivity');
     try {
       const network = StellarNetwork.forTestnet();
       const account = await network.getAccount(destKp.publicKey());

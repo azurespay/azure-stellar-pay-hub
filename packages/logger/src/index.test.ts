@@ -30,6 +30,30 @@ function withEnv(env: Record<string, string | undefined>): void {
   }
 }
 
+/**
+ * Capture what a logger actually writes to stdout and return it as records.
+ *
+ * pino writes synchronously in this configuration (no pretty transport outside
+ * development), so the lines are complete by the time the callback returns.
+ */
+function captureJsonLines(run: () => void): Array<Record<string, unknown>> {
+  const original = process.stdout.write.bind(process.stdout);
+  let written = '';
+  process.stdout.write = ((chunk: unknown) => {
+    written += String(chunk);
+    return true;
+  }) as typeof process.stdout.write;
+  try {
+    run();
+  } finally {
+    process.stdout.write = original;
+  }
+  return written
+    .split('\n')
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
 afterEach(() => {
   process.env = { ...ORIGINAL_ENV };
 });
@@ -103,5 +127,61 @@ describe('log level selection', () => {
     const { createLogger } = loadModule();
 
     expect(levelOf(createLogger('svc'))).toBe('warn');
+  });
+});
+
+describe('log output', () => {
+  it('writes one JSON record per call, carrying the level, message and service', () => {
+    withEnv({ NODE_ENV: 'production', LOG_LEVEL: undefined });
+    const { createLogger } = loadModule();
+
+    const records = captureJsonLines(() => createLogger('api').info('payment created'));
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ level: 30, service: 'api', msg: 'payment created' });
+  });
+
+  it('emits the levels at or above the threshold and suppresses the ones below', () => {
+    // NODE_ENV=production defaults the threshold to `info`.
+    withEnv({ NODE_ENV: 'production', LOG_LEVEL: undefined });
+    const { createLogger } = loadModule();
+    const logger = createLogger('api');
+
+    const records = captureJsonLines(() => {
+      logger.fatal('fatal');
+      logger.error('error');
+      logger.warn('warn');
+      logger.info('info');
+      logger.debug('debug');
+      logger.trace('trace');
+    });
+
+    // pino levels: fatal 60, error 50, warn 40, info 30, debug 20, trace 10.
+    expect(records.map((record) => record.level)).toEqual([60, 50, 40, 30]);
+    expect(records.map((record) => record.msg)).toEqual(['fatal', 'error', 'warn', 'info']);
+  });
+
+  it('lowers the threshold to debug when LOG_LEVEL asks for it', () => {
+    withEnv({ NODE_ENV: 'production', LOG_LEVEL: 'debug' });
+    const { createLogger } = loadModule();
+    const logger = createLogger('api');
+
+    const records = captureJsonLines(() => {
+      logger.debug('shown');
+      logger.trace('still below the threshold');
+    });
+
+    expect(records.map((record) => record.msg)).toEqual(['shown']);
+  });
+
+  it('includes the child bindings in the emitted record', () => {
+    withEnv({ NODE_ENV: 'production', LOG_LEVEL: undefined });
+    const { createLogger } = loadModule();
+
+    const records = captureJsonLines(() =>
+      createLogger('api').child({ requestId: 'abc' }).info('handled'),
+    );
+
+    expect(records[0]).toMatchObject({ service: 'api', requestId: 'abc', msg: 'handled' });
   });
 });

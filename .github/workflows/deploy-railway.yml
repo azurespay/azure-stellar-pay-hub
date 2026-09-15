@@ -78,10 +78,12 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # Pinned to an exact version: `npx -y` executes whatever the registry
+      # serves, inside a job that holds RAILWAY_TOKEN.
       - name: Deploy via Railway CLI
         if: steps.creds.outputs.skip != 'true'
         run: |
-          npx -y @railway/cli@3 up --detach
+          npx -y @railway/cli@3.23.0 up --detach
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}

@@ -8,6 +8,7 @@
  * reconciles the DB row from on-chain evidence**:
  *
  *   1. Escrow:     create → FUNDED (indexed `created`) → release → RELEASED
+ *   1b. Escrow:    create → FUNDED → refund (window closed) → REFUNDED
  *   2. Treasury:   deposit → CONFIRMED (indexed `deposit`)
  *   3. Invoice:    issue on-chain (indexed `issued`) → pay (indexed `paid` → PAID)
  *   4. Merchant:   on-chain register (indexed `reg`) → plan create (indexed
@@ -298,6 +299,108 @@ async function run() {
       );
     } catch (err) {
       check('Escrow flow', false, describeError(err));
+    }
+
+    // ── Escrow refund: create → FUNDED → refund → REFUNDED ───────────────
+    // The contract permits a refund only while the release window is still
+    // closed (`now < release_time`), so this needs no wait — and it exercises
+    // the refund escape hatch, which the release leg above never touches.
+    console.log('\n1b. Escrow (create → fund → refund)');
+    try {
+      const created = await initiator.request({
+        method: 'POST',
+        path: '/escrows',
+        body: {
+          initiatorPublicKey: initiatorKp.publicKey(),
+          counterpartyPublicKey: counterpartyKp.publicKey(),
+          assetCode: 'XLM',
+          amount: '3',
+          releaseTime: new Date(Date.now() + 600_000).toISOString(),
+        },
+      });
+      check(
+        'Refundable escrow created (prepare)',
+        !!created?.id && !!created?.unsignedXdr,
+        `id=${created?.id?.slice(0, 8)}`,
+      );
+      const signedCreate = await signXdr(created.unsignedXdr, initiatorKp);
+      await initiator.request({
+        method: 'POST',
+        path: `/escrows/${created.id}/submit`,
+        body: { signedXdr: signedCreate },
+      });
+      const fundedRefundable = await poll(
+        async () => {
+          const e = await initiator.request({ method: 'GET', path: `/escrows/${created.id}` });
+          return e?.status === 'FUNDED' ? e : null;
+        },
+        150_000,
+        'refundable escrow FUNDED (indexed `created`)',
+      );
+      check(
+        'Refundable escrow FUNDED on-chain',
+        fundedRefundable?.status === 'FUNDED',
+        `contractId=${fundedRefundable?.contractId}`,
+      );
+
+      const refundPrepared = await initiator.request({
+        method: 'POST',
+        path: `/escrows/${created.id}/refund`,
+        body: { callerPublicKey: initiatorKp.publicKey() },
+      });
+      check('Refund prepared', !!refundPrepared?.unsignedXdr);
+      const signedRefund = await signXdr(refundPrepared.unsignedXdr, initiatorKp);
+      await initiator.request({
+        method: 'POST',
+        path: `/escrows/${created.id}/refund/confirm`,
+        body: { signedXdr: signedRefund },
+      });
+      const refunded = await poll(
+        async () => {
+          const e = await initiator.request({ method: 'GET', path: `/escrows/${created.id}` });
+          return e?.status === 'REFUNDED' ? e : null;
+        },
+        150_000,
+        'escrow REFUNDED (indexed `refund` event)',
+      );
+      check(
+        'Escrow REFUNDED on-chain (funds returned to the initiator)',
+        refunded?.status === 'REFUNDED',
+        `hash=${refunded?.refundHash?.slice(0, 8)}`,
+      );
+
+      // Replay/duplicate guard: a second refund must leave the escrow REFUNDED
+      // and must never credit the initiator twice. Either the API refuses the
+      // transition or the on-chain guard does; the invariant is the same.
+      let secondRefundRefused = false;
+      try {
+        const again = await initiator.request({
+          method: 'POST',
+          path: `/escrows/${created.id}/refund`,
+          body: { callerPublicKey: initiatorKp.publicKey() },
+        });
+        if (again?.unsignedXdr) {
+          const signedAgain = await signXdr(again.unsignedXdr, initiatorKp);
+          await initiator.request({
+            method: 'POST',
+            path: `/escrows/${created.id}/refund/confirm`,
+            body: { signedXdr: signedAgain },
+          });
+        }
+      } catch {
+        secondRefundRefused = true;
+      }
+      const afterSecondRefund = await initiator.request({
+        method: 'GET',
+        path: `/escrows/${created.id}`,
+      });
+      check(
+        'Duplicate refund refused or inert (state stays REFUNDED)',
+        afterSecondRefund?.status === 'REFUNDED',
+        secondRefundRefused ? 'second attempt refused' : `state=${afterSecondRefund?.status}`,
+      );
+    } catch (err) {
+      check('Escrow refund flow', false, describeError(err));
     }
 
     // ── Treasury: deposit → CONFIRMED ────────────────────────────────────

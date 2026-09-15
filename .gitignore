@@ -20,6 +20,9 @@ contracts/**/test_snapshots/
 
 # npm (project uses pnpm)
 package-lock.json
+# ...except the Chrome extension, which lives outside the pnpm workspace and is
+# installed with `npm ci` against its own committed lockfile (see apps/extension).
+!apps/extension/package-lock.json
 
 # Generated at build time, never hand-edited
 # - the Prisma client is produced by `pnpm db:generate` (the database package's

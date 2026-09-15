@@ -161,7 +161,7 @@ export default function NavSidebar() {
         ))}
       </nav>
       <div className="border-t border-border p-4 text-xs text-muted-foreground">
-        v0.1.0 · mainnet-ready scaffolding
+        v0.1.0 · Stellar testnet demo
       </div>
     </aside>
   );

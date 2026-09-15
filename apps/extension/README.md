@@ -14,13 +14,14 @@ A Chrome browser extension companion for the Azure StellarPay Hub platform.
 ## Install (Development)
 
 This app is intentionally **outside the pnpm workspace** (it bundles its own dependency
-and is released separately), so it installs with `npm`:
+and is released separately), so it installs with `npm` — against its own committed
+`package-lock.json`, which pins the exact dependency graph:
 
 1. Build the extension:
 
    ```bash
    cd apps/extension
-   npm install
+   npm ci
    npm run build
    ```
 
@@ -33,10 +34,11 @@ npm run typecheck   # tsc --noEmit
 ```
 
 Both run in CI on every PR. They resolve `eslint`/`tsc` from the repository root, so run
-`pnpm install` at the repo root once first; `npm install` here only provides
-`@types/chrome` and `socket.io-client`. Until these were added, the extension was the one
-part of the repo nothing verified — `npm run build` uses esbuild, which strips types
-without checking them.
+`pnpm install` at the repo root once first; `npm ci` here only provides `@types/chrome`
+and `socket.io-client`, at the versions pinned in `package-lock.json` (run
+`npm install` in this directory and commit the lockfile when you change them). Until
+these were added, the extension was the one part of the repo nothing verified —
+`npm run build` uses esbuild, which strips types without checking them.
 
 2. Load in Chrome:
    - Go to `chrome://extensions/`

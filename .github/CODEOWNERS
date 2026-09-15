@@ -1,0 +1,28 @@
+# CODEOWNERS — https://docs.github.com/repos/managing-code/customizing-your-repository/about-code-owners
+#
+# Reviewers listed here are requested automatically on every pull request that
+# touches the matching path. The default rule covers the whole repository; the
+# later rules call out the surfaces where a maintainer review is mandatory.
+#
+# The current maintainers are listed in MAINTAINERS.md.
+
+# Default: a maintainer reviews every change.
+* @sheyman546
+
+# On-chain code. Deployed wasm is immutable, so a defect here is not patchable
+# in place.
+/contracts/ @sheyman546
+
+# Authentication, authorization and payment verification.
+/apps/api/src/auth/ @sheyman546
+/apps/api/src/payments/ @sheyman546
+/packages/authentication/ @sheyman546
+
+# CI/CD, infrastructure and deployment configuration.
+/.github/ @sheyman546
+/infrastructure/ @sheyman546
+
+# Licensing, security policy and repository governance.
+/LICENSE @sheyman546
+/SECURITY.md @sheyman546
+/GOVERNANCE.md @sheyman546

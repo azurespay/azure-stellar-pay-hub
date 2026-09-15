@@ -1,6 +1,7 @@
-version: '3.9'
-
 # Local development stack. For production use Kubernetes (see infrastructure/kubernetes).
+#
+# The top-level `version:` key is deliberately absent: Compose v2 ignores it and
+# warns on every invocation that it is obsolete.
 services:
   postgres:
     image: postgres:16-alpine

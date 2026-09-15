@@ -209,15 +209,19 @@ and the preview is documented in [`video/README.md`](video/README.md).
 > The checked-in render predates the 2026-09-14 [contract storage
 > migration](docs/contract-storage-migration.md), so the verification chapter
 > quotes 453 unit/integration and 76 contract tests and shows the previous
-> escrow storage code. The current source has **508** unit/integration and
-> **116** contract tests. Re-running `pnpm video` picks up the new numbers.
+> escrow storage code. The current source has **570** unit/integration,
+> **24** API-integration and **116** contract tests. Re-running `pnpm video`
+> picks up the new numbers.
 
 ## Live Demos
 
 > ⚠️ **The hosted API is currently offline.** On 2026-09-11
 > `https://stellar-pay-api.up.railway.app` returned Railway's
 > `404 Application not found` for every path tested (`/api/health`,
-> `/api/assets`, `/api/metrics`). The Vercel frontends below still serve
+> `/api/assets`, `/api/metrics`). Note that `/api/metrics` 404s by design
+> whenever `METRICS_ENABLED=false` — which is the default in `.env.example` — so
+> 404 on that path alone is **not** evidence of an outage; `/api/health` is the
+> probe that distinguishes the two. The Vercel frontends below still serve
 > (HTTP 200) but every request they make targets that dead API, so the hosted
 > demos are **not functional end-to-end** until the API service is redeployed
 > with Railway credentials. The locally-run stack is the verified working
@@ -530,13 +534,15 @@ pnpm test:e2e:flow     # Full payment-lifecycle E2E (see below — needs testnet
 
 Test categories — see [`tests/README.md`](tests/README.md) for the full tier breakdown:
 
-- **Deterministic unit/integration tests (CI)**: the API and the `shared`,
-  `validation`, `ui`, `sdk`, `authentication`, `wallet`, `database`, `config`,
-  `analytics`, `logger`, `notifications` and `types` packages carry `*.test.ts`
-  files; includes the checkout submission → invoice/payment-link reconciliation
-  tests. The frontend apps (`web`, `admin`, `explorer`, `docs`) still have **no
-  test files** — their `jest --passWithNoTests` targets pass trivially, so a green
-  run does not mean they are covered
+- **Deterministic unit/integration tests (CI)**: the API, the four Next.js apps and
+  the `shared`, `validation`, `ui`, `sdk`, `authentication`, `wallet`, `database`,
+  `config`, `analytics`, `logger`, `notifications` and `types` packages carry
+  `*.test.ts` / `*.test.tsx` files; includes the checkout submission →
+  invoice/payment-link reconciliation tests. The frontend apps run under `next/jest`
+  with React Testing Library in jsdom (components and their interactions, formatting
+  helpers, the realtime hook, the explorer's search routing and the docs router), so
+  every workspace project now has a real suite — none of the `test` targets fall back
+  to `--passWithNoTests`, which would let an empty suite pass
 - **Regression tests (CI)**: `payments.history` filter/count parity and the public
   `/transactions` query validation (`transactionQuerySchema`), asserted at both the unit
   and HTTP level
@@ -577,11 +583,11 @@ verification (`pnpm test:unit && pnpm contracts:verify`), matching what CI runs.
 | Typecheck (clean clone, no prior build) | `pnpm typecheck`                                      | **PASS** — 0 errors across 17 projects; builds its workspace dependencies itself, so no `build:packages` step is needed first                                          |
 | Build (17 projects)                     | `pnpm build`                                          | **PASS** — re-run 2026-09-14 after fixing the root `.env` `NODE_ENV` leak that broke all 4 Next.js builds (see below)                                                  |
 | Lint                                    | `pnpm lint`                                           | **PASS** — 17 projects                                                                                                                                                 |
-| Unit / integration (tier 1)             | `pnpm test:unit`                                      | **PASS** — 508 tests in 52 suites, 0 failed (re-run 2026-09-14; +5 env-schema, +2 inbound-indexer and +55 package tests added in that revision)                        |
-| API integration (tier 3)                | `pnpm --filter @stellar-pay/api test:e2e`             | **PASS** — 19 tests in 3 suites                                                                                                                                        |
+| Unit / integration (tier 1)             | `pnpm test:unit`                                      | **PASS** — 570 tests in 63 suites, 0 failed (re-run 2026-09-15; +54 frontend tests, then +8 logger/notifications tests, on top of the 2026-09-14 additions)            |
+| API integration (tier 3)                | `pnpm --filter @stellar-pay/api test:e2e`             | **PASS** — 24 tests in 4 suites (re-run 2026-09-15; adds the scheduled + split/batch spec)                                                                             |
 | Local-stack smoke (tier 4)              | `pnpm test:e2e`                                       | **PASS** — health `ok` (database up), `/assets`, `/health/ready`                                                                                                       |
-| Live testnet E2E — classic (tier 5)     | `node tests/e2e/auth-payment-flow.mjs`                | **PASS** — 22/22; tx `393cc465…` confirmed in ledger 4_622_888                                                                                                         |
-| Live testnet E2E — Soroban (tier 5)     | `E2E_CONTRACT=1 node tests/e2e/auth-payment-flow.mjs` | **PASS** — 22/22; `send` invoked, `CONFIRMED`, tx `cb8db1b8…` in ledger 4_622_907                                                                                      |
+| Live testnet E2E — classic (tier 5)     | `node tests/e2e/auth-payment-flow.mjs`                | **PASS** — 32/32 (re-run 2026-09-15); payment tx `3c7e30bc…` and 3-recipient split tx `6a39ed09…` both `SUCCEEDED`, scheduled create→list→cancel                       |
+| Live testnet E2E — Soroban (tier 5)     | `E2E_CONTRACT=1 node tests/e2e/auth-payment-flow.mjs` | **PASS** — 32/32 (re-run 2026-09-15); `send` invoked → `CONFIRMED` (tx `7121174d…`), split tx `b3367771…` `SUCCEEDED`                                                  |
 | Deployed contracts exist on testnet     | Soroban RPC `getLedgerEntries`                        | **PASS** — all 6 contract instances live                                                                                                                               |
 | Payment contract initialized            | Soroban RPC simulate `admin()/paused()/is_allowed()`  | **PASS** — admin set, not paused, XLM SAC allowlisted                                                                                                                  |
 | Contract integrations E2E (live)        | `node tests/e2e/contracts-flow.mjs`                   | **PASS** — 28/28: escrow fund+release, treasury deposit, invoice issue+pay, merchant register, subscription, settlement                                                |
@@ -597,6 +603,20 @@ this revision. The tier-3 API integration spec and the live-testnet suites were 
 re-run in that environment (no Postgres/Redis service and no Rust toolchain available),
 so their 2026-09-11 results stand unchanged — CI runs them on every PR.
 
+On **2026-09-15** the tier-1 rows were re-run again after the dependency upgrade
+(`next` 16.3.0 → 16.3.5, plus the new `overrides` in `pnpm-workspace.yaml`) and the
+frontend test work in this revision: `pnpm format:check`, `pnpm lint` (17 projects),
+`pnpm typecheck` (17 projects), `pnpm test:unit` (**570 tests / 63 suites**),
+the tier-3 API integration suite (**24 tests / 4 suites**, run with
+`pnpm --filter @stellar-pay/api test:e2e` against Postgres + Redis from
+`pnpm docker:up`) and `pnpm build` (17 projects) all pass,
+`pnpm install --frozen-lockfile` resolves cleanly, and `pnpm audit --audit-level high`
+reports **no known vulnerabilities** — which is why that CI step no longer sets
+`continue-on-error`. The Chrome extension's `npm ci` install, lint and typecheck were
+verified the same day. The tier-3 API integration and contract rows were not re-run in
+this environment (no Postgres/Redis service, no Rust toolchain), so their earlier results
+stand.
+
 Unverifiable in this environment and therefore **not claimed**: the hosted
 Railway API (offline), GitHub Actions runs, and the browser-based frontends
 (no display). See [Known limitations](#known-limitations).
@@ -610,10 +630,13 @@ Railway API (offline), GitHub Actions runs, and the browser-based frontends
 | **Deploy to AKS**     | `.github/workflows/deploy.yml`            | Push to `main` (AKS — production-oriented)                             |
 | **Release Extension** | `.github/workflows/publish-extension.yml` | Push `extension-v*` tag                                                |
 | **PR Auto-Labeler**   | `.github/workflows/pr-labeler.yml`        | PR opened/edited                                                       |
+| **DCO**               | `.github/workflows/dco.yml`               | PR opened/synchronized/reopened (every commit carries a sign-off)      |
+| **Scorecard**         | `.github/workflows/scorecard.yml`         | Push to `main`, weekly, branch-protection changes (report, not a gate) |
+| **CodeQL**            | `.github/workflows/codeql.yml`            | PR and push to `main`, weekly (report, not a gate)                     |
 | **Badge Updater**     | `.github/workflows/update-badges.yml`     | Push to `main` with Cargo.toml changes                                 |
 | **Dependabot**        | `.github/dependabot.yml`                  | Weekly (npm + Cargo)                                                   |
 
-CI runs: lint → typecheck → format check → tests → contract build → contract tests → app builds → security audit (zizmor).
+CI runs: lint → typecheck → format check → tests → contract build → contract tests → app builds → dependency audit (`pnpm audit`, fails on high/critical) → workflow audit (zizmor).
 
 ## Deployment
 
@@ -662,7 +685,8 @@ deployed to Stellar mainnet.
 ## Known limitations
 
 Accurate as of 2026-09; see [`docs/architecture.md`](docs/architecture.md),
-[`docs/contracts.md`](docs/contracts.md) and [`SECURITY.md`](SECURITY.md) for detail.
+[`docs/contracts.md`](docs/contracts.md), [`docs/audit-2026-09-14.md`](docs/audit-2026-09-14.md)
+and [`SECURITY.md`](SECURITY.md) for detail.
 
 - **The hosted API demo is offline** — `https://stellar-pay-api.up.railway.app`
   returns Railway's `404 Application not found`; restoring it requires Railway
@@ -688,19 +712,22 @@ Accurate as of 2026-09; see [`docs/architecture.md`](docs/architecture.md),
 
 ## Documentation
 
-| Document                                           | Content                                             |
-| -------------------------------------------------- | --------------------------------------------------- |
-| [`docs/architecture.md`](docs/architecture.md)     | System architecture, data flow, security boundaries |
-| [`docs/api.md`](docs/api.md)                       | Full REST API reference with all endpoints          |
-| [`docs/sdk.md`](docs/sdk.md)                       | SDK usage guide (ApiClient + StellarNetwork)        |
-| [`docs/contracts.md`](docs/contracts.md)           | Smart contract architecture and API                 |
-| [`docs/database.md`](docs/database.md)             | Schema design, migrations, seeding                  |
-| [`docs/development.md`](docs/development.md)       | Local dev setup, adding packages, scripts           |
-| [`docs/deployment.md`](docs/deployment.md)         | Docker, Kubernetes, Terraform, monitoring           |
-| [`docs/testnet-deploy.md`](docs/testnet-deploy.md) | Step-by-step Stellar testnet deployment guide       |
-| [`contracts/README.md`](contracts/README.md)       | Contract build, test, deploy instructions           |
-| [`CHANGELOG.md`](CHANGELOG.md)                     | Version history and release notes                   |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md)               | Branch strategy, PR checklist, commit conventions   |
+| Document                                               | Content                                                                  |
+| ------------------------------------------------------ | ------------------------------------------------------------------------ |
+| [`docs/architecture.md`](docs/architecture.md)         | System architecture, data flow, security boundaries                      |
+| [`docs/api.md`](docs/api.md)                           | Full REST API reference with all endpoints                               |
+| [`docs/sdk.md`](docs/sdk.md)                           | SDK usage guide (ApiClient + StellarNetwork)                             |
+| [`docs/contracts.md`](docs/contracts.md)               | Smart contract architecture and API                                      |
+| [`docs/database.md`](docs/database.md)                 | Schema design, migrations, seeding                                       |
+| [`docs/development.md`](docs/development.md)           | Local dev setup, adding packages, scripts                                |
+| [`docs/deployment.md`](docs/deployment.md)             | Docker, Kubernetes, Terraform, monitoring                                |
+| [`docs/testnet-deploy.md`](docs/testnet-deploy.md)     | Step-by-step Stellar testnet deployment guide                            |
+| [`docs/audit-2026-09-14.md`](docs/audit-2026-09-14.md) | Clean-room audit: method, findings, test evidence, remaining limitations |
+| [`contracts/README.md`](contracts/README.md)           | Contract build, test, deploy instructions                                |
+| [`CHANGELOG.md`](CHANGELOG.md)                         | Version history and release notes                                        |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md)                   | Branch strategy, PR checklist, commit conventions                        |
+| [`GOVERNANCE.md`](GOVERNANCE.md)                       | Decision making, releases, becoming a maintainer                         |
+| [`MAINTAINERS.md`](MAINTAINERS.md)                     | Who reviews what (also encoded in `.github/CODEOWNERS`)                  |
 
 ## Contributing
 
@@ -710,6 +737,12 @@ We welcome contributions! See [`CONTRIBUTING.md`](CONTRIBUTING.md) for:
 - PR checklist (tests, lint, typecheck, docs, migrations)
 - [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `chore:`, etc.)
 - Code style (ESLint + Prettier for TS, rustfmt for Rust)
+- The [Developer Certificate of Origin](CONTRIBUTING.md#developer-certificate-of-origin)
+  sign-off (`git commit -s`) every commit needs
+
+How the project is run is documented in [`GOVERNANCE.md`](GOVERNANCE.md); the
+maintainers who hold commit access and the paths needing their review are in
+[`MAINTAINERS.md`](MAINTAINERS.md) and [`.github/CODEOWNERS`](.github/CODEOWNERS).
 
 Browse [open issues](https://github.com/azurespay/azure-stellar-pay-hub/issues) filtered by:
 [`good first issue`](https://github.com/azurespay/azure-stellar-pay-hub/issues?q=is%3Aopen+label%3A%22good+first+issue%22) ·

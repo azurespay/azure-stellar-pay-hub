@@ -2,6 +2,7 @@
   "name": "@stellar-pay/sdk",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Client SDK: typed API client + Stellar/Horizon transaction helpers",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
