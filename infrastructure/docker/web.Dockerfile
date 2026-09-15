@@ -1,6 +1,10 @@
 # syntax=docker/dockerfile:1
 # Build any Next.js app in the monorepo. Pass --build-arg APP=web|admin|explorer|docs
-FROM node:22-alpine AS base
+#
+# The base image is pinned by tag and digest, and `.github/dependabot.yml` has a
+# `docker` ecosystem entry for this directory so the digest is bumped by PR
+# rather than drifting with the tag (see api.Dockerfile for the full reasoning).
+FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS base
 RUN corepack enable
 
 FROM base AS deps
@@ -27,7 +31,7 @@ RUN pnpm --filter @stellar-pay/${APP} --prod --legacy deploy /out/node_modules
 RUN mkdir -p /out/public && if [ -d apps/${APP}/public ]; then cp -r apps/${APP}/public/. /out/public/; fi
 
 # --- Runtime stage ----------------------------------------------------------
-FROM node:22-alpine AS runtime
+FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 ARG APP=web

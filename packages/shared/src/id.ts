@@ -1,7 +1,14 @@
 const cryptoImpl =
   typeof globalThis !== 'undefined' && globalThis.crypto ? globalThis.crypto : null;
 
-/** Generate a v4 UUID (browser + Node 18+ compatible). */
+/**
+ * Generate a v4 UUID for correlation, display and internal identifiers.
+ *
+ * **Not for security material.** Its fallback path (older runtimes without
+ * `crypto.randomUUID`) uses `Math.random()`, which is not a CSPRNG, so a
+ * webhook secret, API key, nonce or session token must come from `newSecret()`
+ * or `newNonce()` instead — both of which fail closed rather than downgrade.
+ */
 export function createId(): string {
   if (cryptoImpl?.randomUUID) {
     return cryptoImpl.randomUUID();

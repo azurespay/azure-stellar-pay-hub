@@ -21,6 +21,13 @@ export interface RequestOptions {
   path: string;
   body?: unknown;
   query?: Record<string, string | number | boolean | undefined>;
+  /**
+   * Extra request headers, e.g. `{ 'Idempotency-Key': key }` — `POST /payments`
+   * de-duplicates per user on that header, but nothing could send it before.
+   * `Authorization` and `Content-Type` are still set by the client; an entry
+   * here overrides the default `Content-Type` only.
+   */
+  headers?: Record<string, string>;
 }
 
 export interface ApiClientConfig {
@@ -57,7 +64,10 @@ export class ApiClient {
       }
     }
 
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    };
     const token = this.getToken();
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
@@ -217,8 +227,18 @@ export class ApiClient {
   // -------------------------------------------------------------- Payments
 
   payments = {
-    create: (body: Record<string, unknown>) =>
-      this.request<PaymentCreateResponse>({ method: 'POST', path: '/payments', body }),
+    /**
+     * `POST /payments`. Pass an `idempotencyKey` and the API stores it under a
+     * unique `(userId, idempotencyKey)` pair, returning the original payment on
+     * a repeat instead of creating a second one.
+     */
+    create: (body: Record<string, unknown>, opts?: { idempotencyKey?: string }) =>
+      this.request<PaymentCreateResponse>({
+        method: 'POST',
+        path: '/payments',
+        body,
+        ...(opts?.idempotencyKey ? { headers: { 'Idempotency-Key': opts.idempotencyKey } } : {}),
+      }),
 
     list: (query?: {
       page?: number;

@@ -14,7 +14,13 @@ spec:
     spec:
       containers:
         - name: api
-          image: ghcr.io/azure-stellar-pay-hub/api:latest
+          # Registry path must match what .github/workflows/deploy.yml pushes:
+          # ${GITHUB_REPOSITORY,,} = ghcr.io/azurespay/azure-stellar-pay-hub.
+          # The deploy job then overrides this with the commit-SHA tag via
+          # `kustomize edit set image`; this default is what a manual
+          # `kubectl apply -k` uses, and it used to name a repo that does not
+          # exist (`ghcr.io/azure-stellar-pay-hub/api`).
+          image: ghcr.io/azurespay/azure-stellar-pay-hub/api:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 4000

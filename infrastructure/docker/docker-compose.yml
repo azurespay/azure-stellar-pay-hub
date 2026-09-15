@@ -2,9 +2,16 @@
 #
 # The top-level `version:` key is deliberately absent: Compose v2 ignores it and
 # warns on every invocation that it is obsolete.
+#
+# Every service image is pinned by tag **and** digest, because a tag is a moving
+# pointer: `redis:7-alpine` resolved to whatever the registry served that day,
+# which is not reproducible and is exactly what a supply-chain attack relabels.
+# `.github/dependabot.yml` has a `docker` ecosystem entry for this directory, so
+# the digests are bumped by PR instead of drifting silently. Refresh a pin with
+#   docker buildx imagetools inspect <image:tag>   # prints the index digest
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
     container_name: stellar-pay-postgres
     environment:
       POSTGRES_USER: postgres
@@ -21,7 +28,7 @@ services:
       retries: 10
 
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
     container_name: stellar-pay-redis
     command: redis-server --appendonly yes
     ports:
@@ -34,9 +41,10 @@ services:
       timeout: 5s
       retries: 10
 
-  # IPFS node for receipt/file storage (optional)
+  # IPFS node for receipt/file storage (optional). Pin a release rather than
+  # `latest` — the moving tag resolved to a *new* kubo build on every pull.
   ipfs:
-    image: ipfs/kubo:latest
+    image: ipfs/kubo:v0.43.1@sha256:b293923d66e490e70ced64df42ea7a6cf7eac2740e3fb29101df18070fa7be48
     container_name: stellar-pay-ipfs
     ports:
       - '4001:4001'

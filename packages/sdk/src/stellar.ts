@@ -1,5 +1,4 @@
 import {
-  Account,
   Asset,
   BASE_FEE,
   Horizon,
@@ -16,7 +15,8 @@ import {
   type Transaction,
 } from '@stellar/stellar-sdk';
 import type { AssetBalance } from '@stellar-pay/types';
-import { fromStroops, toStroops } from '@stellar-pay/shared';
+import { toStroops } from '@stellar-pay/shared';
+import { DEFAULT_STELLAR_RETRY, withRetry, type RetryConfig } from './retry';
 
 export interface StellarNetworkConfig {
   horizonUrl: string;
@@ -30,6 +30,12 @@ export interface StellarNetworkConfig {
    * above normal network latency but far below any operator patience threshold.
    */
   requestTimeoutMs?: number;
+  /**
+   * Retry policy for transient endpoint failures — rate limits, `5xx` and
+   * dropped connections. Defaults to {@link DEFAULT_STELLAR_RETRY}; set
+   * `maxAttempts: 1` to disable retrying entirely.
+   */
+  retry?: Partial<RetryConfig>;
 }
 
 /** Default per-request timeout applied to Horizon + Soroban RPC clients. */
@@ -112,11 +118,14 @@ export class StellarNetwork {
   readonly config: StellarNetworkConfig;
   /** Per-request timeout applied to Horizon + Soroban RPC clients. */
   readonly timeoutMs: number;
+  /** Effective retry policy for every Horizon + Soroban RPC call. */
+  readonly retry: RetryConfig;
   private rpcServer: rpc.Server | null = null;
 
   constructor(config: StellarNetworkConfig) {
     this.config = config;
     this.timeoutMs = config.requestTimeoutMs ?? DEFAULT_STELLAR_REQUEST_TIMEOUT_MS;
+    this.retry = { ...DEFAULT_STELLAR_RETRY, ...config.retry };
     this.server = new Horizon.Server(config.horizonUrl);
     // Horizon.Server takes no timeout option — set it on the underlying client
     // so a hung Horizon node fails fast instead of blocking the request.
@@ -142,9 +151,18 @@ export class StellarNetwork {
     return this.rpcServer;
   }
 
+  /**
+   * Apply the retry policy to a single endpoint call. Every Horizon and Soroban
+   * RPC round trip goes through here, so a transient `429`/`5xx` or a dropped
+   * connection is handled identically wherever it happens.
+   */
+  private retryable<T>(operation: () => Promise<T>): Promise<T> {
+    return withRetry(operation, this.retry);
+  }
+
   /** List native + issued asset balances for an account. */
   async getBalances(publicKey: string): Promise<AssetBalance[]> {
-    const account = await this.server.loadAccount(publicKey);
+    const account = await this.retryable(() => this.server.loadAccount(publicKey));
     return account.balances
       .filter(
         (b) =>
@@ -178,7 +196,7 @@ export class StellarNetwork {
     publicKey: string,
   ): Promise<Awaited<ReturnType<Horizon.Server['loadAccount']>> | null> {
     try {
-      return await this.server.loadAccount(publicKey);
+      return await this.retryable(() => this.server.loadAccount(publicKey));
     } catch {
       return null;
     }
@@ -186,7 +204,7 @@ export class StellarNetwork {
 
   /** Build an unsigned payment transaction, returning the base64 XDR for wallet signing. */
   async buildPaymentTransaction(input: PaymentTxInput): Promise<string> {
-    const source = await this.server.loadAccount(input.from);
+    const source = await this.retryable(() => this.server.loadAccount(input.from));
     const asset: StellarAsset =
       input.assetCode === 'XLM' ? Asset.native() : new Asset(input.assetCode, input.assetIssuer!);
 
@@ -258,7 +276,7 @@ export class StellarNetwork {
    * on-chain footprint and the source account's authorization entries.
    */
   private async buildInvokeContractRawTx(input: ContractCallInput): Promise<Transaction> {
-    const source = await this.server.loadAccount(input.source);
+    const source = await this.retryable(() => this.server.loadAccount(input.source));
     const hostFunction = xdr.HostFunction.hostFunctionTypeInvokeContract(
       new xdr.InvokeContractArgs({
         contractAddress: xdr.ScAddress.scAddressTypeContract(
@@ -300,7 +318,7 @@ export class StellarNetwork {
   }> {
     const raw = await this.buildInvokeContractRawTx(input);
     const rpcServer = this.sorobanRpc();
-    const sim = await rpcServer.simulateTransaction(raw);
+    const sim = await this.retryable(() => rpcServer.simulateTransaction(raw));
 
     if (rpc.Api.isSimulationSuccess(sim)) {
       const assembled = rpc.assembleTransaction(raw, sim).build();
@@ -341,7 +359,7 @@ export class StellarNetwork {
     const entries = op.auth ?? [];
     const validUntil =
       opts?.validUntilLedgerSeq ??
-      ((await this.sorobanRpc().getLatestLedger()).sequence ?? 0) + 100;
+      ((await this.retryable(() => this.sorobanRpc().getLatestLedger())).sequence ?? 0) + 100;
     // Mutate the auth array *in place* (the same pattern the SDK's own
     // AssembledTransaction.signAuthEntries uses): the operation's auth list is
     // parsed lazily from the envelope, so reassigning `op.auth` would be
@@ -375,7 +393,7 @@ export class StellarNetwork {
   async submitContractCall(signedXdr: string): Promise<SubmitResult> {
     const rpcServer = this.sorobanRpc();
     const tx = TransactionBuilder.fromXDR(signedXdr, this.config.networkPassphrase) as Transaction;
-    const sent = await rpcServer.sendTransaction(tx);
+    const sent = await this.retryable(() => rpcServer.sendTransaction(tx));
     if (sent.status === 'ERROR') {
       const code = sent.errorResult?.result()?.switch().name ?? 'ERROR';
       throw new SorobanSubmissionError(`Soroban sendTransaction rejected: ${code}`);
@@ -564,7 +582,7 @@ export class StellarNetwork {
     limit?: string;
     remove?: boolean;
   }): Promise<string> {
-    const source = await this.server.loadAccount(input.from);
+    const source = await this.retryable(() => this.server.loadAccount(input.from));
     const asset = new Asset(input.assetCode, input.assetIssuer);
     const tx = new TransactionBuilder(source, {
       fee: BASE_FEE,
@@ -702,7 +720,7 @@ export class StellarNetwork {
           '(Soroban RPC sendTransaction), not the classic Horizon path.',
       );
     }
-    const response = await this.server.submitTransaction(tx);
+    const response = await this.retryable(() => this.server.submitTransaction(tx));
     if (!response.successful) {
       const resultCode =
         (response as unknown as { result_codes?: { transaction?: string } }).result_codes
@@ -779,7 +797,7 @@ export class StellarNetwork {
   /** Build a simulated fee estimate without submitting. */
   async estimateFee(input: PaymentTxInput): Promise<{ fee: string; warnings: string[] }> {
     const warnings: string[] = [];
-    const simulated = await this.server.feeStats().catch(() => null);
+    const simulated = await this.retryable(() => this.server.feeStats()).catch(() => null);
     return {
       fee: simulated?.fee_charged?.max ?? BASE_FEE,
       warnings,

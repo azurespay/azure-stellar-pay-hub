@@ -1,4 +1,7 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+// A blank value (a Vercel/env variable defined but empty) means "not
+// configured": falling through keeps the rewrite destination absolute, which
+// Next requires — `${''}/api/:path*` is rejected as a relative destination.
+const API_URL = process.env.NEXT_PUBLIC_API_URL?.trim() || 'http://localhost:4000';
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

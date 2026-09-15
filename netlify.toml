@@ -1,4 +1,9 @@
 # Netlify deploy config for Stellar Pay web app (monorepo)
+#
+# Legacy path: no workflow deploys through it and Vercel is the hosted frontend
+# (see docs/deployment.md). It is kept working rather than deleted — which is
+# why it now carries the same /api-suffixed API URL as the Vercel projects: the
+# API is mounted under /api, so a bare origin 404s every request.
 [build]
   base = "apps/web"
   command = "cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @stellar-pay/types --filter @stellar-pay/shared --filter @stellar-pay/sdk --filter @stellar-pay/ui --filter @stellar-pay/wallet build && pnpm --filter @stellar-pay/web build"
@@ -8,6 +13,7 @@
   NODE_VERSION = "22"
   NPM_FLAGS = "--version"
   NEXT_PUBLIC_STELLAR_NETWORK = "testnet"
+  NEXT_PUBLIC_API_URL = "https://stellar-pay-api.up.railway.app/api"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"

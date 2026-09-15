@@ -34,6 +34,26 @@ updates:
         update-types:
           - version-update:semver-major
 
+  # ── Docker (base images + local compose) ─────────────────────────────────
+  # The Dockerfiles and docker-compose.yml pin every image by tag *and* digest.
+  # A digest pin without an updater is worse than no pin — it freezes the image
+  # on whatever was current the day it was written — so this entry is what makes
+  # the pins maintainable rather than stale. Dependabot rewrites both the digest
+  # and the readability-providing tag.
+  - package-ecosystem: docker
+    directory: /infrastructure/docker
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: UTC
+    labels:
+      - dependencies
+      - chore
+    commit-message:
+      prefix: chore
+      include: scope
+
   # ── Cargo (Rust / Soroban contracts) ──────────────────────────────────────
 
   - package-ecosystem: cargo

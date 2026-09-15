@@ -166,6 +166,19 @@ CONFIRMED` update makes confirmation idempotent, and payer
   addition to `ChainEvent`. Signed webhook payloads embed a stable
   `deliveryId` and retries reuse the same delivery row, so merchants can dedupe
   exactly-once per logical event.
+- **Transient Stellar endpoint failures are retried with exponential backoff.**
+  Neither `Horizon.Server` nor the Soroban RPC client retries, so a single `429`,
+  `5xx` or dropped connection surfaced to the user as a failed payment. Every
+  Horizon and Soroban RPC round trip — `loadAccount`, `feeStats`,
+  `simulateTransaction`, `getLatestLedger`, `sendTransaction`,
+  `submitTransaction` — now goes through `packages/sdk/src/retry.ts`: three
+  attempts by default, equal-jitter exponential backoff from 250 ms capped at
+  4 s. Only transient failures repeat; a `4xx` or a transaction the network
+  rejected (`tx_bad_seq`, `op_no_destination`) fails immediately, because
+  re-sending it can only reproduce the same answer. Re-submission is safe by
+  construction — the envelope carries the same sequence number, so a duplicate
+  can only be rejected, never applied twice — and the API keeps an inconclusive
+  submission `PENDING` and lets the indexer decide the outcome.
 - **Checkout/payment links are server-authoritative against tampering.** The
   hosted checkout (`/pay/[code]`, `/checkout/invoice/[number]`) renders only
   the record fetched from the API — amount, recipient, and asset are never

@@ -38,3 +38,16 @@ overrides:
   # own patched floor (GHSA-2883-xcg3-v3hh).
   'js-yaml@<4': ^3.15.2
   'js-yaml@>=4': ^4.3.2
+
+# Dependabot gates every lockfile update it performs behind a 3-day release-age
+# window (`pnpm update … --config.minimumReleaseAge=4320`). A root-level update
+# re-resolves the whole workspace, so if any transitive package released inside
+# that window gets adopted, the gated pass rejects the lockfile the ungated pass
+# just produced and the entire Dependabot group fails with an opaque
+# `unknown_error`. @tybys/wasm-util was the package tripping it (0.10.4,
+# 2026-09-13); it is reachable only through
+# jest > jest-resolve > unrs-resolver > the wasm32-wasi binding, so it is never
+# installed on a real platform and the cooldown buys nothing. pnpm's own error
+# message points at this setting as the remedy.
+minimumReleaseAgeExclude:
+  - '@tybys/wasm-util'

@@ -1,6 +1,13 @@
 # syntax=docker/dockerfile:1
+#
+# The base image is pinned by tag **and** digest: a tag is a moving pointer, so
+# `node:22-alpine` silently changes under us between builds and a compromised or
+# renamed tag would ship whatever it points at. `.github/dependabot.yml` carries
+# a `docker` ecosystem entry for this directory, so the digest is bumped by PR
+# (with the `:22-alpine` tag kept readable) instead of drifting unnoticed.
+#
 # --- Build stage -----------------------------------------------------------
-FROM node:22-alpine AS base
+FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS base
 RUN corepack enable
 
 FROM base AS deps
@@ -30,7 +37,7 @@ RUN pnpm --filter @stellar-pay/api build
 RUN pnpm --filter @stellar-pay/api --prod --legacy deploy /out/node_modules
 
 # --- Runtime stage ----------------------------------------------------------
-FROM node:22-alpine AS runtime
+FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 
