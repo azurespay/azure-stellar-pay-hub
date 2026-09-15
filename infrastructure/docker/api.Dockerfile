@@ -7,7 +7,7 @@
 # (with the `:22-alpine` tag kept readable) instead of drifting unnoticed.
 #
 # --- Build stage -----------------------------------------------------------
-FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS base
+FROM node:26-alpine@sha256:ef24c5053d50fdc3e4e56eb4e7ddb7861874ab0fdc797046ba897581deb8e868 AS base
 RUN corepack enable
 
 FROM base AS deps
@@ -37,7 +37,7 @@ RUN pnpm --filter @stellar-pay/api build
 RUN pnpm --filter @stellar-pay/api --prod --legacy deploy /out/node_modules
 
 # --- Runtime stage ----------------------------------------------------------
-FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS runtime
+FROM node:26-alpine@sha256:ef24c5053d50fdc3e4e56eb4e7ddb7861874ab0fdc797046ba897581deb8e868 AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 

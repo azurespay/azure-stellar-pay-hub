@@ -19,7 +19,7 @@
     "pino": "^9.14.0"
   },
   "devDependencies": {
-    "jest": "^30.4.2",
+    "jest": "^30.5.1",
     "pino-pretty": "^11.3.0",
     "ts-jest": "^29.4.12",
     "typescript": "~5.9.3"
