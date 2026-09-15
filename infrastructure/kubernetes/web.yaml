@@ -14,7 +14,8 @@ spec:
     spec:
       containers:
         - name: web
-          image: ghcr.io/azure-stellar-pay-hub/web:latest
+          # Same registry path as deploy.yml pushes (see api.yaml).
+          image: ghcr.io/azurespay/azure-stellar-pay-hub/web:latest
           ports:
             - containerPort: 3000
           readinessProbe:
@@ -52,7 +53,7 @@ spec:
     spec:
       containers:
         - name: admin
-          image: ghcr.io/azure-stellar-pay-hub/admin:latest
+          image: ghcr.io/azurespay/azure-stellar-pay-hub/admin:latest
           ports:
             - containerPort: 3000
           resources:

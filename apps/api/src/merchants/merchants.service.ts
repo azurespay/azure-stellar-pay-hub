@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '@stellar-pay/database';
 import { createId } from '@stellar-pay/shared';
+import { newSecret } from '@stellar-pay/shared';
 import { toStroops } from '@stellar-pay/shared';
 import { buildPaymentUri } from '@stellar-pay/shared';
 import { WalletService } from '../wallet/wallet.service';
@@ -53,7 +54,12 @@ export class MerchantsService {
         settlementAssetIssuer: input.settlementAssetIssuer,
         settlementPublicKey: input.settlementPublicKey,
         webhookUrl: input.webhookUrl,
-        webhookSecret: createId(),
+        // A webhook signing secret is cryptographic key material: it is what
+        // makes an outbound delivery unforgeable. `newSecret()` is the
+        // purpose-built helper and fails closed when WebCrypto is missing,
+        // whereas `createId()` is a generic identifier whose fallback path used
+        // `Math.random()` — not a CSPRNG, and the wrong primitive for a key.
+        webhookSecret: newSecret(),
         status: 'PENDING',
       },
     });

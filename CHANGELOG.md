@@ -11,6 +11,26 @@ This project follows [Semantic Versioning](https://semver.org/) and
 
 ### Added
 
+- **Transient Stellar endpoint failures are retried with exponential backoff**
+  (closes issue #6). Neither `Horizon.Server` nor the Soroban RPC client
+  retries anything, so one `429`, `5xx` or dropped connection surfaced to the
+  user as a failed payment. Every Horizon and Soroban RPC round trip now routes
+  through `packages/sdk/src/retry.ts` — three attempts by default, equal-jitter
+  backoff from 250 ms capped at 4 s, configurable per network via
+  `StellarNetworkConfig.retry`. Only transient failures repeat: a `4xx`, and a
+  transaction the network already rejected (`tx_bad_seq`, `op_no_destination`),
+  fail on the first attempt because re-sending them can only reproduce the same
+  answer. Re-submission is idempotent by construction — the envelope carries the
+  same sequence number, so a duplicate can only be rejected, never applied
+  twice — and the API holds an inconclusive submission `PENDING` for the
+  indexer, so a retry cannot manufacture a false success. 17 new tests.
+- **`docs/branch-protection.md` records the required-check policy for `main`.**
+  It lists the six checks every merge should pass and why `Scorecard analysis`
+  is deliberately excluded — that workflow never runs on `pull_request`, so
+  requiring it would leave every PR on "Expected — waiting for status to be
+  reported" rather than protecting anything. Applying it needs repository
+  administration rights the automation token does not hold, so `main` is still
+  `"protected": false`; the file carries the exact command to apply and verify.
 - **Scheduled and split/batch payment intents are covered end to end.** A new
   tier-3 spec (`apps/api/test/scheduled-split.e2e-spec.ts`) drives both create
   paths through real HTTP routes against Postgres + Redis: a scheduled/recurring
@@ -31,7 +51,8 @@ This project follows [Semantic Versioning](https://semver.org/) and
   added. `packages/logger/src/index.test.ts` now also captures stdout to assert
   the JSON record emitted per level, the service and child bindings it carries,
   and that the configured threshold actually suppresses the levels below it.
-  Tier 1: **562 → 570 tests in 63 suites**.
+  Tier 1: **562 → 570 tests in 63 suites** at that revision (the Unreleased
+  entries below take it to **616 tests in 67 suites**).
 - **The escrow refund path is now covered by the live testnet E2E.**
   `tests/e2e/contracts-flow.mjs` exercised escrow create → fund → release but
   never the refund escape hatch, so `POST /escrows/:id/refund` (and its on-chain
@@ -58,7 +79,7 @@ This project follows [Semantic Versioning](https://semver.org/) and
   account-vs-transaction routing, the admin sidebar, the docs loader and the docs
   router's 404 path, plus the shared formatting helpers. The `--passWithNoTests`
   flag is gone, so an empty suite now fails instead of passing. Tier 1 is
-  **562 tests in 62 suites**.
+  **562 tests in 62 suites** at that revision.
 - **OpenSSF Scorecard runs on the repository.** `.github/workflows/scorecard.yml`
   scores the supply chain on every push to `main`, weekly, and whenever a branch
   protection rule changes; the result is published to the public Scorecard API and
@@ -81,9 +102,65 @@ This project follows [Semantic Versioning](https://semver.org/) and
   (root, apps and packages) now carry `"license": "MIT"`, and the root manifest
   also carries `repository`, `homepage`, `bugs` and `author`, so SPDX/SBOM and
   license tooling sees the same MIT terms as the `LICENSE` file.
+- **`docs/sdk.md` documents the SDK that exists.** The guide — rendered by the
+  docs app and linked from the README — described a `StellarPayClient` with
+  `getChallenge`/`buildPaymentTx`/`submitPayment` helpers and a
+  `@stellar-pay/sdk/server` entry point. None of that is exported: the client is
+  `ApiClient`, its methods are namespaced (`api.auth.verify`, `api.payments.list`,
+  …), and the package has no subpath exports. It now documents the real surface —
+  a namespace-by-namespace method table, `StellarNetwork`'s methods and
+  `StellarNetworkConfig` (including `requestTimeoutMs` and the `retry` block), the
+  `ApiResponse<T>` envelope, `ApiClientError.statusCode`, the retry policy and the
+  `useWallet()` value — with the payments example taken from
+  `createPaymentSchema` and `POST /payments/:id/submit`. `packages/sdk/src/index.ts`
+  also re-exports `ContractCallInput`, `SorobanSendInput` and
+  `DEFAULT_STELLAR_REQUEST_TIMEOUT_MS`, which `stellar.ts` had been exporting on
+  its own.
+- **The OpenSSF Best Practices (passing) criteria are answered with evidence.**
+  [`docs/openssf-best-practices.md`](docs/openssf-best-practices.md) maps all 67
+  passing-level criteria of the [OpenSSF (CII) Best Practices
+  badge](https://www.bestpractices.dev/en/criteria/0) to the artefact that
+  satisfies each one — 53 met (9 of them with the URL the form requires), 3 met
+  with a named gap (nothing is tagged as a release yet, and no coverage
+  percentage is measured), 5 N/A with the required justification, and one
+  suggested criterion (`dynamic_analysis`) not met and stated as such. The five
+  criteria that are human attestations are labelled, so they are not answered on
+  the maintainer's behalf. Registering needs a maintainer's GitHub login at
+  bestpractices.dev (GitHub OAuth), so the README carries a deliberately honest
+  `OpenSSF_Best_Practices-not_yet_registered` badge linking to the
+  self-assessment instead of an earned badge that has not been awarded;
+  `SECURITY.md`'s Scorecard finding for `CII-Best-Practices` now points at the
+  document rather than describing the gap as unfiled work.
+- **`ApiClient` can send an `Idempotency-Key`.** `POST /payments` de-duplicates
+  per user on that header, but `RequestOptions` had no `headers` field and no
+  client set it, so the guard the API implements was unreachable from the only
+  client in the repository. `RequestOptions.headers` is now forwarded (the client
+  still sets `Authorization` last) and `payments.create(body, { idempotencyKey })`
+  sets the header for the common case. 4 new tests.
 
 ### Security
 
+- **Every container image is pinned by digest, and Dependabot maintains the
+  pins.** `infrastructure/docker/api.Dockerfile`, `web.Dockerfile` and
+  `docker-compose.yml` referenced `node:22-alpine`, `postgres:16-alpine`,
+  `redis:7-alpine` and — worst of all — `ipfs/kubo:latest` by tag alone. A tag
+  is a moving pointer: the same `docker compose up` resolved to whatever the
+  registry served that day, and a relabelled tag would have shipped whatever it
+  pointed at. Each reference now carries the tag **and** the manifest-list digest
+  (kubo moves from `latest` to the concrete `v0.43.1`), so the resolved image is
+  reproducible. `.github/dependabot.yml` gains a `docker` ecosystem entry for
+  `/infrastructure/docker` — a digest pin with no updater is not a fix, it is a
+  freeze — which rewrites the digest and keeps the readable tag. Every pin was
+  verified with `docker pull <image:tag>@sha256:…`, `docker buildx imagetools
+inspect` confirms the index digest, `docker compose config` still validates and
+  `docker build --check` reports no warnings for either Dockerfile.
+- **The Kubernetes manifests named a registry path that does not exist.**
+  `infrastructure/kubernetes/{api,web}.yaml` pulled
+  `ghcr.io/azure-stellar-pay-hub/…`, but `.github/workflows/deploy.yml` publishes
+  to `${GITHUB_REPOSITORY,,}` = `ghcr.io/azurespay/azure-stellar-pay-hub/…`, so a
+  manual `kubectl apply -k` would have hit an unknown repository (the deploy job
+  masked it by overriding the image with `kustomize edit set image`). The
+  manifests now match what CI pushes.
 - **Ten known dependency advisories cleared, and `pnpm audit` is now a required
   CI gate.** The installed tree carried 10 vulnerabilities (2 critical, 7 high,
   1 low): `next` 16.3.0 (GHSA-2xp9-vwfh-vxw4, GHSA-p293-qw3h-jr36 — both
@@ -129,9 +206,86 @@ This project follows [Semantic Versioning](https://semver.org/) and
 - **`newNonce`/`newSecret` fail closed.** Both fell back to `Math.random()` when
   WebCrypto was unavailable — a silent downgrade for the auth challenge nonce
   and webhook/API secrets. They now throw, like `hashSecret` already did.
+- **The merchant webhook signing secret came from a helper whose fallback is
+  `Math.random()`.** `MerchantsService.register` stored `createId()` as
+  `webhookSecret` — and `createId()` is a generic identifier whose fallback path
+  (a runtime without `crypto.randomUUID`) is not a CSPRNG. A webhook secret is
+  key material: it is what makes an outbound delivery unforgeable, and it is the
+  agent for the HMAC-SHA256 signatures that `SECURITY.md` threat #6 relies on.
+  It now comes from `newSecret()`, the purpose-built helper that fails closed,
+  matching what `WebhooksService` and the seed script already did. `createId()`
+  also carries an explicit "not for security material" warning so the same
+  substitution is not made again. This was the last CSPRNG gap for the OpenSSF
+  `crypto_random` criterion.
+- **The published security and conduct contacts were unreachable.** `SECURITY.md`
+  and `CODE_OF_CONDUCT.md` both asked reporters to email `…@stellar-pay.dev`,
+  and that domain has no DNS record at all — a vulnerability report sent there
+  was dropped silently, which is the worst possible outcome for one. The GitHub
+  **private security advisory** form (already the first contact link on the
+  new-issue page) is now the documented intake channel, and the code of conduct
+  points at the maintainers listed in `MAINTAINERS.md`. Both documents say why
+  no mailbox is published, so a future revision does not reintroduce a dead one.
 
 ### Fixed
 
+- **A blank `NEXT_PUBLIC_API_URL` produced a relative base URL.**
+  `withApiPrefix('')` returns `/api`, which the SDK's `new URL()` rejects
+  outright, so a Vercel variable that exists but is empty — or a blank browser
+  origin — broke every request instead of falling back. Web, admin and explorer
+  now treat blank as "not configured" and fall through to the documented
+  default; the explorer client normalises a bare origin to the prefixed form
+  exactly as web and admin do; and `apps/web/next.config.mjs` keeps its rewrite
+  destination absolute. 11 new tests (web 2, admin 2, explorer 7 — the explorer
+  client had none).
+- **The contract-redeploy procedure missed the ids that actually gate merges.**
+  [`docs/contract-storage-migration.md`](docs/contract-storage-migration.md)
+  listed the environment and the deployment docs as the places to write the new
+  `CONTRACT_STELLAR_PAY_*` addresses, but `.github/workflows/ci.yml` hardcodes
+  six of them in its two live-testnet E2E steps. A redeploy that followed the
+  old procedure would therefore have left CI green while exercising the
+  **previous** instances — a passing gate testing code that is no longer
+  deployed. The procedure now enumerates every location (`git grep`, which walks
+  tracked files only), names `docs/audit-2026-09-14.md` as deliberately frozen
+  evidence, records the deploy's prerequisites (`wasm32v1-none`, a funded
+  `STELLAR_SECRET_KEY`, RPC reachability), and adds a liveness probe that calls
+  an entry point only the new revision has — because a changed id alone does not
+  prove the new layout is live.
+- **The undocumented Netlify config carried no API URL.** `netlify.toml` is not
+  wired into any workflow and was referenced by no document, and it never set
+  `NEXT_PUBLIC_API_URL` — so a Netlify build would have fallen through to the
+  default base while every other target sets the value explicitly. It now
+  carries the same `/api`-prefixed URL as the Vercel projects, and
+  `docs/deployment.md` classifies it as a legacy path rather than leaving it as
+  an unexplained file in the repository root.
+- **The verification totals quoted in the docs were stale.** `README.md`,
+  `docs/branch-protection.md` and the entries below cited **570** unit tests in
+  **63** suites (and 584 in `branch-protection.md`) while the tree actually ran
+  **616** in **67**, so a reviewer re-running `pnpm test:unit` saw a number the
+  docs did not predict. Every figure is now the measured one.
+- **The web and admin frontends addressed the wrong API path in production.**
+  Both `vercel.json` files set `NEXT_PUBLIC_API_URL` to the bare Railway origin,
+  but the API is mounted under `/api` (`apps/api/src/main.ts` sets that global
+  prefix) and the SDK builds URLs as `${baseUrl}${path}` from paths like
+  `/auth/challenge`. Every production request therefore went to
+  `/auth/challenge` instead of `/api/auth/challenge` and 404'd — the explorer app
+  already carried the prefix, which is what made the mismatch visible. Both
+  clients now normalise the value (adding the prefix when absent, tolerating a
+  trailing slash), so a Vercel dashboard value holding only the origin also
+  resolves correctly, and the `vercel.json` entries carry the explicit form.
+  Web's development base was an empty string, which `new URL()` rejects
+  outright, so it is now same-origin and the `next.config.mjs` rewrite proxies
+  `/api/*` as its comment always claimed. Covered by 14 new tests.
+- **Dependabot's weekly development-dependency group failed on `nx` every run.**
+  It surfaced as `nx | unknown_error | null`, but nx was not the cause:
+  Dependabot gates each lockfile update behind a 3-day release-age window
+  (`pnpm update … --config.minimumReleaseAge=4320`), a root-level update
+  re-resolves the whole workspace, and the ungated pass adopted
+  `@tybys/wasm-util@0.10.4` — published two days earlier and reachable only
+  through jest > unrs-resolver > the wasm32-wasi binding. The gated pass then
+  rejected the lockfile the previous pass had just written.
+  `minimumReleaseAgeExclude` now exempts that single package, which is pnpm's own
+  documented remedy; reproduces and is verified against Dependabot's exact
+  two-pass command sequence.
 - **`verifySignedXdrOwner` could never return `true`.** The helper compared the
   signature hint against the last 4 characters of the StrKey (base32) address
   instead of the last 4 bytes of the raw ed25519 key, _and_ called the versioned
@@ -213,6 +367,11 @@ This project follows [Semantic Versioning](https://semver.org/) and
   Token-Permissions check reads that as a broad grant. The scopes now sit on the
   single job that needs each one (`contents: read` is declared alongside, since
   specifying `permissions` sets every unlisted scope to `none`).
+
+- **Two dead imports removed from the SDK.** `Account` and `fromStroops` were
+  imported but never used in `packages/sdk/src/stellar.ts`. `pnpm lint` now
+  reports a single warning across all 17 projects — the `estimateFee` parameter,
+  which callers do pass and the implementation deliberately ignores.
 
 ### Removed
 

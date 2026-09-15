@@ -113,4 +113,69 @@ describe('ApiClient', () => {
 
     expect(capturedUrl).toBe('https://api.example.com/users/me');
   });
+
+  it('forwards caller headers, so a payment can carry an Idempotency-Key', async () => {
+    // `POST /payments` de-duplicates per user on that header; without it the
+    // double-charge guard the API implements was unreachable from the client.
+    let capturedHeaders: Record<string, string> = {};
+    const mockFetch = ((_url: string, init?: RequestInit) => {
+      capturedHeaders = (init?.headers ?? {}) as Record<string, string>;
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
+    }) as typeof fetch;
+
+    const client = new ApiClient({ baseUrl, fetchImpl: mockFetch });
+    await client.request({
+      method: 'POST',
+      path: '/payments',
+      body: { type: 'SEND' },
+      headers: { 'Idempotency-Key': 'create-key-1' },
+    });
+
+    expect(capturedHeaders['Idempotency-Key']).toBe('create-key-1');
+    expect(capturedHeaders['Content-Type']).toBe('application/json');
+  });
+
+  it('sends an Idempotency-Key from payments.create', async () => {
+    let capturedHeaders: Record<string, string> = {};
+    const mockFetch = ((_url: string, init?: RequestInit) => {
+      capturedHeaders = (init?.headers ?? {}) as Record<string, string>;
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
+    }) as typeof fetch;
+
+    const client = new ApiClient({ baseUrl, fetchImpl: mockFetch });
+    await client.payments.create({ type: 'SEND' }, { idempotencyKey: 'order-42' });
+
+    expect(capturedHeaders['Idempotency-Key']).toBe('order-42');
+  });
+
+  it('omits the Idempotency-Key header when no key is supplied', async () => {
+    let capturedHeaders: Record<string, string> = {};
+    const mockFetch = ((_url: string, init?: RequestInit) => {
+      capturedHeaders = (init?.headers ?? {}) as Record<string, string>;
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
+    }) as typeof fetch;
+
+    const client = new ApiClient({ baseUrl, fetchImpl: mockFetch });
+    await client.payments.create({ type: 'SEND' });
+
+    expect(capturedHeaders['Idempotency-Key']).toBeUndefined();
+  });
+
+  it('still sets Authorization after caller headers', async () => {
+    let capturedHeaders: Record<string, string> = {};
+    const mockFetch = ((_url: string, init?: RequestInit) => {
+      capturedHeaders = (init?.headers ?? {}) as Record<string, string>;
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
+    }) as typeof fetch;
+
+    const client = new ApiClient({
+      baseUrl,
+      fetchImpl: mockFetch,
+      getToken: () => 'test-token-123',
+    });
+    await client.request({ path: '/users/me', headers: { 'X-Trace': 'abc' } });
+
+    expect(capturedHeaders['Authorization']).toBe('Bearer test-token-123');
+    expect(capturedHeaders['X-Trace']).toBe('abc');
+  });
 });

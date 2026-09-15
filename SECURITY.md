@@ -12,8 +12,10 @@ We take the security of Azure StellarPay Hub seriously. Please **do not** open a
 public GitHub issue for security vulnerabilities.
 
 Report vulnerabilities privately by opening a **private security advisory**
-(GitHub → Security → Report a vulnerability) or by emailing
-`security@stellar-pay.dev` with:
+(GitHub → Security → Report a vulnerability). That is the project's only intake
+channel today, so a report never lands in a mailbox nobody reads; the same form
+is the first contact link offered on the
+[new-issue page](.github/ISSUE_TEMPLATE/config.yml). A report should include:
 
 - A description of the vulnerability and its impact
 - Steps to reproduce
@@ -21,6 +23,11 @@ Report vulnerabilities privately by opening a **private security advisory**
 
 You should receive an acknowledgement within 72 hours and a detailed response
 within one week.
+
+> There is no dedicated security email address. Earlier revisions of this policy
+> listed one on a domain that was never provisioned, which meant a report sent
+> there went nowhere — a published contact that cannot be reached is worse than
+> none, so it has been removed rather than left as a promise.
 
 ## Scope
 
@@ -131,26 +138,26 @@ against what the project has decided on purpose.
 
 **Enforced in the repository** (checked, not merely intended):
 
-| Check                  | State                                                                                                                                                           |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Pinned dependencies    | every `uses:` is pinned to a commit SHA; `@railway/cli` is pinned to an exact version; the Chrome extension installs with `npm ci` against a committed lockfile |
-| Token permissions      | every workflow declares `permissions`, and write scopes are granted per **job** rather than per file                                                            |
-| Dangerous workflows    | no `pull_request_target` or `workflow_run`; no `${{ … }}` interpolation inside a `run:` block (untrusted values travel through `env:`)                          |
-| Static analysis (SAST) | [`.github/workflows/codeql.yml`](.github/workflows/codeql.yml) — CodeQL with `security-extended` over the TypeScript/JavaScript surface                         |
-| Dependency updates     | Dependabot, weekly, npm + Cargo                                                                                                                                 |
-| Vulnerabilities        | `pnpm audit --audit-level high` is a **blocking** CI gate and currently reports none                                                                            |
-| License / packaging    | `LICENSE` (MIT), this policy, and `"license": "MIT"` in every package manifest                                                                                  |
-| Commit provenance      | every commit in a pull request carries a DCO sign-off ([`.github/workflows/dco.yml`](.github/workflows/dco.yml))                                                |
+| Check                  | State                                                                                                                                                                                                                                                                       |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pinned dependencies    | every `uses:` is pinned to a commit SHA; `@railway/cli` is pinned to an exact version; the Chrome extension installs with `npm ci` against a committed lockfile                                                                                                             |
+| Token permissions      | every workflow declares `permissions`, and write scopes are granted per **job** rather than per file                                                                                                                                                                        |
+| Dangerous workflows    | no `pull_request_target` or `workflow_run`; no `${{ … }}` interpolation inside a `run:` block (untrusted values travel through `env:`)                                                                                                                                      |
+| Static analysis (SAST) | [`.github/workflows/codeql.yml`](.github/workflows/codeql.yml) — CodeQL with `security-extended` over the TypeScript/JavaScript surface                                                                                                                                     |
+| Dependency updates     | Dependabot, weekly, npm + Cargo                                                                                                                                                                                                                                             |
+| Vulnerabilities        | `pnpm audit --audit-level high` is a **blocking** CI gate and currently reports none                                                                                                                                                                                        |
+| License / packaging    | `LICENSE` (MIT), this policy, and `"license": "MIT"` in every package manifest                                                                                                                                                                                              |
+| Commit provenance      | every commit in a pull request carries a DCO sign-off ([`.github/workflows/dco.yml`](.github/workflows/dco.yml))                                                                                                                                                            |
+| Container images       | every `FROM` in `infrastructure/docker/*.Dockerfile` and every service in `docker-compose.yml` is pinned by tag **and** digest, and Dependabot's `docker` ecosystem (directory `/infrastructure/docker`) bumps them weekly — each pin was verified with `docker pull <ref>` |
 
 **Accepted findings** — deliberately not "fixed":
 
-| Check                                      | Why                                                                                                                                                                                                                           |
-| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Binary-Artifacts                           | the pitch video, thumbnail and preview are tracked on purpose — they are a project deliverable, and the pipeline that regenerates them is documented in [`video/README.md`](video/README.md)                                  |
-| Fuzzing                                    | no fuzz target yet. The contracts are covered by the Rust host suite (116 entry-point tests) and the live testnet integration flows; adding `cargo-fuzz` targets is follow-up work                                            |
-| Signed-Releases                            | releases are not signed yet. Nothing is published to a package registry (every workspace is `private`), so signing has no consumer to protect yet                                                                             |
-| CII-Best-Practices                         | requires registering the project with the OpenSSF Best Practices badge programme — an external step, not a file in this repository                                                                                            |
-| Branch-Protection / Code-Review / Webhooks | repository settings rather than tracked files; see [`GOVERNANCE.md`](GOVERNANCE.md) and [`.github/CODEOWNERS`](.github/CODEOWNERS) for the review policy they should encode                                                   |
-| Contributors                               | a single-maintainer project at this stage                                                                                                                                                                                     |
-| Docker base images                         | `FROM node:22-alpine` and friends are tag-pinned, not digest-pinned. Digest pinning needs a `docker` entry in `dependabot.yml` so the pins cannot silently rot, so it is tracked as follow-up work rather than half-done here |
-| Rust static analysis                       | CodeQL does not analyse Rust; the contracts rely on the Rust test suite and review                                                                                                                                            |
+| Check                                      | Why                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Binary-Artifacts                           | the pitch video, thumbnail and preview are tracked on purpose — they are a project deliverable, and the pipeline that regenerates them is documented in [`video/README.md`](video/README.md)                                                                                                                                                                                                                                                 |
+| Fuzzing                                    | no fuzz target yet. The contracts are covered by the Rust host suite (116 entry-point tests) and the live testnet integration flows; adding `cargo-fuzz` targets is follow-up work                                                                                                                                                                                                                                                           |
+| Signed-Releases                            | releases are not signed yet. Nothing is published to a package registry (every workspace is `private`), so signing has no consumer to protect yet                                                                                                                                                                                                                                                                                            |     | CII-Best-Practices | scores 0 until the project is registered with the OpenSSF Best Practices badge programme. The questionnaire is prepared criterion-by-criterion with evidence in [`docs/openssf-best-practices.md`](docs/openssf-best-practices.md); what remains is a maintainer's GitHub login at bestpractices.dev, which no automation token can perform |
+| Branch-Protection / Code-Review / Webhooks | repository settings rather than tracked files; see [`GOVERNANCE.md`](GOVERNANCE.md) and [`.github/CODEOWNERS`](.github/CODEOWNERS) for the review policy they should encode                                                                                                                                                                                                                                                                  |
+| Contributors                               | a single-maintainer project at this stage                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Kubernetes / workflow images               | the Dockerfiles and `docker-compose.yml` are digest-pinned, but the Kubernetes manifests and the CI `services:` blocks still name tags. The manifests' own images are overridden with the commit-SHA tag by `kustomize edit set image` at deploy time (so the deployed artefact is pinned by SHA), and the CI service images are not covered by any Dependabot ecosystem yet — pinning them without an updater would only move the staleness |
+| Rust static analysis                       | CodeQL does not analyse Rust; the contracts rely on the Rust test suite and review                                                                                                                                                                                                                                                                                                                                                           |

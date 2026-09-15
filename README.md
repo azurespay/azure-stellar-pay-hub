@@ -29,6 +29,15 @@ built toward real-world commerce, not a mainnet deployment.
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Rust](https://img.shields.io/badge/Rust-stable-db5a3b?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Pitch video](https://img.shields.io/badge/%E2%96%B6_pitch_video-5_min-8B5CF6)](video/stellar-pay-hub-pitch.mp4)
+[![OpenSSF Best Practices](https://img.shields.io/badge/OpenSSF_Best_Practices-not_yet_registered-lightgrey)](docs/openssf-best-practices.md)
+
+[`docs/openssf-best-practices.md`](docs/openssf-best-practices.md) answers all 67
+criteria of the OpenSSF (CII) **passing** level with evidence from this
+repository. The badge above says _not yet registered_ deliberately: registering
+needs a maintainer's GitHub login at [bestpractices.dev](https://www.bestpractices.dev/)
+and the site authenticates with GitHub OAuth, so no automation can do it — and no
+badge should be shown as earned until the BadgeApp says it is. The four criteria
+that are human attestations are listed in the document as such.
 
 ---
 
@@ -578,20 +587,20 @@ Postgres + Redis from `pnpm docker:up`. Every row is a command that was actually
 executed, not a claim. `pnpm test` chains the Jest suite and the contract
 verification (`pnpm test:unit && pnpm contracts:verify`), matching what CI runs.
 
-| Check                                   | Command                                               | Result                                                                                                                                                                 |
-| --------------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Typecheck (clean clone, no prior build) | `pnpm typecheck`                                      | **PASS** — 0 errors across 17 projects; builds its workspace dependencies itself, so no `build:packages` step is needed first                                          |
-| Build (17 projects)                     | `pnpm build`                                          | **PASS** — re-run 2026-09-14 after fixing the root `.env` `NODE_ENV` leak that broke all 4 Next.js builds (see below)                                                  |
-| Lint                                    | `pnpm lint`                                           | **PASS** — 17 projects                                                                                                                                                 |
-| Unit / integration (tier 1)             | `pnpm test:unit`                                      | **PASS** — 570 tests in 63 suites, 0 failed (re-run 2026-09-15; +54 frontend tests, then +8 logger/notifications tests, on top of the 2026-09-14 additions)            |
-| API integration (tier 3)                | `pnpm --filter @stellar-pay/api test:e2e`             | **PASS** — 24 tests in 4 suites (re-run 2026-09-15; adds the scheduled + split/batch spec)                                                                             |
-| Local-stack smoke (tier 4)              | `pnpm test:e2e`                                       | **PASS** — health `ok` (database up), `/assets`, `/health/ready`                                                                                                       |
-| Live testnet E2E — classic (tier 5)     | `node tests/e2e/auth-payment-flow.mjs`                | **PASS** — 32/32 (re-run 2026-09-15); payment tx `3c7e30bc…` and 3-recipient split tx `6a39ed09…` both `SUCCEEDED`, scheduled create→list→cancel                       |
-| Live testnet E2E — Soroban (tier 5)     | `E2E_CONTRACT=1 node tests/e2e/auth-payment-flow.mjs` | **PASS** — 32/32 (re-run 2026-09-15); `send` invoked → `CONFIRMED` (tx `7121174d…`), split tx `b3367771…` `SUCCEEDED`                                                  |
-| Deployed contracts exist on testnet     | Soroban RPC `getLedgerEntries`                        | **PASS** — all 6 contract instances live                                                                                                                               |
-| Payment contract initialized            | Soroban RPC simulate `admin()/paused()/is_allowed()`  | **PASS** — admin set, not paused, XLM SAC allowlisted                                                                                                                  |
-| Contract integrations E2E (live)        | `node tests/e2e/contracts-flow.mjs`                   | **PASS** — 28/28: escrow fund+release, treasury deposit, invoice issue+pay, merchant register, subscription, settlement                                                |
-| Soroban contracts (tier 2)              | `pnpm contracts:verify`                               | **PASS** — `wasm32v1-none` release build emits all 6 `.wasm`; **116 tests, 0 failed** (escrow 23, invoices 24, merchant 17, payment 16, subscriptions 11, treasury 25) |
+| Check                                   | Command                                               | Result                                                                                                                                                                   |
+| --------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Typecheck (clean clone, no prior build) | `pnpm typecheck`                                      | **PASS** — 0 errors across 17 projects; builds its workspace dependencies itself, so no `build:packages` step is needed first                                            |
+| Build (17 projects)                     | `pnpm build`                                          | **PASS** — re-run 2026-09-14 after fixing the root `.env` `NODE_ENV` leak that broke all 4 Next.js builds (see below)                                                    |
+| Lint                                    | `pnpm lint`                                           | **PASS** — 17 projects                                                                                                                                                   |
+| Unit / integration (tier 1)             | `pnpm test:unit`                                      | **PASS** — 616 tests in 67 suites, 0 failed (re-run 2026-09-15; includes the SDK retry policy, the client's `Idempotency-Key`, and the web/admin/explorer API-URL tests) |
+| API integration (tier 3)                | `pnpm --filter @stellar-pay/api test:e2e`             | **PASS** — 24 tests in 4 suites (re-run 2026-09-15; adds the scheduled + split/batch spec)                                                                               |
+| Local-stack smoke (tier 4)              | `pnpm test:e2e`                                       | **PASS** — health `ok` (database up), `/assets`, `/health/ready`                                                                                                         |
+| Live testnet E2E — classic (tier 5)     | `node tests/e2e/auth-payment-flow.mjs`                | **PASS** — 32/32 (re-run 2026-09-15); payment tx `3c7e30bc…` and 3-recipient split tx `6a39ed09…` both `SUCCEEDED`, scheduled create→list→cancel                         |
+| Live testnet E2E — Soroban (tier 5)     | `E2E_CONTRACT=1 node tests/e2e/auth-payment-flow.mjs` | **PASS** — 32/32 (re-run 2026-09-15); `send` invoked → `CONFIRMED` (tx `7121174d…`), split tx `b3367771…` `SUCCEEDED`                                                    |
+| Deployed contracts exist on testnet     | Soroban RPC `getLedgerEntries`                        | **PASS** — all 6 contract instances live                                                                                                                                 |
+| Payment contract initialized            | Soroban RPC simulate `admin()/paused()/is_allowed()`  | **PASS** — admin set, not paused, XLM SAC allowlisted                                                                                                                    |
+| Contract integrations E2E (live)        | `node tests/e2e/contracts-flow.mjs`                   | **PASS** — 28/28: escrow fund+release, treasury deposit, invoice issue+pay, merchant register, subscription, settlement                                                  |
+| Soroban contracts (tier 2)              | `pnpm contracts:verify`                               | **PASS** — `wasm32v1-none` release build emits all 6 `.wasm`; **116 tests, 0 failed** (escrow 23, invoices 24, merchant 17, payment 16, subscriptions 11, treasury 25)   |
 
 The Soroban rows were verified on 2026-09-12 after installing the Rust toolchain
 locally (rustc 1.98.1, target `wasm32v1-none`); the contract test count is from the
@@ -606,7 +615,7 @@ so their 2026-09-11 results stand unchanged — CI runs them on every PR.
 On **2026-09-15** the tier-1 rows were re-run again after the dependency upgrade
 (`next` 16.3.0 → 16.3.5, plus the new `overrides` in `pnpm-workspace.yaml`) and the
 frontend test work in this revision: `pnpm format:check`, `pnpm lint` (17 projects),
-`pnpm typecheck` (17 projects), `pnpm test:unit` (**570 tests / 63 suites**),
+`pnpm typecheck` (17 projects), `pnpm test:unit` (**616 tests / 67 suites**),
 the tier-3 API integration suite (**24 tests / 4 suites**, run with
 `pnpm --filter @stellar-pay/api test:e2e` against Postgres + Redis from
 `pnpm docker:up`) and `pnpm build` (17 projects) all pass,
@@ -637,6 +646,11 @@ Railway API (offline), GitHub Actions runs, and the browser-based frontends
 | **Dependabot**        | `.github/dependabot.yml`                  | Weekly (npm + Cargo)                                                   |
 
 CI runs: lint → typecheck → format check → tests → contract build → contract tests → app builds → dependency audit (`pnpm audit`, fails on high/critical) → workflow audit (zizmor).
+
+The checks that should gate merges into `main` are listed in
+[`docs/branch-protection.md`](docs/branch-protection.md). They are **not applied
+yet** — `main` is currently unprotected, and applying them requires repository
+administration rights.
 
 ## Deployment
 
@@ -672,7 +686,7 @@ deployed to Stellar mainnet.
 
 | Variable                      | Where                      | Purpose                             |
 | ----------------------------- | -------------------------- | ----------------------------------- |
-| `NEXT_PUBLIC_API_URL`         | Vercel (admin, web)        | Backend API URL                     |
+| `NEXT_PUBLIC_API_URL`         | Vercel (admin, web)        | Backend API URL incl. `/api`        |
 | `NEXT_PUBLIC_STELLAR_NETWORK` | Vercel (admin, web)        | `testnet` or `public`               |
 | `RAILWAY_TOKEN`               | GitHub railway environment | Auth for Railway CLI deploys        |
 | `RAILWAY_API_URL`             | GitHub railway environment | API URL for smoke test              |
@@ -712,22 +726,24 @@ and [`SECURITY.md`](SECURITY.md) for detail.
 
 ## Documentation
 
-| Document                                               | Content                                                                  |
-| ------------------------------------------------------ | ------------------------------------------------------------------------ |
-| [`docs/architecture.md`](docs/architecture.md)         | System architecture, data flow, security boundaries                      |
-| [`docs/api.md`](docs/api.md)                           | Full REST API reference with all endpoints                               |
-| [`docs/sdk.md`](docs/sdk.md)                           | SDK usage guide (ApiClient + StellarNetwork)                             |
-| [`docs/contracts.md`](docs/contracts.md)               | Smart contract architecture and API                                      |
-| [`docs/database.md`](docs/database.md)                 | Schema design, migrations, seeding                                       |
-| [`docs/development.md`](docs/development.md)           | Local dev setup, adding packages, scripts                                |
-| [`docs/deployment.md`](docs/deployment.md)             | Docker, Kubernetes, Terraform, monitoring                                |
-| [`docs/testnet-deploy.md`](docs/testnet-deploy.md)     | Step-by-step Stellar testnet deployment guide                            |
-| [`docs/audit-2026-09-14.md`](docs/audit-2026-09-14.md) | Clean-room audit: method, findings, test evidence, remaining limitations |
-| [`contracts/README.md`](contracts/README.md)           | Contract build, test, deploy instructions                                |
-| [`CHANGELOG.md`](CHANGELOG.md)                         | Version history and release notes                                        |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md)                   | Branch strategy, PR checklist, commit conventions                        |
-| [`GOVERNANCE.md`](GOVERNANCE.md)                       | Decision making, releases, becoming a maintainer                         |
-| [`MAINTAINERS.md`](MAINTAINERS.md)                     | Who reviews what (also encoded in `.github/CODEOWNERS`)                  |
+| Document                                                           | Content                                                                                              |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| [`docs/architecture.md`](docs/architecture.md)                     | System architecture, data flow, security boundaries                                                  |
+| [`docs/api.md`](docs/api.md)                                       | Full REST API reference with all endpoints                                                           |
+| [`docs/sdk.md`](docs/sdk.md)                                       | SDK usage guide (ApiClient + StellarNetwork)                                                         |
+| [`docs/contracts.md`](docs/contracts.md)                           | Smart contract architecture and API                                                                  |
+| [`docs/database.md`](docs/database.md)                             | Schema design, migrations, seeding                                                                   |
+| [`docs/development.md`](docs/development.md)                       | Local dev setup, adding packages, scripts                                                            |
+| [`docs/deployment.md`](docs/deployment.md)                         | Docker, Kubernetes, Terraform, monitoring                                                            |
+| [`docs/testnet-deploy.md`](docs/testnet-deploy.md)                 | Step-by-step Stellar testnet deployment guide                                                        |
+| [`docs/audit-2026-09-14.md`](docs/audit-2026-09-14.md)             | Clean-room audit: method, findings, test evidence, remaining limitations                             |
+| [`docs/openssf-best-practices.md`](docs/openssf-best-practices.md) | OpenSSF Best Practices self-assessment: all 67 passing criteria, with evidence, plus how to register |
+| [`docs/branch-protection.md`](docs/branch-protection.md)           | Required status checks for `main` and the command to apply them                                      |
+| [`contracts/README.md`](contracts/README.md)                       | Contract build, test, deploy instructions                                                            |
+| [`CHANGELOG.md`](CHANGELOG.md)                                     | Version history and release notes                                                                    |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md)                               | Branch strategy, PR checklist, commit conventions                                                    |
+| [`GOVERNANCE.md`](GOVERNANCE.md)                                   | Decision making, releases, becoming a maintainer                                                     |
+| [`MAINTAINERS.md`](MAINTAINERS.md)                                 | Who reviews what (also encoded in `.github/CODEOWNERS`)                                              |
 
 ## Contributing
 

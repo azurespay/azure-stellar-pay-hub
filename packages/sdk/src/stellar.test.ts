@@ -4,6 +4,7 @@ import {
   SorobanSubmissionError,
   StellarNetwork,
 } from './stellar';
+import { DEFAULT_STELLAR_RETRY } from './retry';
 import { toStroops } from '@stellar-pay/shared';
 
 /** The account shape `Horizon.Server.loadAccount` resolves to. */
@@ -563,5 +564,61 @@ describe('StellarNetwork request timeouts', () => {
     expect(net.timeoutMs).toBe(5_000);
     expect(net.server.httpClient.defaults.timeout).toBe(5_000);
     expect(net.sorobanRpc()).toBeTruthy();
+  });
+});
+
+describe('StellarNetwork retry policy', () => {
+  const horizon = {
+    horizonUrl: 'https://horizon-testnet.stellar.org',
+    networkPassphrase: Networks.TESTNET,
+  };
+  // Real timers, minimal delays: the policy is under test, not the waiting.
+  const fastRetry = { maxAttempts: 3, baseDelayMs: 1, maxDelayMs: 1 };
+
+  /** A Horizon HTTP failure, shaped the way the stellar-sdk throws one. */
+  const httpError = (status: number) =>
+    Object.assign(new Error(`HTTP ${status}`), { response: { status } });
+
+  // `getBalances` reads `.balances`; a bare `Account` has none.
+  const emptyAccount = { balances: [] } as unknown as HorizonAccount;
+
+  it('retries a transient failure and then returns the success', async () => {
+    const net = new StellarNetwork({ ...horizon, retry: fastRetry });
+    const publicKey = Keypair.random().publicKey();
+    const loadAccount = jest
+      .spyOn(net.server, 'loadAccount')
+      .mockRejectedValueOnce(httpError(503))
+      .mockResolvedValue(emptyAccount);
+
+    await expect(net.getBalances(publicKey)).resolves.toEqual([]);
+    expect(loadAccount).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not repeat a request the endpoint rejected outright', async () => {
+    const net = new StellarNetwork({ ...horizon, retry: fastRetry });
+    const publicKey = Keypair.random().publicKey();
+    const loadAccount = jest.spyOn(net.server, 'loadAccount').mockRejectedValue(httpError(404));
+
+    await expect(net.getBalances(publicKey)).rejects.toThrow('404');
+    expect(loadAccount).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives up after maxAttempts and surfaces the last error', async () => {
+    const net = new StellarNetwork({ ...horizon, retry: fastRetry });
+    const publicKey = Keypair.random().publicKey();
+    const loadAccount = jest.spyOn(net.server, 'loadAccount').mockRejectedValue(httpError(503));
+
+    await expect(net.getBalances(publicKey)).rejects.toThrow('503');
+    expect(loadAccount).toHaveBeenCalledTimes(3);
+  });
+
+  it('defaults to three attempts and merges a partial override', () => {
+    expect(new StellarNetwork(horizon).retry).toEqual(DEFAULT_STELLAR_RETRY);
+
+    const single = new StellarNetwork({ ...horizon, retry: { maxAttempts: 1 } });
+    expect(single.retry.maxAttempts).toBe(1);
+    // Unspecified fields keep their defaults rather than becoming undefined.
+    expect(single.retry.baseDelayMs).toBe(DEFAULT_STELLAR_RETRY.baseDelayMs);
+    expect(single.retry.maxDelayMs).toBe(DEFAULT_STELLAR_RETRY.maxDelayMs);
   });
 });

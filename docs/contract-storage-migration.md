@@ -169,7 +169,15 @@ deploying by grepping for the removed names:
 rg 'all_ids|invoices_of\(' --glob '!contracts/**'
 ```
 
-Redeploy:
+### Prerequisites
+
+| Requirement                              | Why                                                                                                                                                 | Where it comes from                                                                                                                                                                      |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rust stable + the `wasm32v1-none` target | the contracts have to be compiled before they can be deployed (`rustup target add wasm32v1-none`)                                                   | the CI job **Build Soroban contracts** installs it on every PR, so the build and the 116 tests are already verified there — a local toolchain is only needed to deploy from your machine |
+| `STELLAR_SECRET_KEY`                     | the deployer key, and the contract **admin** after `contracts:init`; it must be funded on testnet and must never land in the repository or a CI log | the testnet deployer's own key store                                                                                                                                                     |
+| Outbound access to Soroban RPC + Horizon | deploy, initialize and verify all talk to the network (`SOROBAN_RPC_URL` defaults to testnet)                                                       | the network                                                                                                                                                                              |
+
+### Steps
 
 ```bash
 # 1. Build and test the new revision
@@ -206,9 +214,48 @@ same entry points (`register`, `create`, …) so the events and the indexer see
 them. Because ids are assigned by the new contract, preserve the mapping in the
 off-chain tables rather than assuming ids match.
 
-Also update the addresses recorded in
-[`testnet-deploy.md`](testnet-deploy.md) and any `CONTRACT_*` values in
-`.env`/`.deployed-contracts.env` and the deployment platform.
+### Every place a new set of ids has to be written down
+
+A redeploy that updates only the environment leaves CI green while exercising
+the **old** instances — the live-E2E gates would pass against code that is no
+longer deployed, which is worse than failing. The ids appear in five places
+(four to change, one deliberately frozen):
+
+| Location                                                                     | What to change                                                                                                                                           |
+| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.env`, `.deployed-contracts.env`, and the deployment platform's environment | the six `CONTRACT_STELLAR_PAY_*` values (step 4)                                                                                                         |
+| [`testnet-deploy.md`](testnet-deploy.md)                                     | the recorded address table                                                                                                                               |
+| [`contracts-flow.mjs`](../tests/e2e/contracts-flow.mjs)                      | the default ids the harness falls back to when the env vars are unset                                                                                    |
+| [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)                    | the ids in the two live-E2E steps: `CONTRACT_STELLAR_PAY_PAYMENT` in the contract-route payment lifecycle, and all six in the contract-integrations step |
+| [`audit-2026-09-14.md`](audit-2026-09-14.md)                                 | **nothing** — it is the record of revision `e10944b`, and its ids are evidence of what was deployed _then_. Rewriting it would destroy the audit trail   |
+
+Find any that were missed (`git grep` only walks tracked files, so build
+output, Nx caches and the generated Prisma artefacts stay out of the way):
+
+```bash
+git grep -lE 'C[A-Z2-7]{55}' -- ':!docs/audit-2026-09-14.md'
+```
+
+It also lists `apps/api/src/**/*.test.ts` and `packages/sdk/src/stellar.test.ts`,
+which hold **synthetic** ids (`CC5UUVJC…`) as fixtures and the network's XLM SAC
+address — none of the six deployed ids appear there, so those files need no
+change.
+
+### Proving the new code is deployed
+
+A changed id is not evidence that the new layout is live — the old instance would
+still answer `admin()` and `paused()`. Probe an entry point that only exists in
+the new revision instead; the old instance rejects it as an unknown function:
+
+```bash
+# New in this revision (see the entry-point table above): escrow::count,
+# invoices::count, merchant::count — or any bump_* restore helper.
+soroban contract invoke --id "$CONTRACT_STELLAR_PAY_ESCROW" -- count
+```
+
+Then re-run both live flows (`node tests/e2e/contracts-flow.mjs` and
+`E2E_CONTRACT=1 node tests/e2e/auth-payment-flow.mjs`), which drive the new
+listings, the escrow refund window and the restore helpers end to end.
 
 ## Rollback
 

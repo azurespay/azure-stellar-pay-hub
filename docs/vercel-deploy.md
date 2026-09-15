@@ -26,10 +26,16 @@ dependencies from the repo root, even when the Root Directory is set to a subdir
 
 Set these in **each** project's Settings → Environment Variables:
 
-| Variable                      | Value                          | Notes                                |
-| ----------------------------- | ------------------------------ | ------------------------------------ |
-| `NEXT_PUBLIC_API_URL`         | `https://your-api.railway.app` | **Required** — your Railway API URL  |
-| `NEXT_PUBLIC_STELLAR_NETWORK` | `testnet` or `public`          | Defaults to `testnet` in vercel.json |
+| Variable                      | Value                              | Notes                                                            |
+| ----------------------------- | ---------------------------------- | ---------------------------------------------------------------- |
+| `NEXT_PUBLIC_API_URL`         | `https://your-api.railway.app/api` | **Required** — your Railway API URL, including the `/api` prefix |
+| `NEXT_PUBLIC_STELLAR_NETWORK` | `testnet` or `public`              | Defaults to `testnet` in vercel.json                             |
+
+`NEXT_PUBLIC_API_URL` is the base the SDK appends request paths to, and the API
+is mounted under `/api` (`apps/api/src/main.ts` sets that global prefix), so the
+prefix belongs in the value — a bare origin sends every request to the wrong
+path and 404s. The clients append a missing prefix themselves, so a bare origin
+still works, but set the explicit form above.
 
 For the admin app, also consider:
 

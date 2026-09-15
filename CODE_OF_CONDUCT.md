@@ -58,9 +58,16 @@ representative at an online or offline event.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the community leaders responsible for enforcement at
-`conduct@stellar-pay.dev`. All complaints will be reviewed and investigated
-promptly and fairly.
+reported privately to the community leaders responsible for enforcement — the
+current maintainers are listed in [MAINTAINERS.md](MAINTAINERS.md). Reach a
+maintainer through their GitHub profile (a direct message is private) or, if you
+would rather not approach an individual, note that a report can be sent through
+GitHub's private reporting form for this repository. All complaints will be
+reviewed and investigated promptly and fairly.
+
+There is no dedicated conduct email address: the address printed by earlier
+revisions of this document lived on a domain that was never provisioned, so it
+has been removed rather than left as a channel that silently drops reports.
 
 All community leaders are obligated to respect the privacy and security of the
 reporter of any incident.
