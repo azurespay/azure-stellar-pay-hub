@@ -16,7 +16,7 @@
     "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
-    "@types/chrome": "^0.2.9",
+    "@types/chrome": "^0.3.0",
     "esbuild": "^0.25.0"
   }
 }
