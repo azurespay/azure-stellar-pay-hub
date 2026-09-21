@@ -4,7 +4,7 @@
 # The base image is pinned by tag and digest, and `.github/dependabot.yml` has a
 # `docker` ecosystem entry for this directory so the digest is bumped by PR
 # rather than drifting with the tag (see api.Dockerfile for the full reasoning).
-FROM node:26-alpine@sha256:ef24c5053d50fdc3e4e56eb4e7ddb7861874ab0fdc797046ba897581deb8e868 AS base
+FROM node:26-alpine@sha256:dbaa92e5758cbbcf85d65d5403fdb530fe3442cbe8c6dbfb7ef23365450d5070 AS base
 RUN corepack enable
 
 FROM base AS deps
@@ -31,7 +31,7 @@ RUN pnpm --filter @stellar-pay/${APP} --prod --legacy deploy /out/node_modules
 RUN mkdir -p /out/public && if [ -d apps/${APP}/public ]; then cp -r apps/${APP}/public/. /out/public/; fi
 
 # --- Runtime stage ----------------------------------------------------------
-FROM node:26-alpine@sha256:ef24c5053d50fdc3e4e56eb4e7ddb7861874ab0fdc797046ba897581deb8e868 AS runtime
+FROM node:26-alpine@sha256:dbaa92e5758cbbcf85d65d5403fdb530fe3442cbe8c6dbfb7ef23365450d5070 AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 ARG APP=web
