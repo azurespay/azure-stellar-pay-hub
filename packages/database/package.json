@@ -28,9 +28,9 @@
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
-    "jest": "^30.5.1",
-    "ts-jest": "^29.4.12",
-    "tsx": "^4.23.13",
+    "jest": "^30.5.2",
+    "ts-jest": "^29.4.13",
+    "tsx": "^4.23.15",
     "typescript": "~5.9.3"
   },
   "jest": {
