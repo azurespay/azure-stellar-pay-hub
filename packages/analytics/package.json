@@ -19,8 +19,8 @@
     "@stellar-pay/types": "workspace:*"
   },
   "devDependencies": {
-    "jest": "^30.5.1",
-    "ts-jest": "^29.4.12",
+    "jest": "^30.5.2",
+    "ts-jest": "^29.4.15",
     "typescript": "~5.9.3"
   },
   "jest": {
